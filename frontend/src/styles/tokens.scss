@@ -1,0 +1,63 @@
+/**
+ * 绿立方 · 设计 token（从 HTML 原型提取）
+ * 原型基准宽度 375px，1px = 2rpx；scss 中 px 值按原型原样保留
+ * 使用：style 内直接引用变量，如 background: $brand;
+ */
+
+/* ── 品牌色 ─────────────────────────── */
+$brand: #00B96B;            // 主品牌绿（按钮、tab 高亮、强调）
+$brand-deep: #00B578;       // 深绿（价格、成功态、可点文字）
+$brand-soft: #E6F9F0;       // 浅绿底（成功标签、图标底）
+
+/* 别名（兼容） */
+$color-primary: $brand;     // 主色别名（页面常用）
+$color-success: $brand-deep;
+
+/* ── 功能色 ─────────────────────────── */
+$danger: #FA5151;           // 红（驳回、拒收、删除、错误）
+$danger-soft: #FFEDED;
+$warn: #FF8F1F;             // 橙（待处理、变更中、库存预警）
+$warn-soft: #FFF3E6;
+$info: #3B7CFF;             // 蓝（链接、快捷操作、信息）
+$info-soft: #E8F1FF;
+$link: #1677FF;             // 链接蓝（次级操作文字）
+
+/* ── 文字 ──────────────────────────── */
+$text-title: #1A1A1A;       // 大标题
+$text-body: #4A5261;        // 正文
+$text-second: #8A9099;      // 次要说明（使用最多）
+$text-placeholder: #9AA1AB; // 占位符
+$text-disabled: #C2C8D0;
+
+/* ── 背景 / 边框 ────────────────────── */
+$bg-page: #F5F6F8;          // 页面底
+$bg-card: #FFFFFF;          // 卡片
+$bg-soft: #F7F9FA;          // 输入框/浅底块
+$border: #E4E7EB;
+$border-strong: #DDE2E8;
+
+/* ── 圆角 ──────────────────────────── */
+$radius-sm: 4px;
+$radius: 8px;
+$radius-md: 10px;
+$radius-lg: 12px;
+$radius-round: 999px;
+
+/* ── 字号（对齐原型） ────────────────── */
+$font-xs: 10px;   // 角标、标签微字
+$font-sm: 12px;   // 说明、标签
+$font-base: 13px; // 正文（默认）
+$font-md: 15px;   // 列表标题
+$font-lg: 17px;   // 页面标题
+$font-xl: 20px;   // 金额、大标题
+$font-price: 18px; // 价格专用
+
+/* ── 间距（8 为基础步进） ───────────── */
+$gap-1: 4px;
+$gap-2: 8px;
+$gap-3: 12px;
+$gap-4: 16px;
+$gap-5: 20px;
+
+/* ── 阴影 ─────────────────────────── */
+$shadow-card: 0 1px 4px rgba(26, 26, 26, 0.06);

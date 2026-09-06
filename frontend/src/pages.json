@@ -1,0 +1,62 @@
+{
+  "pages": [
+    { "path": "pages/buyer/home", "style": { "navigationBarTitleText": "绿立方" } },
+    { "path": "pages/buyer/goods", "style": { "navigationBarTitleText": "商品列表" } },
+    { "path": "pages/buyer/goods-detail", "style": { "navigationBarTitleText": "商品详情" } },
+    { "path": "pages/buyer/cart", "style": { "navigationBarTitleText": "购物车" } },
+    { "path": "pages/buyer/order-list", "style": { "navigationBarTitleText": "我的订单" } },
+    { "path": "pages/buyer/order-detail", "style": { "navigationBarTitleText": "订单详情" } },
+    { "path": "pages/buyer/bill", "style": { "navigationBarTitleText": "月度对账单" } },
+    { "path": "pages/buyer/aftersale", "style": { "navigationBarTitleText": "售后申请" } },
+    { "path": "pages/buyer/kefu", "style": { "navigationBarTitleText": "AI 客服下单" } },
+    { "path": "pages/buyer/ai-confirm", "style": { "navigationBarTitleText": "确认订单" } },
+    { "path": "pages/buyer/mine", "style": { "navigationBarTitleText": "我的" } },
+    { "path": "pages/buyer/register", "style": { "navigationBarTitleText": "注册" } },
+    { "path": "pages/buyer/pending-verify", "style": { "navigationBarTitleText": "账号审核中" } },
+    { "path": "pages/buyer/verify-rejected", "style": { "navigationBarTitleText": "账号未通过" } }
+  ],
+  "subPackages": [
+    {
+      "root": "subpkg-supplier",
+      "pages": [
+        { "path": "pages/home", "style": { "navigationBarTitleText": "供应商·今日待办" } },
+        { "path": "pages/stock-list", "style": { "navigationBarTitleText": "备货单" } },
+        { "path": "pages/stock-declare", "style": { "navigationBarTitleText": "申报备货" } },
+        { "path": "pages/goods-manage", "style": { "navigationBarTitleText": "商品管理" } },
+        { "path": "pages/handover", "style": { "navigationBarTitleText": "交接确认" } },
+        { "path": "pages/finance", "style": { "navigationBarTitleText": "历史与应付" } },
+        { "path": "pages/mine", "style": { "navigationBarTitleText": "我的" } }
+      ]
+    },
+    {
+      "root": "subpkg-courier",
+      "pages": [
+        { "path": "pages/home", "style": { "navigationBarTitleText": "配送员·今日任务" } },
+        { "path": "pages/task-detail", "style": { "navigationBarTitleText": "配送详情" } },
+        { "path": "pages/deliver", "style": { "navigationBarTitleText": "交付确认" } },
+        { "path": "pages/pay-assist", "style": { "navigationBarTitleText": "收款协助" } },
+        { "path": "pages/report", "style": { "navigationBarTitleText": "异常上报" } },
+        { "path": "pages/mine", "style": { "navigationBarTitleText": "我的" } }
+      ]
+    }
+  ],
+  "tabBar": {
+    "color": "#8A9099",
+    "selectedColor": "#00B96B",
+    "backgroundColor": "#FFFFFF",
+    "list": [
+      { "pagePath": "pages/buyer/home", "text": "首页" },
+      { "pagePath": "pages/buyer/goods", "text": "商品" },
+      { "pagePath": "pages/buyer/cart", "text": "购物车" },
+      { "pagePath": "pages/buyer/order-list", "text": "订单" },
+      { "pagePath": "pages/buyer/mine", "text": "我的" }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarBackgroundColor": "#00B96B",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "绿立方",
+    "backgroundColor": "#F5F6F8",
+    "enablePullDownRefresh": false
+  }
+}

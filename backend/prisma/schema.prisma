@@ -1,0 +1,465 @@
+// 绿立方 · 数据库 Schema
+// 依据：《开发配套-数据模型与接口草案.md》数据字典 + 第五节已确认决策
+// 生成：prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ══════════════════════════════════════════
+// 1. 用户与身份
+// ══════════════════════════════════════════
+
+model User {
+  id        BigInt   @id @default(autoincrement())
+  wxOpenid  String   @unique @map("wx_openid") @db.VarChar(64)
+  wxUnionid String?  @map("wx_unionid") @db.VarChar(64)
+  name      String?  @db.VarChar(32)
+  /// 手机号：注册时补齐，可为空（唯一约束下 NULL 互不冲突）
+  phone     String?  @unique @db.VarChar(20)
+  /// ⚠️ 同账号可多身份：["purchaser","supplier","courier","admin"]
+  roles     Json
+  /// 0 禁用 / 1 正常
+  status    Int      @default(1) @db.TinyInt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  purchaser Purchaser?
+  supplier  Supplier?
+  courier   Courier?
+  cartItems CartItem[]
+  /// 子账号体系：业务员(business_agent) 归属某个运营主账号
+  parentId  BigInt?   @map("parent_id")
+
+  @@map("user")
+}
+
+model Purchaser {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @unique @map("user_id")
+  shopName  String   @map("shop_name") @db.VarChar(100)
+  contact   String   @db.VarChar(32)
+  phone     String   @db.VarChar(20)
+  address   String   @db.VarChar(255)
+  /// 常用收货时段 ["早 05-08","中 10-13"]
+  deliveryWindows Json? @map("delivery_windows")
+  /// 1 COD(默认) / 2 周结 / 3 月结（运营审核开通）
+  payMode   Int      @default(1) @map("pay_mode") @db.TinyInt
+  creditLimit Decimal @default(0) @map("credit_limit") @db.Decimal(12, 2)
+  /// 营业执照、食品经营许可证等
+  qualification Json?
+
+  /// ⚠️ 账号状态（主计划 4.1）：1待审核 2正常 3已驳回(可申诉) 4终态驳回(60天冻结) 5运营停用
+  accountStatus Int @default(1) @map("account_status") @db.TinyInt
+
+  /// ⚠️ 唯一索引：同一营业执照仅可注册 1 次（连锁分店走授权说明）
+  businessLicenseNo  String? @unique @map("business_license_no") @db.VarChar(64)
+  businessLicenseImg String? @map("business_license_img") @db.VarChar(255)
+  foodPermitImg      String? @map("food_permit_img") @db.VarChar(255)
+
+  registeredAt   DateTime  @default(now()) @map("registered_at")
+  verifiedBy     BigInt?   @map("verified_by")
+  verifiedAt     DateTime? @map("verified_at")
+  /// 30 天内申诉次数（封顶 1 次）
+  appealCount30d Int       @default(0) @map("appeal_count_30d") @db.TinyInt
+  rejectReasonCode Int?    @map("reject_reason_code") @db.TinyInt
+  rejectReasonText String? @map("reject_reason_text") @db.Text
+
+  user User @relation(fields: [userId], references: [id])
+  verificationLogs VerificationLog[]
+  orders           Order[]
+
+  @@index([accountStatus])
+  @@index([phone])
+  @@map("purchaser")
+}
+
+/// 采购方线下核实记录（主计划 4.1）
+model VerificationLog {
+  id          BigInt   @id @default(autoincrement())
+  purchaserId BigInt   @map("purchaser_id")
+  /// 核实人（业务员/运营 user_id）
+  operatorId  BigInt   @map("operator_id")
+  /// 1电话 2上门 3视频（可多选，存 JSON 数组）
+  method      Json
+  /// 1 通过 / 2 驳回
+  result      Int      @db.TinyInt
+  /// 1执照不符 2电话无人接 3地址不实 4非餐饮 5重复申请 6资料不全 9其他
+  reasonCode  Int?     @map("reason_code") @db.TinyInt
+  reasonText  String?  @map("reason_text") @db.Text
+  /// 实地照片等附件 URL 列表
+  attachments Json?
+  durationMin Int?     @map("duration_min")
+  /// 核实人电子签名
+  signature   String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  purchaser Purchaser @relation(fields: [purchaserId], references: [id])
+
+  @@index([purchaserId])
+  @@map("verification_log")
+}
+
+model Supplier {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @unique @map("user_id")
+  stallName String   @map("stall_name") @db.VarChar(100)
+  /// 0 待审核 / 1 合作中 / 2 停合作
+  status    Int      @default(0) @db.TinyInt
+  /// 营业执照、检疫证等，⚠️ 含有效期字段，临期预警
+  qualification Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id])
+  links ProductSupplierLink[]
+  settlements Settlement[]
+  applications ProductApplication[]
+  categories SupplierCategory[]
+
+  @@map("supplier")
+}
+
+model Courier {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @unique @map("user_id")
+  /// 1 平台自营 / 2 外部申请（审核制）
+  source    Int      @default(1) @db.TinyInt
+  /// ⚠️ 黑名单按此防重复申请
+  idCardNo  String?  @unique @map("id_card_no") @db.VarChar(32)
+  /// ⚠️ 到期前 15 天预警、到期禁接单
+  healthCertExpiry DateTime? @map("health_cert_expiry") @db.Date
+  /// 常温 / 冷链（决定可接线路）
+  vehicleType Int    @default(1) @map("vehicle_type") @db.TinyInt
+  /// 试跑期标记（申请制前 7 单）
+  trialStatus Int    @default(0) @map("trial_status") @db.TinyInt
+  /// 1 正常 / 2 停用 / 9 黑名单
+  status    Int      @default(1) @db.TinyInt
+
+  /// 上线状态：0 下线 / 1 上线（仅上线可接单）
+  online     Int      @default(0) @map("online") @db.TinyInt
+  /// 接单模式：0 手动 / 1 自动接单
+  autoAccept Int      @default(0) @map("auto_accept") @db.TinyInt
+  /// 派单优先级（越小越优先，运营可设）
+  priority   Int      @default(100) @map("priority")
+  /// 同时最大派单数量限制（运营可设）
+  maxOrders  Int      @default(10) @map("max_orders")
+  /// 配送中标记：0 空闲可接单 / 1 配送中（出发后无法接新单，配送完自动恢复 0）
+  onRoute    Int      @default(0) @map("on_route") @db.TinyInt
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("courier")
+}
+
+// ══════════════════════════════════════════
+// 2. 商品域
+// ══════════════════════════════════════════
+
+model Category {
+  id       BigInt  @id @default(autoincrement())
+  name     String  @db.VarChar(50)
+  parentId BigInt? @map("parent_id")
+  sort     Int     @default(0)
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+  supplierCategories SupplierCategory[]
+
+  @@map("category")
+}
+
+/// 供应商分类授权（供应商只能在自己被授权的分类发布商品）
+model SupplierCategory {
+  id         BigInt @id @default(autoincrement())
+  supplierId BigInt @map("supplier_id")
+  categoryId BigInt @map("category_id")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([supplierId, categoryId])
+  @@map("supplier_category")
+}
+
+/// ⚠️ 版本生效制核心表
+model Product {
+  id          BigInt   @id @default(autoincrement())
+  categoryId  BigInt   @map("category_id")
+  name        String   @db.VarChar(100)
+  cover       String?  @db.VarChar(255)
+  images      Json?
+  /// 1 称重 / 2 固定规格
+  weighType   Int      @default(1) @map("weigh_type") @db.TinyInt
+  unit        String   @default("斤") @db.VarChar(10)
+  specText    String?  @map("spec_text") @db.VarChar(100)
+  /// 称重说明（采购方可见）
+  weighNote   String?  @map("weigh_note") @db.VarChar(255)
+
+  /// ⚠️ 当前生效版本的销售价（运营维护，供应商不可见）
+  salePrice   Decimal  @map("sale_price") @db.Decimal(10, 2)
+  /// 加价比例（销售价 = 供货价 × (1+rate)）
+  markupRate  Decimal  @default(0.30) @map("markup_rate") @db.Decimal(5, 4)
+
+  /// 0 下架 / 1 在售 / 2 变更审核中
+  status      Int      @default(1) @db.TinyInt
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  category Category @relation(fields: [categoryId], references: [id])
+  links    ProductSupplierLink[]
+  cartItems CartItem[]
+  orderItems OrderItem[]
+  applications ProductApplication[]
+
+  @@index([categoryId, status])
+  @@map("product")
+}
+
+/// 商品申请（新品提交 + 变更申请，审核制）
+/// 决策：供应商提交/变更均需运营审核；原版本在售至新版本生效
+model ProductApplication {
+  id         BigInt    @id @default(autoincrement())
+  /// 1 新品 / 2 变更
+  type       Int       @db.TinyInt
+  /// 变更时指向原商品；新品为 null
+  productId  BigInt?   @map("product_id")
+  supplierId BigInt    @map("supplier_id")
+  /// 申请内容（新品：全字段；变更：新值）
+  payload    Json
+  /// 变更时的新旧对照 [{ field, fieldText, oldValue, newValue }]
+  diffs      Json?
+  /// 0 待审核 / 1 通过 / 2 驳回
+  status     Int       @default(0) @db.TinyInt
+  rejectReason String? @map("reject_reason")
+  reviewedBy BigInt?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  product  Product? @relation(fields: [productId], references: [id])
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@index([supplierId, status])
+  @@index([productId])
+  @@map("product_application")
+}
+
+/// 供应商↔商品关联（供货价 + 优先级）
+model ProductSupplierLink {
+  id         BigInt  @id @default(autoincrement())
+  productId  BigInt  @map("product_id")
+  supplierId BigInt  @map("supplier_id")
+  /// ⚠️ 供货价（供应商可见，采购方绝不可见）
+  supplyPrice Decimal @map("supply_price") @db.Decimal(10, 2)
+  /// ⚠️ 日可供量：快速改此值免审核即时生效
+  dailySupply Decimal @default(0) @map("daily_supply") @db.Decimal(10, 2)
+  /// 供货优先级：1 主供 2 次供 3 备供（小数字优先）
+  priority   Int     @default(9) @db.TinyInt
+  /// 0 停供 / 1 正常
+  status     Int     @default(1) @db.TinyInt
+
+  product  Product  @relation(fields: [productId], references: [id])
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([productId, supplierId])
+  @@index([productId, priority])
+  @@map("product_supplier_link")
+}
+
+/// 购物车（采购方加购，按供应商分组展示）
+model CartItem {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  productId BigInt   @map("product_id")
+  qty       Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId])
+  @@map("cart_item")
+}
+
+// ══════════════════════════════════════════
+// 3. 订单域
+// ══════════════════════════════════════════
+
+model Order {
+  id           BigInt   @id @default(autoincrement())
+  purchaserId  BigInt   @map("purchaser_id")
+  deliveryDate DateTime @map("delivery_date") @db.Date
+  /// 1早 2中 3晚
+  timeWindow   Int      @map("time_window") @db.TinyInt
+  /// 见《开发配套①》订单状态机：10待确认 20已拆单 30备货中 40待配送 50配送中 60已送达 70已完成 90已结算 91已取消
+  status       Int      @default(10) @db.TinyInt
+  amountOrdered Decimal @default(0) @map("amount_ordered") @db.Decimal(12, 2)
+  amountFinal   Decimal? @map("amount_final") @db.Decimal(12, 2)
+  remark      String?  @db.VarChar(255)
+  /// 缺货偏好：auto_replace | partial | cancel_all
+  shortagePolicy String @default("auto_replace") @map("shortage_policy") @db.VarChar(20)
+  /// 支付方式：0 未选（待支付）/ 1 微信支付 / 2 货到付款（COD）
+  payMethod  Int      @default(0) @map("pay_method") @db.TinyInt
+  /// 1 小程序自选 / 2 AI 客服代下单（阶段 2）
+  source      Int      @default(1) @db.TinyInt
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  purchaser Purchaser    @relation(fields: [purchaserId], references: [id])
+  items     OrderItem[]
+
+  @@index([purchaserId, status])
+  @@index([deliveryDate])
+  @@map("order")
+}
+
+/// ⚠️ 五数量分别保存、互不覆盖
+model OrderItem {
+  id         BigInt  @id @default(autoincrement())
+  orderId    BigInt  @map("order_id")
+  productId  BigInt  @map("product_id")
+  /// 决策 1：核单时才写入（下单时不拆单）
+  supplierId BigInt? @map("supplier_id")
+
+  /// ① 订购数量
+  qtyOrdered  Decimal @map("qty_ordered") @db.Decimal(10, 2)
+  /// ② 申报数量（供应商备货申报，少交需填 shortageReason）
+  qtyDeclared Decimal? @map("qty_declared") @db.Decimal(10, 2)
+  /// ③ 验收数量（运营称重）—— ⚠️ 对账基数
+  qtyAccepted Decimal? @map("qty_accepted") @db.Decimal(10, 2)
+  /// ④ 分拣数量
+  qtySorted   Decimal? @map("qty_sorted") @db.Decimal(10, 2)
+  /// ⑤ 餐馆接受数量（拒收填 rejectReason）
+  qtyReceived Decimal? @map("qty_received") @db.Decimal(10, 2)
+
+  /// ⚠️ 决策 2：申报超时自动按可供量兜底标记
+  isAutoDeclared Int @default(0) @map("is_auto_declared") @db.TinyInt
+
+  shortageReason String? @map("shortage_reason") @db.VarChar(255)
+  rejectReason   String? @map("reject_reason") @db.VarChar(255)
+
+  /// ⚠️ 成交时点价格快照，不随商品改价变动
+  /// supplyPrice 在「核单拆单」时才确定（决策1），故下单时可为空
+  supplyPrice Decimal? @map("supply_price") @db.Decimal(10, 2)
+  salePrice   Decimal  @map("sale_price") @db.Decimal(10, 2)
+
+  order Order @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([supplierId])
+  @@map("order_item")
+}
+
+model DeliveryTask {
+  id        BigInt   @id @default(autoincrement())
+  courierId BigInt   @map("courier_id")
+  routeNo   String   @map("route_no") @db.VarChar(40)
+  /// 站点序列（订单、地址、顺序）
+  stationList Json   @map("station_list")
+  /// 待取货/取货中/派送中/已完成/异常
+  status    Int      @default(0) @db.TinyInt
+  /// 签收照片 + 电子签名 URL
+  proof     Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([courierId, status])
+  @@map("delivery_task")
+}
+
+// ══════════════════════════════════════════
+// 4. 资金域
+// ══════════════════════════════════════════
+
+model Settlement {
+  id         BigInt  @id @default(autoincrement())
+  supplierId BigInt  @map("supplier_id")
+  /// 如 "2026-09"
+  period     String  @db.Char(7)
+  /// ⚠️ 决策 3：基数 = Σ(验收数量 qty_accepted × 供货价)，不含拒收部分
+  grossAmount Decimal @map("gross_amount") @db.Decimal(12, 2)
+  /// ⚠️ 结算时点费率快照，改配置不追溯已生成结算单
+  serviceFeeRate Decimal @map("service_fee_rate") @db.Decimal(5, 4)
+  serviceFee   Decimal @map("service_fee") @db.Decimal(12, 2)
+  netAmount    Decimal @map("net_amount") @db.Decimal(12, 2)
+  /// 待对账/已确认/已付款
+  status     Int     @default(0) @db.TinyInt
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([supplierId, period])
+  @@map("settlement")
+}
+
+model PurchaseBill {
+  id          BigInt  @id @default(autoincrement())
+  purchaserId BigInt  @map("purchaser_id")
+  period      String  @db.Char(7)
+  /// ⚠️ 同样以 qty_accepted 为基数（拒收不收费）
+  grossAmount Decimal @map("gross_amount") @db.Decimal(12, 2)
+  paidAmount  Decimal @default(0) @map("paid_amount") @db.Decimal(12, 2)
+  status      Int     @default(0) @db.TinyInt
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([purchaserId, period])
+  @@map("purchase_bill")
+}
+
+/// 决策 3 新增：拒收差额自动生成售后工单
+model AftersaleOrder {
+  id           BigInt   @id @default(autoincrement())
+  orderId      BigInt   @map("order_id")
+  orderItemId  BigInt   @map("order_item_id")
+  /// 1 少货 / 2 品质问题 / 3 错货 / 4 其他
+  type         Int      @db.TinyInt
+  reason       String?  @db.VarChar(255)
+  /// 差异数量 = qty_accepted − qty_received
+  qtyDiff      Decimal  @map("qty_diff") @db.Decimal(10, 2)
+  /// 差异金额（已从结算/账单中剔除）
+  amountDiff   Decimal  @map("amount_diff") @db.Decimal(12, 2)
+  /// 待处理/处理中/已解决/已关闭
+  status       Int      @default(0) @db.TinyInt
+  handledBy    BigInt?  @map("handled_by")
+  handledAt    DateTime? @map("handled_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@map("aftersale_order")
+}
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  operatorId BigInt   @map("operator_id")
+  action     String   @db.VarChar(64)
+  entity     String   @db.VarChar(64)
+  entityId   BigInt   @map("entity_id")
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entity, entityId])
+  @@index([operatorId])
+  @@map("audit_log")
+}
+
+/// 平台服务费配置（全局默认 + 可选分类覆盖）
+model ServiceFeeConfig {
+  id         BigInt    @id @default(autoincrement())
+  /// null = 全局默认；非空 = 某分类覆盖
+  categoryId BigInt?   @map("category_id")
+  /// 费率（0.05 = 5%）
+  rate       Decimal   @db.Decimal(5, 4)
+  updatedBy  BigInt?   @map("updated_by")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@map("service_fee_config")
+}

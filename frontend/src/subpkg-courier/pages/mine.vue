@@ -1,0 +1,80 @@
+<template>
+  <view class="page">
+    <view class="card" v-if="profile">
+      <view class="user-row">
+        <view class="avatar">🚚</view>
+        <view class="user-main">
+          <view class="user-name">配送员</view>
+          <view class="user-phone">{{ profile.phone || '未绑定手机' }}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="list-item" @tap="t('健康证：有效期至 2026-12-31（到期前 15 天预警）')"><view class="li-ico" style="background:#E6F9F0;">📋</view><view class="li-main"><view class="li-t">证照管理</view><view class="li-d">健康证 · 驾驶证</view></view><view class="arrow">›</view></view>
+      <view class="list-item" @tap="t('培训记录：冷链规范（已通过）· 客户服务（已通过）')"><view class="li-ico" style="background:#E8F1FF;">📚</view><view class="li-main"><view class="li-t">培训记录</view><view class="li-d">冷链规范 · 客户服务</view></view><view class="arrow">›</view></view>
+      <view class="list-item" @tap="t('收入由平台统一发放，不展示订单金额')"><view class="li-ico" style="background:#FFF3E6;">💰</view><view class="li-main"><view class="li-t">收入说明</view><view class="li-d">平台统一发放</view></view><view class="arrow">›</view></view>
+      <view class="list-item" @tap="t('违规记录：本月 0 次')"><view class="li-ico" style="background:#FFEDED;">⚠️</view><view class="li-main"><view class="li-t">违规记录</view><view class="li-d">本月 0 次</view></view><view class="arrow">›</view></view>
+    </view>
+
+    <!-- 身份切换 -->
+    <view class="card" v-if="profile && profile.roles && profile.roles.length > 1">
+      <view class="card-title">切换身份</view>
+      <view v-for="r in profile.roles" :key="r" class="list-item" @tap="switchRole(r)">
+        <view class="li-ico">{{ roleIcon(r) }}</view>
+        <view class="li-main"><view class="li-t">{{ roleName(r) }}</view></view>
+        <view class="tag" v-if="r === profile.currentRole">当前</view>
+      </view>
+    </view>
+
+    <view class="row-btns"><view class="pbtn" @tap="logout">退出登录</view></view>
+
+    <CustomTabBar :tabs="courierTabs" active="/subpkg-courier/pages/mine" />
+  </view>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { authApi } from '@/api/modules'
+import CustomTabBar from '@/components/CustomTabBar.vue'
+
+const profile = ref(null)
+const t = (msg) => uni.showToast({ title: msg, icon: 'none' })
+const roleName = (r) => ({ purchaser: '采购方', supplier: '供应商', courier: '配送员', admin: '运营' }[r] || r)
+const roleIcon = (r) => ({ purchaser: '🏪', supplier: '🥕', courier: '🚚', admin: '⚙️' }[r] || '👤')
+
+const courierTabs = [
+  { path: '/subpkg-courier/pages/home', icon: '📋', label: '今日任务' },
+  { path: '/subpkg-courier/pages/task-detail', icon: '🧭', label: '配送' },
+  { path: '/subpkg-courier/pages/deliver', icon: '✅', label: '交付' },
+  { path: '/subpkg-courier/pages/mine', icon: '👤', label: '我的' },
+]
+
+onShow(() => {
+  uni.hideTabBar({ animation: false })
+})
+
+const switchRole = async (r) => {
+  const data = await authApi.switchRole(r)
+  uni.setStorageSync('token', data.token)
+  uni.setStorageSync('currentRole', data.currentRole)
+  const homeMap = { purchaser: '/pages/buyer/home', supplier: '/subpkg-supplier/pages/home', courier: '/subpkg-courier/pages/home' }
+  uni.reLaunch({ url: homeMap[r] || '/pages/buyer/home' })
+}
+
+const logout = () => {
+  uni.removeStorageSync('token'); uni.removeStorageSync('currentRole')
+  uni.reLaunch({ url: '/pages/buyer/home' })
+}
+
+onMounted(async () => { try { profile.value = await authApi.getProfile() } catch (e) {} })
+</script>
+
+<style lang="scss" scoped>
+.page { padding-bottom: 70px; }
+.user-row { display: flex; align-items: center; gap: 12px; }
+.avatar { width: 48px; height: 48px; border-radius: 50%; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.user-name { font-size: 16px; font-weight: 700; color: $text-title; }
+.user-phone { font-size: 12px; color: $text-second; margin-top: 3px; }
+</style>

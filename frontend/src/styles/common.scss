@@ -1,0 +1,183 @@
+/**
+ * 公共组件样式（从原型 CSS 提取并转为 uni-app 类名）
+ * 原型类名 -> uni-app 直接沿用：card / notice / section-title /
+ *   list-item / tag / chip / form-row / pbtn / gbtn / stepper
+ * 使用：view class="card"，与原型 HTML 结构一一对应
+ */
+
+/* ── 页面容器 ── */
+.page {
+  min-height: 100vh;
+  padding: $gap-3;
+  background: $bg-page;
+  box-sizing: border-box;
+}
+
+/* ── 卡片 ── */
+.card {
+  background: $bg-card;
+  border-radius: $radius-lg;
+  padding: $gap-3;
+  margin-bottom: $gap-3;
+  box-shadow: $shadow-card;
+}
+.card-title {
+  font-size: $font-base;
+  font-weight: 700;
+  color: $text-title;
+  margin-bottom: $gap-1;
+}
+
+/* ── 提示条（权限边界/规则说明，原型 .notice） ── */
+.notice {
+  background: #FFF7E8;
+  border: 1px solid #FFE4BA;
+  border-radius: $radius;
+  padding: $gap-2;
+  font-size: $font-sm;
+  color: #B26A00;
+  line-height: 1.6;
+  margin-bottom: $gap-3;
+}
+
+/* ── 区块标题 ── */
+.section-title {
+  font-size: $font-base;
+  font-weight: 700;
+  color: $text-title;
+  margin: $gap-2 0;
+}
+
+/* ── 列表项（原型 .list-item） ── */
+.list-item {
+  display: flex;
+  align-items: center;
+  background: $bg-card;
+  border-radius: $radius-lg;
+  padding: $gap-3;
+  margin-bottom: $gap-2;
+}
+.li-ico {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+  margin-right: $gap-2;
+}
+.li-main { flex: 1; min-width: 0; }
+.li-t { font-size: $font-md; font-weight: 600; color: $text-title; }
+.li-d { font-size: $font-sm; color: $text-second; margin-top: 2px; line-height: 1.5; }
+
+/* ── 状态标签（原型 .tag g/o/r/b） ── */
+.tag {
+  font-size: $font-xs;
+  padding: 2px 8px;
+  border-radius: $radius-round;
+  flex-shrink: 0;
+  &.g { background: $brand-soft; color: $brand-deep; }   // 已上架/已完成/在售
+  &.o { background: $warn-soft; color: $warn; }           // 待审核/变更审核中/备货中
+  &.r { background: $danger-soft; color: $danger; }       // 已驳回/异常/拒收
+  &.b { background: $info-soft; color: $info; }           // 信息类/配送中
+}
+
+/* ── 筛选 chips（原型 .chip-group / .chip） ── */
+.chip-group { display: flex; flex-wrap: wrap; gap: $gap-2; }
+.chip {
+  font-size: $font-sm;
+  padding: 4px 12px;
+  border-radius: $radius-round;
+  background: $bg-soft;
+  color: $text-second;
+  border: 1px solid $border;
+  &.on {
+    background: $brand-soft;
+    color: $brand-deep;
+    border-color: $brand-deep;
+    font-weight: 600;
+  }
+}
+
+/* ── 表单行（原型 .form-row） ── */
+.form-row {
+  display: flex;
+  align-items: center;
+  padding: $gap-2 0;
+  border-bottom: 1px solid $border;
+  &:last-child { border-bottom: none; }
+}
+.fr-l { width: 90px; font-size: $font-base; color: $text-body; flex-shrink: 0; }
+.fr-r { flex: 1; font-size: $font-base; }
+
+/* ── 输入框 ── */
+.ipt {
+  width: 100%;
+  background: $bg-soft;
+  border: 1px solid $border;
+  border-radius: $radius;
+  padding: 8px 10px;
+  font-size: $font-base;
+  color: $text-title;
+  box-sizing: border-box;
+}
+
+/* ── 按钮（原型 .pbtn） ── */
+.pbtn {
+  flex: 1;
+  text-align: center;
+  padding: 10px 0;
+  border-radius: $radius-round;
+  font-size: $font-base;
+  font-weight: 600;
+  background: $bg-soft;
+  color: $text-body;
+  &.primary { background: $brand; color: #fff; }
+  &.danger { background: $danger; color: #fff; }
+  &.ghost { background: transparent; border: 1px solid $border-strong; }
+}
+.row-btns { display: flex; gap: $gap-2; margin: $gap-3 0; }
+
+/* ── 九宫格快捷入口（原型 .gbtn/.gi/.gt） ── */
+.grid-btns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $gap-3;
+}
+.gbtn { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.gi {
+  width: 52px;
+  height: 52px;
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+.gt { font-size: $font-sm; color: $text-body; }
+
+/* ── 步进器（原型 stepper：− 数量 ＋） ── */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: $gap-2;
+}
+.st-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: $brand-soft;
+  color: $brand-deep;
+  font-size: $font-md;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.st-num { min-width: 36px; text-align: center; font-size: $font-md; font-weight: 600; }
+
+/* ── 金额 ── */
+.price { color: $danger; font-weight: 700; }
+.muted { color: $text-second; font-size: $font-sm; }

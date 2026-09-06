@@ -1,0 +1,76 @@
+import { Controller, Get, Post, Body, Param } from '@nestjs/common'
+import { CourierService } from './courier.service'
+import { DeliverDto, ReportDto } from './dto/courier.dto'
+import { SetOnlineDto, SetAutoAcceptDto } from './dto/courier-setting.dto'
+import { CurrentUser } from '../../common/decorators/current-user.decorator'
+import { Roles, Role } from '../../common/decorators/roles.decorator'
+
+/// 配送员（契约《开发配套-API接口字段契约》第 8 节）
+/// ⚠️ 权限铁律：配送员不碰钱，所有接口不返回金额字段
+@Controller('courier')
+export class CourierController {
+  constructor(private readonly service: CourierService) {}
+
+  /// 今日任务与站点序列
+  @Get('today-tasks')
+  @Roles(Role.COURIER)
+  async todayTasks(@CurrentUser('userId') userId: bigint) {
+    return this.service.todayTasks(userId)
+  }
+
+  /// 扫码取货
+  @Post('task/:taskId/pickup')
+  @Roles(Role.COURIER)
+  async pickup(@CurrentUser('userId') userId: bigint, @Param('taskId') taskId: string) {
+    return this.service.pickup(userId, Number(taskId))
+  }
+
+  /// 交付确认（拍照+签名）
+  @Post('task/:taskId/deliver')
+  @Roles(Role.COURIER)
+  async deliver(@CurrentUser('userId') userId: bigint, @Param('taskId') taskId: string, @Body() dto: DeliverDto) {
+    return this.service.deliver(userId, Number(taskId), dto)
+  }
+
+  /// 异常上报
+  @Post('report')
+  @Roles(Role.COURIER)
+  async report(@CurrentUser('userId') userId: bigint, @Body() dto: ReportDto) {
+    return this.service.report(userId, dto)
+  }
+
+  /// 收款协助（仅支付码+标记，不作核销）
+  @Post('order/:orderId/mark-paid')
+  @Roles(Role.COURIER)
+  async markPaid(@CurrentUser('userId') userId: bigint, @Param('orderId') orderId: string) {
+    return this.service.markPaid(userId, Number(orderId))
+  }
+
+  /// 接单状态查询（上下线 / 接单模式 / 配送中 / 任务数）
+  @Get('status')
+  @Roles(Role.COURIER)
+  async status(@CurrentUser('userId') userId: bigint) {
+    return this.service.getStatus(userId)
+  }
+
+  /// 上下线
+  @Post('online')
+  @Roles(Role.COURIER)
+  async setOnline(@CurrentUser('userId') userId: bigint, @Body() dto: SetOnlineDto) {
+    return this.service.setOnline(userId, dto.online)
+  }
+
+  /// 接单模式
+  @Post('auto-accept')
+  @Roles(Role.COURIER)
+  async setAutoAccept(@CurrentUser('userId') userId: bigint, @Body() dto: SetAutoAcceptDto) {
+    return this.service.setAutoAccept(userId, dto.autoAccept)
+  }
+
+  /// 出发（进入配送中，无法接新单）
+  @Post('depart')
+  @Roles(Role.COURIER)
+  async depart(@CurrentUser('userId') userId: bigint) {
+    return this.service.depart(userId)
+  }
+}
