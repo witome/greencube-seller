@@ -153,6 +153,16 @@ export class AdminUserService {
       },
     })
 
+    // 铁律 3：审核属关键操作，全量写审计（2026-09-10 补，修复单缺陷 4）
+    await this.audit.log({
+      operatorId,
+      action: 'REVIEW_BUYER',
+      entity: 'buyer',
+      entityId: id,
+      before: { accountStatus: p.accountStatus, shopName: p.shopName },
+      after: { accountStatus: nextStatus, result: dto.result, reasonCode: dto.reasonCode ?? null },
+    })
+
     return { purchaserId: Number(p.id), accountStatus: nextStatus, verificationId: 0 }
   }
 
@@ -167,6 +177,16 @@ export class AdminUserService {
     await this.prisma.purchaser.update({
       where: { id: p.id },
       data: { accountStatus: nextStatus, verifiedBy: operatorId, verifiedAt: new Date() },
+    })
+
+    // 铁律 3：申诉复核属关键操作，全量写审计（2026-09-10 补，修复单缺陷 4）
+    await this.audit.log({
+      operatorId,
+      action: 'REVIEW_BUYER_APPEAL',
+      entity: 'buyer',
+      entityId: id,
+      before: { accountStatus: p.accountStatus, shopName: p.shopName },
+      after: { accountStatus: nextStatus, approved: dto.approved },
     })
 
     return { purchaserId: Number(p.id), accountStatus: nextStatus }
