@@ -4,6 +4,7 @@ import { CreateOrderDto } from './dto/create-order.dto'
 import { ReceiveOrderDto } from './dto/receive-order.dto'
 import { UpdateOrderDto } from './dto/update-order.dto'
 import { PayOrderDto } from './dto/pay-order.dto'
+import { SetUrgentDto } from './dto/set-urgent.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -59,5 +60,12 @@ export class OrderController {
   @Roles(Role.PURCHASER)
   async pay(@CurrentUser('userId') userId: bigint, @Param('id') id: string, @Body() dto: PayOrderDto) {
     return this.service.pay(userId, Number(id), dto)
+  }
+
+  /// 加急 / 取消加急（仅待确认未支付）
+  @Post(':id/urgent')
+  @Roles(Role.PURCHASER)
+  async setUrgent(@CurrentUser('userId') userId: bigint, @Param('id') id: string, @Body() dto: SetUrgentDto) {
+    return this.service.setUrgent(userId, Number(id), dto.urgent)
   }
 }

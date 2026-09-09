@@ -3,10 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode } from '../../common/constants/error-codes'
 import { ReviewApplyDto } from './dto/review-apply.dto'
 import { ReviewChangeDto } from './dto/review-change.dto'
+import { SetPriorityDto } from './dto/set-priority.dto'
+import { CreateProductDto } from './dto/create-product.dto'
+import { UpdateProductDto } from './dto/update-product.dto'
+import { AuditService } from '../audit/audit.service'
 
 @Injectable()
 export class AdminGoodsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   // ────────────────────────────────────────
   // 待审核新品（type=1, status=0）
@@ -90,6 +94,15 @@ export class AdminGoodsService {
         }),
       ])
 
+      await this.audit.log({
+        operatorId,
+        action: 'REVIEW_GOODS_APPLY',
+        entity: 'product_application',
+        entityId: applyId,
+        before: { status: 0 },
+        after: { status: 1, salePrice },
+      })
+
       return { applyId, status: 'approved', salePrice }
     } else {
       if (!dto.rejectReason) throw new BizException(ErrorCode.PARAM_ERROR, '驳回需填写原因')
@@ -97,6 +110,16 @@ export class AdminGoodsService {
         where: { id: app.id },
         data: { status: 2, rejectReason: dto.rejectReason, reviewedBy: operatorId, reviewedAt: new Date() },
       })
+
+      await this.audit.log({
+        operatorId,
+        action: 'REVIEW_GOODS_APPLY',
+        entity: 'product_application',
+        entityId: applyId,
+        before: { status: 0 },
+        after: { status: 2, rejectReason: dto.rejectReason },
+      })
+
       return { applyId, status: 'rejected' }
     }
   }
@@ -154,12 +177,31 @@ export class AdminGoodsService {
         }),
       ])
 
+      await this.audit.log({
+        operatorId,
+        action: 'REVIEW_GOODS_CHANGE',
+        entity: 'product_application',
+        entityId: changeId,
+        before: { status: 0 },
+        after: { status: 1, newSalePrice },
+      })
+
       return { changeId, status: 'approved', newSalePrice }
     } else {
       await this.prisma.productApplication.update({
         where: { id: app.id },
         data: { status: 2, rejectReason: dto.comment, reviewedBy: operatorId, reviewedAt: new Date() },
       })
+
+      await this.audit.log({
+        operatorId,
+        action: 'REVIEW_GOODS_CHANGE',
+        entity: 'product_application',
+        entityId: changeId,
+        before: { status: 0 },
+        after: { status: 2, rejectReason: dto.comment },
+      })
+
       return { changeId, status: 'rejected' }
     }
   }
@@ -186,5 +228,225 @@ export class AdminGoodsService {
         status: l.status,
       })),
     }
+  }
+
+  // ────────────────────────────────────────
+  // 设置供货优先级（同一商品多供应商排序，越小越优先）
+  // ────────────────────────────────────────
+  async setPriority(productId: number, operatorId: bigint, dto: SetPriorityDto) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: BigInt(productId) },
+      include: { links: true },
+    })
+    if (!product) throw new BizException(ErrorCode.NOT_FOUND, '商品不存在')
+
+    // 校验输入的 supplierId 都属于该商品的供货关系
+    const validIds = new Set(product.links.map((l) => Number(l.supplierId)))
+    for (const it of dto.items) {
+      if (!validIds.has(it.supplierId)) {
+        throw new BizException(ErrorCode.PARAM_ERROR, `供应商 ${it.supplierId} 不供应该商品`)
+      }
+    }
+
+    const before = product.links.map((l) => ({ supplierId: Number(l.supplierId), priority: l.priority }))
+
+    await this.prisma.$transaction(
+      dto.items.map((it) =>
+        this.prisma.productSupplierLink.update({
+          where: { productId_supplierId: { productId: BigInt(productId), supplierId: BigInt(it.supplierId) } },
+          data: { priority: it.priority },
+        }),
+      ),
+    )
+
+    await this.audit.log({
+      operatorId,
+      action: 'SET_SUPPLY_PRIORITY',
+      entity: 'product',
+      entityId: productId,
+      before: { priorities: before },
+      after: { priorities: dto.items },
+    })
+
+    return { productId, updated: dto.items.length }
+  }
+
+  // ────────────────────────────────────────
+  // 商品管理：在售/下架商品列表（含主供供应商、搜索、分类/状态筛选、分页）
+  // ────────────────────────────────────────
+  async listProducts(query: { keyword?: string; categoryId?: string; status?: string; page?: string; pageSize?: string }) {
+    const page = Math.max(1, parseInt(query.page || '1'))
+    const pageSize = Math.min(100, Math.max(1, parseInt(query.pageSize || '20')))
+    const where: any = {}
+    if (query.keyword) where.name = { contains: query.keyword }
+    if (query.categoryId) where.categoryId = BigInt(parseInt(query.categoryId))
+    if (query.status !== undefined && query.status !== '') where.status = parseInt(query.status)
+
+    const [total, rows] = await Promise.all([
+      this.prisma.product.count({ where }),
+      this.prisma.product.findMany({
+        where,
+        orderBy: { id: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          category: true,
+          links: { orderBy: { priority: 'asc' }, include: { supplier: true } },
+        },
+      }),
+    ])
+
+    const list = rows.map((p) => {
+      const primary = p.links[0]
+      return {
+        productId: Number(p.id),
+        name: p.name,
+        categoryName: p.category.name,
+        weighType: p.weighType,
+        unit: p.unit,
+        specText: p.specText,
+        salePrice: Number(p.salePrice),
+        markupRate: Number(p.markupRate),
+        status: p.status,
+        supplierCount: p.links.length,
+        primarySupplier: primary
+          ? {
+              supplierId: Number(primary.supplierId),
+              supplierName: primary.supplier.stallName,
+              supplyPrice: Number(primary.supplyPrice),
+              dailySupply: Number(primary.dailySupply),
+            }
+          : null,
+      }
+    })
+
+    return { total, list }
+  }
+
+  // ────────────────────────────────────────
+  // 上下架（0 下架 / 1 上架）
+  // ────────────────────────────────────────
+  async updateProductStatus(productId: number, status: number, operatorId: bigint) {
+    const product = await this.prisma.product.findUnique({ where: { id: BigInt(productId) } })
+    if (!product) throw new BizException(ErrorCode.NOT_FOUND, '商品不存在')
+    if (![0, 1].includes(status)) throw new BizException(ErrorCode.PARAM_ERROR, '状态值不合法（0 下架 / 1 上架）')
+
+    await this.prisma.product.update({ where: { id: BigInt(productId) }, data: { status } })
+
+    await this.audit.log({
+      operatorId,
+      action: status === 1 ? 'PRODUCT_ON_SHELF' : 'PRODUCT_OFF_SHELF',
+      entity: 'product',
+      entityId: productId,
+      before: { status: product.status },
+      after: { status },
+    })
+
+    return { productId, status }
+  }
+
+  // ────────────────────────────────────────
+  // 新增商品（归属供应商 + 供货价 + 加价比例 + 规格，创建商品 + 供货关系）
+  // ────────────────────────────────────────
+  async createProduct(operatorId: bigint, dto: CreateProductDto) {
+    const supplier = await this.prisma.supplier.findUnique({ where: { id: BigInt(dto.supplierId) } })
+    if (!supplier) throw new BizException(ErrorCode.PARAM_ERROR, '供应商不存在')
+
+    const markupRate = dto.markupRate ?? 0.3
+    const salePrice = dto.salePrice !== undefined
+      ? dto.salePrice
+      : Math.round(dto.supplyPrice * (1 + markupRate) * 100) / 100
+
+    const product = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.product.create({
+        data: {
+          categoryId: BigInt(dto.categoryId),
+          name: dto.name,
+          weighType: dto.weighType,
+          unit: dto.unit ?? '斤',
+          specText: dto.specText,
+          salePrice,
+          markupRate,
+          status: 1,
+        },
+      })
+      await tx.productSupplierLink.create({
+        data: {
+          productId: p.id,
+          supplierId: BigInt(dto.supplierId),
+          supplyPrice: dto.supplyPrice,
+          dailySupply: dto.dailySupply,
+          priority: 1,
+          status: 1,
+        },
+      })
+      return p
+    })
+
+    await this.audit.log({
+      operatorId,
+      action: 'PRODUCT_CREATE',
+      entity: 'product',
+      entityId: Number(product.id),
+      before: null,
+      after: { name: dto.name, supplierId: dto.supplierId, supplyPrice: dto.supplyPrice, salePrice },
+    })
+
+    return { productId: Number(product.id), name: dto.name, salePrice }
+  }
+
+  // ────────────────────────────────────────
+  // 编辑商品（名称/规格/供货价/加价比例/销售价/可供量）
+  // ────────────────────────────────────────
+  async updateProduct(productId: number, operatorId: bigint, dto: UpdateProductDto) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: BigInt(productId) },
+      include: { links: { orderBy: { priority: 'asc' } } },
+    })
+    if (!product) throw new BizException(ErrorCode.NOT_FOUND, '商品不存在')
+
+    const productUpdate: any = {}
+    if (dto.name !== undefined) productUpdate.name = dto.name
+    if (dto.weighType !== undefined) productUpdate.weighType = dto.weighType
+    if (dto.unit !== undefined) productUpdate.unit = dto.unit
+    if (dto.specText !== undefined) productUpdate.specText = dto.specText
+    if (dto.markupRate !== undefined) productUpdate.markupRate = dto.markupRate
+
+    if (dto.salePrice !== undefined) {
+      productUpdate.salePrice = dto.salePrice
+    } else if (dto.markupRate !== undefined || dto.supplyPrice !== undefined) {
+      // 供货价或加价比例变动时，若无显式销售价，按「主供供货价 × (1+加价比例)」重算
+      const primary = product.links[0]
+      const newSupply = dto.supplyPrice !== undefined ? dto.supplyPrice : (primary ? Number(primary.supplyPrice) : 0)
+      const newRate = dto.markupRate !== undefined ? dto.markupRate : Number(product.markupRate)
+      productUpdate.salePrice = Math.round(newSupply * (1 + newRate) * 100) / 100
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(productUpdate).length) {
+        await tx.product.update({ where: { id: BigInt(productId) }, data: productUpdate })
+      }
+      const primary = product.links[0]
+      if (primary && (dto.supplyPrice !== undefined || dto.dailySupply !== undefined)) {
+        await tx.productSupplierLink.update({
+          where: { id: primary.id },
+          data: {
+            ...(dto.supplyPrice !== undefined ? { supplyPrice: dto.supplyPrice } : {}),
+            ...(dto.dailySupply !== undefined ? { dailySupply: dto.dailySupply } : {}),
+          },
+        })
+      }
+    })
+
+    await this.audit.log({
+      operatorId,
+      action: 'PRODUCT_UPDATE',
+      entity: 'product',
+      entityId: productId,
+      before: { name: product.name, salePrice: Number(product.salePrice), markupRate: Number(product.markupRate) },
+      after: productUpdate,
+    })
+
+    return { productId, updated: true }
   }
 }

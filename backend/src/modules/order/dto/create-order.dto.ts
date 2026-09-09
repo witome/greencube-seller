@@ -7,6 +7,11 @@ class OrderItemInput {
 
   @IsNumber({}, { message: 'qty 必须为数字' })
   qty: number
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  remark?: string
 }
 
 /// 下单（契约《开发配套-API接口字段契约》第 5 节）
@@ -26,6 +31,10 @@ export class CreateOrderDto {
   @IsOptional()
   @IsIn(['auto_replace', 'partial', 'cancel_all'], { message: '缺货偏好非法' })
   shortagePolicy?: string
+
+  @IsOptional()
+  @IsIn([0, 1], { message: '加急标记非法' })
+  urgent?: number // 0 普通 / 1 加急
 
   @IsArray()
   @ArrayMinSize(1, { message: '至少一个商品' })

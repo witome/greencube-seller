@@ -22,6 +22,10 @@ export class ReportDto {
   @IsInt()
   taskId?: number
 
+  @IsOptional()
+  @IsInt()
+  orderId?: number
+
   /// 缺货/拒收/客户不在/车辆故障 等
   @IsString()
   @MaxLength(255)

@@ -12,12 +12,9 @@
         <el-menu-item index="/dashboard">
           <el-icon><Odometer /></el-icon><span>工作台</span>
         </el-menu-item>
-        <el-sub-menu index="buyers">
-          <template #title>
-            <el-icon><User /></el-icon><span>采购方管理</span>
-          </template>
-          <el-menu-item index="/buyers">采购方列表</el-menu-item>
-        </el-sub-menu>
+        <el-menu-item index="/buyers">
+          <el-icon><User /></el-icon><span>采购方管理</span>
+        </el-menu-item>
         <el-menu-item index="/suppliers">
           <el-icon><Shop /></el-icon><span>供应商管理</span>
         </el-menu-item>
@@ -27,8 +24,14 @@
         <el-menu-item index="/goods">
           <el-icon><Goods /></el-icon><span>商品审核</span>
         </el-menu-item>
+        <el-menu-item index="/goods-manage">
+          <el-icon><Box /></el-icon><span>商品管理</span>
+        </el-menu-item>
         <el-menu-item index="/categories">
           <el-icon><Menu /></el-icon><span>分类管理</span>
+        </el-menu-item>
+        <el-menu-item index="/pricing">
+          <el-icon><PriceTag /></el-icon><span>价格与加价</span>
         </el-menu-item>
         <el-menu-item index="/order">
           <el-icon><Tickets /></el-icon><span>订单履约</span>
@@ -41,6 +44,12 @@
         </el-menu-item>
         <el-menu-item index="/audit">
           <el-icon><Document /></el-icon><span>审计日志</span>
+        </el-menu-item>
+        <el-menu-item index="/reports">
+          <el-icon><TrendCharts /></el-icon><span>报表</span>
+        </el-menu-item>
+        <el-menu-item index="/settings">
+          <el-icon><Setting /></el-icon><span>系统设置</span>
         </el-menu-item>
       </el-menu>
     </el-aside>

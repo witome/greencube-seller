@@ -11,6 +11,12 @@ export const authApi = {
   getProfile: () => get('/auth/profile'),
 }
 
+/* ── 供应商 / 配送员注册（采购方注册见 buyerApi.register）── */
+export const registerApi = {
+  supplier: (data) => post('/register/supplier', data),
+  courier: (data) => post('/register/courier', data),
+}
+
 /* ── 采购方端 ── */
 export const buyerApi = {
   // 注册与审核（详见主计划 4.1）
@@ -34,6 +40,7 @@ export const buyerApi = {
   receiveOrder: (id, data) => post(`/order/${id}/receive`, data), // 逐项接受/拒收
   updateOrder: (id, data) => post(`/order/${id}/update`, data),   // 编辑待确认订单（覆盖式）
   payOrder: (id, payMethod) => post(`/order/${id}/pay`, { payMethod }), // 1 微信支付 / 2 货到付款
+  setUrgent: (id, urgent) => post(`/order/${id}/urgent`, { urgent }), // 加急 1 / 取消加急 0
   // 对账单/售后
   getBill: (period) => get(`/buyer/bill/${period}`),
   submitAftersale: (data) => post('/buyer/aftersale', data),
@@ -74,7 +81,9 @@ export const supplierApi = {
 /* ── 配送员端 ── */
 export const courierApi = {
   getTodayTasks: () => get('/courier/today-tasks'),
+  getTaskAmount: (taskId) => get(`/courier/task/${taskId}/amount`), // 任务订单总金额（交付核对）
   pickupScan: (taskId) => post(`/courier/task/${taskId}/pickup`),
+  pickupOrder: (orderId) => post(`/courier/order/${orderId}/pickup`), // 订单级取货
   deliverConfirm: (taskId, data) => post(`/courier/task/${taskId}/deliver`, data), // 拍照+签名
   report: (data) => post('/courier/report', data),
   markPaid: (orderId) => post(`/courier/order/${orderId}/mark-paid`), // 仅标记不作核销

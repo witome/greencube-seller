@@ -18,11 +18,25 @@ export class CourierController {
     return this.service.todayTasks(userId)
   }
 
+  /// 任务订单总金额（交付确认时供配送员与采购方核对）
+  @Get('task/:taskId/amount')
+  @Roles(Role.COURIER)
+  async taskAmount(@CurrentUser('userId') userId: bigint, @Param('taskId') taskId: string) {
+    return this.service.taskAmount(userId, Number(taskId))
+  }
+
   /// 扫码取货
   @Post('task/:taskId/pickup')
   @Roles(Role.COURIER)
   async pickup(@CurrentUser('userId') userId: bigint, @Param('taskId') taskId: string) {
     return this.service.pickup(userId, Number(taskId))
+  }
+
+  /// 扫码取货（订单级）
+  @Post('order/:orderId/pickup')
+  @Roles(Role.COURIER)
+  async pickupOrder(@CurrentUser('userId') userId: bigint, @Param('orderId') orderId: string) {
+    return this.service.pickupOrder(userId, Number(orderId))
   }
 
   /// 交付确认（拍照+签名）

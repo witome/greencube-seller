@@ -109,6 +109,8 @@ model Supplier {
   id        BigInt   @id @default(autoincrement())
   userId    BigInt   @unique @map("user_id")
   stallName String   @map("stall_name") @db.VarChar(100)
+  /// 档口地址
+  address   String?  @map("address") @db.VarChar(255)
   /// 0 待审核 / 1 合作中 / 2 停合作
   status    Int      @default(0) @db.TinyInt
   /// 营业执照、检疫证等，⚠️ 含有效期字段，临期预警
@@ -135,6 +137,12 @@ model Courier {
   healthCertExpiry DateTime? @map("health_cert_expiry") @db.Date
   /// 常温 / 冷链（决定可接线路）
   vehicleType Int    @default(1) @map("vehicle_type") @db.TinyInt
+  /// 是否自有车辆：0 无 / 1 有
+  ownVehicle Int    @default(0) @map("own_vehicle") @db.TinyInt
+  /// 是否有驾驶证：0 无 / 1 有
+  hasDriverLicense Int @default(0) @map("has_driver_license") @db.TinyInt
+  /// 驾驶证类型（C1/C2/B2/A1/A2/D 等）
+  licenseType String? @map("license_type") @db.VarChar(20)
   /// 试跑期标记（申请制前 7 单）
   trialStatus Int    @default(0) @map("trial_status") @db.TinyInt
   /// 1 正常 / 2 停用 / 9 黑名单
@@ -303,11 +311,15 @@ model Order {
   status       Int      @default(10) @db.TinyInt
   amountOrdered Decimal @default(0) @map("amount_ordered") @db.Decimal(12, 2)
   amountFinal   Decimal? @map("amount_final") @db.Decimal(12, 2)
+  /// 运费（满额免运费/次日达免运费规则计算，0 表示免运费）
+  deliveryFee   Decimal @default(0) @map("delivery_fee") @db.Decimal(10, 2)
   remark      String?  @db.VarChar(255)
   /// 缺货偏好：auto_replace | partial | cancel_all
   shortagePolicy String @default("auto_replace") @map("shortage_policy") @db.VarChar(20)
   /// 支付方式：0 未选（待支付）/ 1 微信支付 / 2 货到付款（COD）
   payMethod  Int      @default(0) @map("pay_method") @db.TinyInt
+  /// 是否加急：0 普通 / 1 加急（加急收取加急运费）
+  urgent     Int      @default(0) @db.TinyInt
   /// 1 小程序自选 / 2 AI 客服代下单（阶段 2）
   source      Int      @default(1) @db.TinyInt
   createdAt   DateTime @default(now()) @map("created_at")
@@ -345,6 +357,8 @@ model OrderItem {
 
   shortageReason String? @map("shortage_reason") @db.VarChar(255)
   rejectReason   String? @map("reject_reason") @db.VarChar(255)
+  /// 商品备注（采购方下单时对该单品的备注，如"切块""要嫩"）
+  remark        String? @map("remark") @db.VarChar(255)
 
   /// ⚠️ 成交时点价格快照，不随商品改价变动
   /// supplyPrice 在「核单拆单」时才确定（决策1），故下单时可为空
@@ -369,10 +383,29 @@ model DeliveryTask {
   status    Int      @default(0) @db.TinyInt
   /// 签收照片 + 电子签名 URL
   proof     Json?
+  /// 交付完成时间（用于「今日已完成」筛选）
+  completedAt DateTime? @map("completed_at")
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([courierId, status])
   @@map("delivery_task")
+}
+
+/// 配送异常工单（配送员上报后生成，运营后台处理）
+model DeliveryException {
+  id             BigInt    @id @default(autoincrement())
+  deliveryTaskId BigInt?   @map("delivery_task_id")
+  courierId      BigInt    @map("courier_id")
+  orderId        BigInt?   @map("order_id")
+  reason         String    @db.VarChar(255)
+  /// 0 待处理 / 1 已处理
+  status         Int       @default(0) @db.TinyInt
+  handledBy      BigInt?   @map("handled_by")
+  handledAt      DateTime? @map("handled_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([status])
+  @@map("delivery_exception")
 }
 
 // ══════════════════════════════════════════
@@ -462,4 +495,13 @@ model ServiceFeeConfig {
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
   @@map("service_fee_config")
+}
+
+/// 平台通用配置（key-value：运费规则等）
+model PlatformConfig {
+  key       String   @id @db.VarChar(64)
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_config")
 }

@@ -29,26 +29,71 @@
 
     <view class="home-head">
       <view class="hello">🚚 配送任务</view>
-      <view class="addr">今日共 {{ tasks.length }} 个任务</view>
+      <view class="addr">进行中 {{ activeTasks.length }} 个 · 已完成 {{ doneTasks.length }} 单</view>
     </view>
 
-    <view v-for="t in tasks" :key="t.taskId" class="task-card" @tap="goDetail(t.taskId)">
+    <view v-for="t in activeTasks" :key="t.taskId" class="task-card">
       <view class="tc-head">
         <text class="tc-route">{{ t.routeNo }}</text>
-        <text :class="['tag', statusClass(t.status)]">{{ statusText(t.status) }}</text>
+        <text :class="['tag', statusClass(t.status)]">{{ taskStatusText(t) }}</text>
       </view>
-      <view class="tc-stations">{{ t.stationList?.length || 0 }} 站</view>
+      <view class="tc-stations">{{ deliverStations(t).length }} 件货物 · {{ pickedCount(t) }}/{{ deliverStations(t).length }} 已取</view>
+      <!-- 货物（订单）列表：取货 + 异常上报 + 已取状态 -->
+      <view v-for="s in deliverStations(t)" :key="s.orderId" :class="['cargo-item', { abnormal: s.abnormal }]">
+        <view class="cargo-main">
+          <view class="cargo-name">{{ s.shopName }}<text v-if="s.abnormal" class="cargo-abnormal-tag">异常</text></view>
+          <view class="cargo-addr">{{ s.address }}</view>
+          <view v-if="s.items && s.items.length" class="cargo-items">{{ s.items.map(i => `${i.name}×${i.qty}${i.unit}`).join('、') }}</view>
+        </view>
+        <view class="cargo-ops">
+          <text v-if="s.abnormal" class="cargo-abnormal">⚠️ 异常</text>
+          <text v-else-if="s.picked" class="cargo-picked">✓ 已取</text>
+          <view v-else class="cargo-btn pickup" @tap="doPickup(s.orderId)">取货</view>
+          <view v-if="!s.abnormal" class="cargo-btn report" @tap="doReport(t, s)">异常上报</view>
+        </view>
+      </view>
+      <!-- 底部操作：取货 → 出发 → 交付确认；异常任务可「完成」 -->
+      <view class="cargo-actions">
+        <view v-if="t.status === 0" class="cargo-deliver pickup" @tap="doPickupAll(t)">📦 取货</view>
+        <view v-if="t.status === 1" class="cargo-deliver wait">⏳ 待出发</view>
+        <view v-if="t.status === 2" class="cargo-deliver" @tap="goDeliver(t)">✅ 交付确认</view>
+        <view v-if="t.status === 4" class="cargo-deliver done" @tap="goDeliver(t)">✅ 完成异常任务</view>
+      </view>
     </view>
-    <view v-if="!tasks.length" class="empty">今日暂无配送任务</view>
+    <view v-if="!activeTasks.length && !doneTasks.length" class="empty">今日暂无配送任务</view>
+
+    <!-- 已完成订单（灰色展示在底部） -->
+    <view v-if="doneTasks.length" class="done-section">
+      <view class="done-title">✅ 已完成订单（{{ doneTasks.length }}）</view>
+      <view v-for="t in doneTasks" :key="t.taskId" class="task-card done-card">
+        <view class="tc-head">
+          <text class="tc-route">{{ t.routeNo }}</text>
+          <text class="done-tag">已完成</text>
+        </view>
+        <view v-for="s in deliverStations(t)" :key="s.orderId" class="cargo-item">
+          <view class="cargo-main">
+            <view class="cargo-name">{{ s.shopName }}</view>
+            <view class="cargo-addr">{{ s.address }}</view>
+          </view>
+          <text class="cargo-picked">✓ 已交付</text>
+        </view>
+      </view>
+    </view>
 
     <CustomTabBar :tabs="courierTabs" active="/subpkg-courier/pages/home" />
+    <!-- #ifdef MP-WEIXIN -->
+    <DevRoleSwitcher />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { courierApi } from '@/api/modules'
+// #ifdef MP-WEIXIN
+import DevRoleSwitcher from '@/components/DevRoleSwitcher.vue'
+// #endif
 import CustomTabBar from '@/components/CustomTabBar.vue'
 
 const tasks = ref([])
@@ -61,10 +106,50 @@ const courierTabs = [
   { path: '/subpkg-courier/pages/mine', icon: '👤', label: '我的' },
 ]
 
-const statusText = (s) => ({ 0: '待取货', 1: '配送中', 3: '已完成', 4: '异常' }[s] || '未知')
-const statusClass = (s) => ({ 0: 'o', 1: 'b', 3: 'g', 4: 'r' }[s] || 'gray')
+const statusText = (s) => ({ 0: '待取货', 1: '待出发', 2: '配送中', 3: '已完成', 4: '异常' }[s] || '未知')
+const statusClass = (s) => ({ 0: 'o', 1: 'b', 2: 'b', 3: 'g', 4: 'r' }[s] || 'gray')
+
+// 任务状态文案：待取货时若已取部分货物则显示「取货中」
+const taskStatusText = (t) => {
+  if (t.status === 0) return pickedCount(t) > 0 ? '取货中' : '待取货'
+  return statusText(t.status)
+}
+
+// 货物（订单）级：取任务里的送货站点
+const deliverStations = (t) => (Array.isArray(t.stationList) ? t.stationList.filter((s) => s.type === 'deliver') : [])
+const pickedCount = (t) => deliverStations(t).filter((s) => s.picked).length
+
+// 进行中（待取货/已取货待出发/配送中/异常）与已完成（status=3）分离
+const activeTasks = computed(() => tasks.value.filter((t) => t.status === 0 || t.status === 1 || t.status === 2 || t.status === 4))
+const doneTasks = computed(() => tasks.value.filter((t) => t.status === 3))
 
 const goDetail = (taskId) => uni.navigateTo({ url: `/subpkg-courier/pages/task-detail?taskId=${taskId}` })
+
+const doPickup = async (orderId) => {
+  await courierApi.pickupOrder(orderId)
+  uni.showToast({ title: '已取货', icon: 'success' })
+  load()
+}
+
+// 任务级一键取货（底部「取货」按钮）：任务 0→1，全部订单标记已取
+const doPickupAll = async (t) => {
+  await courierApi.pickupScan(t.taskId)
+  uni.showToast({ title: '已取货', icon: 'success' })
+  load()
+}
+
+const doReport = (t, s) => {
+  uni.navigateTo({ url: `/subpkg-courier/pages/report?taskId=${t.taskId}&orderId=${s.orderId}` })
+}
+
+const goDeliver = (t) => {
+  // 已出发(2)或异常(4)任务均可交付/完成
+  if (t.status !== 2 && t.status !== 4) {
+    uni.showToast({ title: t.status === 1 ? '请先点「出发」再交付' : '请先取完所有货物再交付', icon: 'none' })
+    return
+  }
+  uni.navigateTo({ url: `/subpkg-courier/pages/deliver?taskId=${t.taskId}` })
+}
 
 const load = async () => {
   tasks.value = await courierApi.getTodayTasks()
@@ -86,13 +171,16 @@ const toggleAutoAccept = async () => {
 }
 
 const doDepart = async () => {
-  await courierApi.depart()
-  status.onRoute = 1
-  uni.showToast({ title: '已出发，配送中', icon: 'success' })
+  try {
+    await courierApi.depart()
+    uni.showToast({ title: '已出发，配送中', icon: 'success' })
+    load() // 重新拉取任务，刷新状态（待出发→配送中）
+  } catch (e) {
+    // 后端返回「还有货物未取」等提示，由请求封装统一 toast
+  }
 }
 
 onShow(() => {
-  uni.hideTabBar({ animation: false })
   load()
 })
 </script>
@@ -121,5 +209,28 @@ onShow(() => {
 .tc-head { display: flex; justify-content: space-between; align-items: center; }
 .tc-route { font-weight: 700; color: $text-title; }
 .tc-stations { font-size: 12px; color: $text-second; margin-top: 6px; }
+.cargo-item { display: flex; justify-content: space-between; align-items: center; padding: 9px 0 0; margin-top: 9px; border-top: 1px solid #f5f6f8; }
+.cargo-main { flex: 1; min-width: 0; }
+.cargo-name { font-size: 14px; font-weight: 600; color: $text-title; }
+.cargo-addr { font-size: 12px; color: $text-second; margin-top: 2px; }
+.cargo-items { font-size: 12px; color: $text-second; margin-top: 3px; }
+.cargo-ops { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cargo-picked { color: $color-primary; font-size: 13px; font-weight: 600; }
+.cargo-abnormal { color: #fa5151; font-size: 13px; font-weight: 600; }
+.cargo-abnormal-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #fa5151; color: #fff; font-size: 10px; border-radius: 8px; font-weight: 400; }
+.cargo-item.abnormal { opacity: 0.7; }
+.cargo-btn { padding: 5px 14px; border-radius: 14px; font-size: 12px; }
+.cargo-btn.pickup { background: $color-primary; color: #fff; }
+.cargo-btn.report { background: #fff4e6; color: #e6a23c; }
+.cargo-actions { display: flex; gap: 8px; margin-top: 10px; }
+.cargo-deliver { flex: 1; background: $color-primary; color: #fff; text-align: center; padding: 9px; border-radius: 20px; font-size: 14px; font-weight: 600; }
+.cargo-deliver.disabled { background: #c0c6cd; }
+.cargo-deliver.pickup { background: #3b7cff; }
+.cargo-deliver.done { background: #ff8f1f; }
+.cargo-deliver.wait { background: #c0c6cd; }
+.done-section { margin: 4px 12px 12px; }
+.done-title { font-size: 13px; color: $text-second; margin: 8px 0; font-weight: 600; }
+.done-card { opacity: 0.6; }
+.done-tag { font-size: 12px; color: $text-placeholder; }
 .empty { text-align: center; color: $text-placeholder; padding: 60px 0; }
 </style>

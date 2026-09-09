@@ -47,7 +47,6 @@ const handover = async (o) => {
 }
 
 onShow(async () => {
-  uni.hideTabBar({ animation: false })
   orders.value = await supplierApi.getStockList()
 })
 </script>

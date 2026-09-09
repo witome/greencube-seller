@@ -30,12 +30,13 @@ export class ProductService {
   async list(query: { categoryId?: string; keyword?: string; page?: string; pageSize?: string }) {
     const page = Math.max(1, parseInt(query.page || '1'))
     const pageSize = Math.min(50, Math.max(1, parseInt(query.pageSize || '20')))
-    const categoryId = query.categoryId ? parseInt(query.categoryId) : undefined
+    const categoryId = query.categoryId && query.categoryId !== 'undefined' ? parseInt(query.categoryId) : undefined
     const keyword = query.keyword?.trim()
+    const kw = keyword && keyword !== 'undefined' ? keyword : undefined
 
     const where: any = { status: 1 } // 仅在售
-    if (categoryId) where.categoryId = categoryId
-    if (keyword) where.name = { contains: keyword }
+    if (categoryId && !Number.isNaN(categoryId)) where.categoryId = categoryId
+    if (kw) where.name = { contains: kw }
 
     const [total, rows] = await Promise.all([
       this.prisma.product.count({ where }),

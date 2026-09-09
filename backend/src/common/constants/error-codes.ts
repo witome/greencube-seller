@@ -74,6 +74,7 @@ export const OrderStatus = {
   COMPLETED: 70,       // 已完成（采购方逐项确认）
   SETTLED: 90,         // 已结算
   CANCELLED: 91,       // 已取消
+  UNDELIVERABLE: 92,   // 无法交付（配送员上报异常，订单归类到无法交付列表）
 } as const
 
 /** 角色 */

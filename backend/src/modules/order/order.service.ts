@@ -10,6 +10,7 @@ import { CreateOrderDto } from './dto/create-order.dto'
 import { ReceiveOrderDto } from './dto/receive-order.dto'
 import { UpdateOrderDto } from './dto/update-order.dto'
 import { PayOrderDto } from './dto/pay-order.dto'
+import { allocateByPriority } from '../../common/utils/split.util'
 
 @Injectable()
 export class OrderService {
@@ -47,26 +48,38 @@ export class OrderService {
       (sum, it) => sum + it.qty * Number(productMap.get(it.productId)!.salePrice),
       0,
     )
+    const amountOrderedRounded = Math.round(amountOrdered * 100) / 100
+    const urgent = dto.urgent ?? 0
+    // 计算运费（满额免运费 / 次日达免运费 / 加急加收）
+    const deliveryFee = await this.calcDeliveryFee(amountOrderedRounded, new Date(dto.deliveryDate), urgent)
 
-    const order = await this.prisma.order.create({
-      data: {
-        purchaserId: purchaser.id,
-        deliveryDate: new Date(dto.deliveryDate),
-        timeWindow: dto.timeWindow,
-        remark: dto.remark,
-        shortagePolicy: dto.shortagePolicy ?? 'auto_replace',
-        status: OrderStatus.PENDING_CONFIRM,
-        amountOrdered: Math.round(amountOrdered * 100) / 100,
-        source: 1,
-        items: {
-          create: dto.items.map((it) => ({
-            productId: BigInt(it.productId),
-            qtyOrdered: it.qty,
-            // ⚠️ supplyPrice 拆单时填；salePrice 下单时快照
-            salePrice: productMap.get(it.productId)!.salePrice,
-          })),
+    const order = await this.prisma.$transaction(async (tx) => {
+      const o = await tx.order.create({
+        data: {
+          purchaserId: purchaser.id,
+          deliveryDate: new Date(dto.deliveryDate),
+          timeWindow: dto.timeWindow,
+          remark: dto.remark,
+          shortagePolicy: dto.shortagePolicy ?? 'auto_replace',
+          urgent,
+          status: OrderStatus.PENDING_CONFIRM,
+          amountOrdered: amountOrderedRounded,
+          deliveryFee,
+          source: 1,
+          items: {
+            create: dto.items.map((it) => ({
+              productId: BigInt(it.productId),
+              qtyOrdered: it.qty,
+              remark: it.remark ?? null,
+              // ⚠️ supplyPrice 拆单时填；salePrice 下单时快照
+              salePrice: productMap.get(it.productId)!.salePrice,
+            })),
+          },
         },
-      },
+      })
+      // 下单后立即自动拆单（按供应商优先级 + 当日可供量）
+      await this.autoSplit(tx, o.id)
+      return o
     })
 
     // 下单成功后清空购物车中对应商品
@@ -74,7 +87,40 @@ export class OrderService {
       where: { userId, productId: { in: productIds } },
     })
 
-    return { orderId: Number(order.id), status: order.status, amountOrdered: Number(order.amountOrdered) }
+    return { orderId: Number(order.id), status: order.status, amountOrdered: Number(order.amountOrdered), deliveryFee: Number(order.deliveryFee) }
+  }
+
+  // ────────────────────────────────────────
+  // 计算运费：加急运费与常规运费互斥（单独计，不叠加）
+  // 加急：收加急运费（满 urgentFreeThreshold 免加急费）
+  // 非加急：次日达免运费 / 满额免运费 / 否则收基础运费
+  // ────────────────────────────────────────
+  private async calcDeliveryFee(amountOrdered: number, deliveryDate: Date, urgent = 0): Promise<number> {
+    const cfg = await this.prisma.platformConfig.findUnique({ where: { key: 'delivery_fee' } })
+    const value = (cfg?.value as any) || { fee: 5, freeThreshold: 100, freeNextDay: true, urgentFee: 0, urgentFreeThreshold: 0 }
+    const fee = Number(value.fee ?? 5)
+    const freeThreshold = Number(value.freeThreshold ?? 100)
+    const freeNextDay = !!value.freeNextDay
+    const urgentFee = Number(value.urgentFee ?? 0)
+    const urgentFreeThreshold = Number(value.urgentFreeThreshold ?? 0)
+
+    // 加急：运费 = 加急运费（单独计，不叠加常规运费；满 urgentFreeThreshold 免加急费）
+    if (urgent) {
+      if (urgentFreeThreshold > 0 && amountOrdered >= urgentFreeThreshold) return 0
+      return Math.round(urgentFee * 100) / 100
+    }
+
+    // 非加急：常规运费（次日达免 / 满额免 / 否则基础运费）
+    let base = fee
+    if (freeNextDay) {
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`
+      if (deliveryDate.toISOString().slice(0, 10) === tomorrowStr) base = 0
+    }
+    if (freeThreshold > 0 && amountOrdered >= freeThreshold) base = 0
+
+    return Math.round(base * 100) / 100
   }
 
   // ────────────────────────────────────────
@@ -98,7 +144,7 @@ export class OrderService {
         orderBy: { id: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { _count: { select: { items: true } } },
+        include: { _count: { select: { items: true } }, items: { include: { product: true } } },
       }),
     ])
 
@@ -112,6 +158,12 @@ export class OrderService {
         statusText: this.statusText(o.status),
         itemCount: o._count.items,
         amountFinal: o.amountFinal ? Number(o.amountFinal) : null,
+        // 订单明细（商品名 + 数量，供首页展开展示）
+        items: o.items.map((it) => ({
+          name: it.product?.name ?? '',
+          qty: Number(it.qtyOrdered),
+          unit: it.product?.unit ?? '',
+        })),
       })),
     }
   }
@@ -129,6 +181,15 @@ export class OrderService {
     })
     if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
 
+    // 运费规则（满额免运费 / 次日达免运费 / 加急运费），供前端实时计算运费与展示「满 X 免运费」
+    const feeCfg = await this.prisma.platformConfig.findUnique({ where: { key: 'delivery_fee' } })
+    const feeValue = (feeCfg?.value as any) || { fee: 5, freeThreshold: 100, freeNextDay: true, urgentFee: 0, urgentFreeThreshold: 0 }
+    const baseDeliveryFee = Number(feeValue.fee ?? 5)
+    const freeDeliveryThreshold = Number(feeValue.freeThreshold ?? 100)
+    const freeNextDay = !!feeValue.freeNextDay
+    const urgentFee = Number(feeValue.urgentFee ?? 0)
+    const urgentFreeThreshold = Number(feeValue.urgentFreeThreshold ?? 0)
+
     return {
       orderId: Number(order.id),
       status: order.status,
@@ -142,6 +203,7 @@ export class OrderService {
         productId: Number(it.productId),
         name: it.product.name,
         unit: it.product.unit,
+        remark: it.remark,
         qtyOrdered: Number(it.qtyOrdered),          // ①
         qtyDeclared: it.qtyDeclared ? Number(it.qtyDeclared) : null, // ②
         qtyAccepted: it.qtyAccepted ? Number(it.qtyAccepted) : null, // ③
@@ -152,6 +214,13 @@ export class OrderService {
       })),
       amountOrdered: Number(order.amountOrdered),
       amountFinal: order.amountFinal ? Number(order.amountFinal) : null,
+      deliveryFee: Number(order.deliveryFee),
+      baseDeliveryFee,
+      freeDeliveryThreshold,
+      freeNextDay,
+      urgentFee,
+      urgentFreeThreshold,
+      urgent: order.urgent,
       payMethod: order.payMethod,
     }
   }
@@ -206,11 +275,19 @@ export class OrderService {
     }
 
     const amountOrdered = dto.items.reduce((sum, it) => sum + it.qty * Number(productMap.get(it.productId)!.salePrice), 0)
+    const amountOrderedRounded = Math.round(amountOrdered * 100) / 100
 
     // 可选的配送日期/时间段更新（未传则保持不变）
-    const deliveryPatch: any = { amountOrdered: Math.round(amountOrdered * 100) / 100 }
-    if (dto.deliveryDate) deliveryPatch.deliveryDate = new Date(dto.deliveryDate)
+    const deliveryPatch: any = { amountOrdered: amountOrderedRounded }
+    // 配送日期：优先用新传的，否则沿用订单原有日期
+    const effectiveDeliveryDate = dto.deliveryDate ? new Date(dto.deliveryDate) : order.deliveryDate
+    if (dto.deliveryDate) {
+      deliveryPatch.deliveryDate = new Date(dto.deliveryDate)
+    }
+    // ⚠️ 无论是否改日期，只要商品/金额变了就重算运费（满额免运费随金额联动；加急费随 urgent 保留）
+    deliveryPatch.deliveryFee = await this.calcDeliveryFee(amountOrderedRounded, effectiveDeliveryDate, order.urgent)
     if (dto.timeWindow !== undefined) deliveryPatch.timeWindow = dto.timeWindow
+    if (dto.remark !== undefined) deliveryPatch.remark = dto.remark
 
     await this.prisma.$transaction(async (tx) => {
       await tx.orderItem.deleteMany({ where: { orderId: order.id } })
@@ -219,9 +296,12 @@ export class OrderService {
           orderId: order.id,
           productId: BigInt(it.productId),
           qtyOrdered: it.qty,
+          remark: it.remark ?? null,
           salePrice: productMap.get(it.productId)!.salePrice,
         })),
       })
+      // 编辑后重新自动拆单（明细重建，supplierId 需按优先级+可供量重新分配）
+      await this.autoSplit(tx, order.id)
       await tx.order.update({
         where: { id: order.id },
         data: deliveryPatch,
@@ -232,7 +312,38 @@ export class OrderService {
   }
 
   // ────────────────────────────────────────
+  // 加急 / 取消加急（仅待确认未支付订单）
+  // 加急后运费重算：基础运费规则 + 加急运费
+  // ────────────────────────────────────────
+  async setUrgent(userId: bigint, orderId: number, urgent: number) {
+    const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
+    if (!purchaser) throw new BizException(ErrorCode.NOT_FOUND)
+
+    const order = await this.prisma.order.findFirst({
+      where: { id: BigInt(orderId), purchaserId: purchaser.id },
+    })
+    if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+    if (order.status !== OrderStatus.PENDING_CONFIRM) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅待确认订单可设置加急')
+    }
+    if (order.payMethod !== 0) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '已支付订单不可设置加急')
+    }
+
+    const target = urgent ? 1 : 0
+    const deliveryFee = await this.calcDeliveryFee(Number(order.amountOrdered), order.deliveryDate, target)
+
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: { urgent: target, deliveryFee },
+    })
+
+    return { orderId, urgent: target, deliveryFee }
+  }
+
+  // ────────────────────────────────────────
   // 选择支付方式（1 微信支付 / 2 货到付款）
+  // 支付生效后自动拆单：按供应商优先级 + 当日可供量分配，订单 10 → 30 备货中
   // ────────────────────────────────────────
   async pay(userId: bigint, orderId: number, dto: PayOrderDto) {
     const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
@@ -249,12 +360,65 @@ export class OrderService {
       throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '订单已支付')
     }
 
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: { payMethod: dto.payMethod },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: order.id },
+        data: { payMethod: dto.payMethod },
+      })
+      // 兼容：仅当整单明细都未拆（无任何 supplierId）时补拆——新流程下单时已自动拆单
+      const assigned = await tx.orderItem.count({ where: { orderId: order.id, supplierId: { not: null } } })
+      if (assigned === 0) {
+        await this.autoSplit(tx, order.id)
+      }
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.STOCKING },
+      })
     })
 
-    return { orderId, payMethod: dto.payMethod, note: dto.payMethod === 1 ? '微信支付（模拟成功）' : '货到付款' }
+    return { orderId, payMethod: dto.payMethod, status: OrderStatus.STOCKING, note: dto.payMethod === 1 ? '微信支付（模拟成功）' : '货到付款' }
+  }
+
+  // ────────────────────────────────────────
+  // 自动拆单：按供应商优先级（priority 升序）+ 当日可供量分配
+  // 无供应商 / 可供量为 0 的商品保留原明细，不分配（运营后续手动改拆单处理）
+  // ────────────────────────────────────────
+  private async autoSplit(tx: any, orderId: bigint) {
+    const items = await tx.orderItem.findMany({ where: { orderId } })
+    for (const item of items) {
+      const links = await tx.productSupplierLink.findMany({
+        where: { productId: item.productId, status: 1 },
+        orderBy: { priority: 'asc' },
+      })
+      if (links.length === 0) continue
+
+      const { allocations } = allocateByPriority(
+        links.map((l) => ({
+          supplierId: l.supplierId,
+          priority: l.priority,
+          dailySupply: Number(l.dailySupply),
+          supplyPrice: Number(l.supplyPrice),
+        })),
+        Number(item.qtyOrdered),
+      )
+      if (allocations.length === 0) continue
+
+      await tx.orderItem.delete({ where: { id: item.id } })
+      for (const a of allocations) {
+        await tx.orderItem.create({
+          data: {
+            orderId,
+            productId: item.productId,
+            supplierId: BigInt(a.supplierId),
+            qtyOrdered: a.qty,
+            qtyDeclared: a.qty,
+            remark: item.remark,
+            salePrice: item.salePrice,
+            supplyPrice: a.supplyPrice,
+          },
+        })
+      }
+    }
   }
 
   // ────────────────────────────────────────
@@ -320,7 +484,7 @@ export class OrderService {
   private statusText(status: number): string {
     const map: Record<number, string> = {
       [OrderStatus.PENDING_CONFIRM]: '待确认',
-      [OrderStatus.SPLITTED]: '已拆单',
+      [OrderStatus.SPLITTED]: '备货中', // 拆单对采购方不可见，等同于备货中
       [OrderStatus.STOCKING]: '备货中',
       [OrderStatus.WAIT_DELIVERY]: '待配送',
       [OrderStatus.ASSIGNED]: '已派单',
@@ -336,13 +500,14 @@ export class OrderService {
   private timeline(status: number) {
     const steps = [
       { status: 10, text: '已下单' },
-      { status: 20, text: '已拆单' },
       { status: 30, text: '备货中' },
       { status: 40, text: '待配送' },
       { status: 50, text: '配送中' },
       { status: 70, text: '已完成' },
     ]
-    const idx = steps.findIndex((s) => s.status === status)
+    // 拆单(20) 对采购方等同于备货中(30)，归一化后再定位进度
+    const effective = status === OrderStatus.SPLITTED ? OrderStatus.STOCKING : status
+    const idx = steps.findIndex((s) => s.status === effective)
     return steps.map((s, i) => ({ ...s, done: i <= idx, current: i === idx }))
   }
 }

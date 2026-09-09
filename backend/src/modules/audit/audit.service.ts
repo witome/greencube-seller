@@ -39,4 +39,20 @@ export class AuditService {
       })),
     }
   }
+
+  // ────────────────────────────────────────
+  // 写审计日志（金额/权限等关键操作统一入口）
+  // ────────────────────────────────────────
+  async log(data: { operatorId: bigint; action: string; entity: string; entityId: bigint | number; before?: any; after?: any }) {
+    await this.prisma.auditLog.create({
+      data: {
+        operatorId: data.operatorId,
+        action: data.action,
+        entity: data.entity,
+        entityId: BigInt(data.entityId),
+        before: data.before ?? undefined,
+        after: data.after ?? undefined,
+      },
+    })
+  }
 }

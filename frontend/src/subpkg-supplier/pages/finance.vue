@@ -43,7 +43,6 @@ const supplierTabs = [
 ]
 
 onShow(() => {
-  uni.hideTabBar({ animation: false })
 })
 
 const period = ref(new Date().toISOString().slice(0, 7))

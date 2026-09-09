@@ -32,6 +32,7 @@
 import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
+import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
 const cart = ref([])
@@ -59,10 +60,17 @@ const remove = async (it) => {
 }
 
 const submitOrder = async () => {
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  // 配送日期：当天有可选时段用当天，否则顺延次日；自动选最早可用时段（不弹窗）
+  let deliveryDate = dateStr()
+  let winList = availableTimeWindows(deliveryDate)
+  if (!winList.length) {
+    deliveryDate = tomorrowStr()
+    winList = availableTimeWindows(deliveryDate)
+  }
+  const w = winList[0]
   const order = await buyerApi.placeOrder({
-    deliveryDate: tomorrow,
-    timeWindow: 1,
+    deliveryDate,
+    timeWindow: w.value,
     items: cart.value.map((i) => ({ productId: i.productId, qty: i.qty })),
   })
   uni.showToast({ title: '下单成功', icon: 'success' })
@@ -88,8 +96,8 @@ onShow(() => {
 .st-btn { width: 26px; height: 26px; border-radius: 50%; background: #f0f1f3; display: flex; align-items: center; justify-content: center; font-size: 16px; }
 .st-num { font-size: 15px; font-weight: 600; min-width: 24px; text-align: center; }
 .ci-del { color: $text-placeholder; font-size: 14px; }
-/* 结算栏：bottom 抬高 50px 避开原生 tabBar */
-.settle-bar { position: fixed; left: 0; right: 0; bottom: 50px; background: #fff; padding: 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 -2px 8px rgba(0,0,0,.05); z-index: 10; }
+/* 结算栏：bottom 抬高避开自定义 tabBar（实际约 64px + 安全区） */
+.settle-bar { position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom)); background: #fff; padding: 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 -2px 8px rgba(0,0,0,.05); z-index: 10; }
 .sb-price { color: #fa5151; font-size: 18px; font-weight: 700; }
 .sb-btn { background: $color-primary; color: #fff; padding: 10px 28px; border-radius: 22px; font-size: 15px; font-weight: 600; }
 </style>

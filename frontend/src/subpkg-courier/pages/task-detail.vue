@@ -20,7 +20,8 @@
 
       <view class="row-btns">
         <view v-if="task.status === 0" class="pbtn primary" @tap="pickup">扫码取货</view>
-        <view v-if="task.status === 1" class="pbtn primary" @tap="goDeliver">去交付确认</view>
+        <view v-if="task.status === 1" class="pbtn wait">⏳ 待出发（请回「今日任务」点出发）</view>
+        <view v-if="task.status === 2" class="pbtn primary" @tap="goDeliver">去交付确认</view>
         <view v-if="task.status === 0" class="pbtn" @tap="goReport">异常上报</view>
       </view>
     </view>
@@ -46,11 +47,10 @@ const courierTabs = [
   { path: '/subpkg-courier/pages/mine', icon: '👤', label: '我的' },
 ]
 
-const statusText = computed(() => ({ 0: '待取货', 1: '配送中', 3: '已完成', 4: '异常' }[task.value?.status] || '未知'))
-const statusClass = computed(() => ({ 0: 'o', 1: 'b', 3: 'g', 4: 'r' }[task.value?.status] || 'gray'))
+const statusText = computed(() => ({ 0: '待取货', 1: '待出发', 2: '配送中', 3: '已完成', 4: '异常' }[task.value?.status] || '未知'))
+const statusClass = computed(() => ({ 0: 'o', 1: 'b', 2: 'b', 3: 'g', 4: 'r' }[task.value?.status] || 'gray'))
 
 onShow(() => {
-  uni.hideTabBar({ animation: false })
 })
 
 const load = async () => {
@@ -61,7 +61,7 @@ const load = async () => {
 // 无 taskId（作为 tab 进入）时，自动取当前进行中任务
 const loadCurrent = async () => {
   const tasks = await courierApi.getTodayTasks()
-  const current = tasks.find((t) => t.status === 1) || tasks.find((t) => t.status === 0) || tasks[0]
+  const current = tasks.find((t) => t.status === 2) || tasks.find((t) => t.status === 0) || tasks[0]
   if (current) {
     taskId.value = String(current.taskId)
     await load()
@@ -95,5 +95,6 @@ onLoad((opts) => {
 .st-name { font-size: 14px; font-weight: 600; color: $text-title; }
 .st-addr { font-size: 12px; color: $text-second; margin-top: 2px; }
 .row-btns { padding: 12px; }
+.pbtn.wait { background: #c0c6cd; color: #fff; }
 .empty { text-align: center; color: $text-placeholder; padding: 60px 0; font-size: 13px; }
 </style>

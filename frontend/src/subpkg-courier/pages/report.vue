@@ -28,16 +28,22 @@ const reasons = ['缺货', '拒收', '客户不在', '车辆故障', '其他']
 const reason = ref('缺货')
 const desc = ref('')
 const taskId = ref('')
+const orderId = ref('')
 const t = (msg) => uni.showToast({ title: msg, icon: 'none' })
 
 const submit = async () => {
-  await courierApi.report({ taskId: Number(taskId.value) || undefined, reason: `${reason.value}：${desc.value}` })
+  await courierApi.report({
+    taskId: Number(taskId.value) || undefined,
+    orderId: Number(orderId.value) || undefined,
+    reason: `${reason.value}：${desc.value}`,
+  })
   uni.showToast({ title: '已上报', icon: 'success' })
   setTimeout(() => uni.navigateBack(), 600)
 }
 
 onLoad((opts) => {
   if (opts.taskId) taskId.value = opts.taskId
+  if (opts.orderId) orderId.value = opts.orderId
 })
 </script>
 

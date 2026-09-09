@@ -69,13 +69,17 @@
         <view class="buyer-home-order-ico" :style="{ background: orderIcon(o.status).bg }">{{ orderIcon(o.status).e }}</view>
         <view class="buyer-home-order-main">
           <view class="buyer-home-order-t">{{ orderNo(o) }}</view>
-          <view class="buyer-home-order-d">{{ o.itemCount }} 项 · {{ o.statusText }} · {{ etaText(o) }}</view>
+          <view class="buyer-home-order-d">{{ o.statusText }} · {{ etaText(o) }}</view>
+          <view v-if="o.items && o.items.length" class="buyer-home-order-items">{{ (o.items || []).map(i => `${i.name}×${i.qty}`).join('、') }}</view>
         </view>
         <view class="buyer-home-arrow">›</view>
       </view>
     </view>
 
     <BuyerTabBar active="/pages/buyer/home" />
+    <!-- #ifdef MP-WEIXIN -->
+    <DevRoleSwitcher />
+    <!-- #endif -->
   </view>
 </template>
 
@@ -84,6 +88,9 @@ import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
+// #ifdef MP-WEIXIN
+import DevRoleSwitcher from '@/components/DevRoleSwitcher.vue'
+// #endif
 
 // tabBar 页面（商品/购物车/订单/我的）必须用 switchTab 跳转，navigateTo 无效
 const go = (url) => uni.navigateTo({ url })
@@ -333,6 +340,7 @@ onShow(async () => {
 .buyer-home-order-main { flex: 1; min-width: 0; }
 .buyer-home-order-t { font-size: 14px; font-weight: 600; color: $text-title; }
 .buyer-home-order-d { font-size: 11px; color: #8A9099; margin-top: 2px; }
+.buyer-home-order-items { font-size: 11px; color: #8A9099; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .buyer-home-arrow { color: #C2C8D0; font-size: 18px; }
 .buyer-home-order-loading,
 .buyer-home-order-fail,

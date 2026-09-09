@@ -1,4 +1,4 @@
-import { IsArray, ArrayMinSize, ValidateNested, IsInt, IsNumber, Min, IsOptional, IsString, Matches } from 'class-validator'
+import { IsArray, ArrayMinSize, ValidateNested, IsInt, IsNumber, Min, IsOptional, IsString, Matches, MaxLength } from 'class-validator'
 import { Type } from 'class-transformer'
 
 class UpdateOrderItem {
@@ -8,6 +8,11 @@ class UpdateOrderItem {
   @IsNumber()
   @Min(0.1)
   qty: number
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  remark?: string
 }
 
 /// 编辑待确认订单（覆盖式：提交新商品清单重算金额；可同时改配送日期/时间段）
@@ -28,4 +33,10 @@ export class UpdateOrderDto {
   @IsOptional()
   @IsInt()
   timeWindow?: number
+
+  /// 订单备注（可选）
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  remark?: string
 }

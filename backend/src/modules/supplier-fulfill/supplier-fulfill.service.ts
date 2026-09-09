@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
 import { DeclareDto } from './dto/declare.dto'
+import { AuditService } from '../audit/audit.service'
 
 @Injectable()
 export class SupplierFulfillService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   /// 根据当前登录用户查供应商身份
   private async getSupplier(userId: bigint) {
@@ -26,7 +27,12 @@ export class SupplierFulfillService {
       qtyAccepted: null, // 仅显示未确认备货的明细
       order: { status: { in: [OrderStatus.STOCKING] } },
     }
-    if (query.date) where.order = { ...where.order, deliveryDate: new Date(query.date) }
+    // 防御：小程序端可能把 undefined 序列化成 "undefined"，new Date("undefined") 会抛异常
+    const dateStr = query.date && query.date !== 'undefined' ? query.date : undefined
+    if (dateStr) {
+      const d = new Date(dateStr)
+      if (!Number.isNaN(d.getTime())) where.order = { ...where.order, deliveryDate: d }
+    }
 
     const items = await this.prisma.orderItem.findMany({
       where,
@@ -53,6 +59,7 @@ export class SupplierFulfillService {
         qtyOrdered: Number(it.qtyOrdered),
         qtyDeclared: it.qtyDeclared ? Number(it.qtyDeclared) : null,
         isAutoDeclared: it.isAutoDeclared,
+        remark: it.remark,
       })
     }
 
@@ -103,6 +110,15 @@ export class SupplierFulfillService {
       }
     })
 
+    await this.audit.log({
+      operatorId: userId,
+      action: 'SUPPLIER_DECLARE',
+      entity: 'order',
+      entityId: Number(dto.orderId),
+      before: null,
+      after: { supplierId: Number(supplier.id), shortageItems: declaredCount.length },
+    })
+
     return { orderId: Number(dto.orderId), shortageDeclared: declaredCount.length }
   }
 
@@ -143,15 +159,75 @@ export class SupplierFulfillService {
     let status: number = OrderStatus.STOCKING
     if (pending === 0) {
       const allItems = await this.prisma.orderItem.findMany({ where: { orderId: order.id } })
-      const amountFinal = allItems.reduce((s, i) => s + Number(i.qtyAccepted) * Number(i.salePrice), 0)
+      // 交付金额 = 商品金额（验收数量×销售价）+ 运费
+      const amountFinal = allItems.reduce((s, i) => s + Number(i.qtyAccepted) * Number(i.salePrice), 0) + Number(order.deliveryFee)
       await this.prisma.order.update({
         where: { id: order.id },
         data: { status: OrderStatus.WAIT_DELIVERY, amountFinal: Math.round(amountFinal * 100) / 100 },
       })
       status = OrderStatus.WAIT_DELIVERY
+      // 以自动派单为主：订单进入待配送后自动派给最合适的配送员（失败则保留待配送，等运营手动派单）
+      await this.autoAssignOrder(order.id)
     }
 
+    await this.audit.log({
+      operatorId: userId,
+      action: 'SUPPLIER_HANDOVER',
+      entity: 'order',
+      entityId: Number(order.id),
+      before: null,
+      after: { supplierId: Number(supplier.id), orderStatus: status },
+    })
+
     return { orderId: Number(order.id), ready: true, status }
+  }
+
+  // ────────────────────────────────────────
+  // 自动派单：把待配送订单派给最合适的配送员（在线 + 空闲 + 未超单量，按优先级）
+  // 与运营后台 autoAssign 共用同一规则；无可用配送员时保持待配送，等运营手动派单
+  // ────────────────────────────────────────
+  private async autoAssignOrder(orderId: bigint) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { purchaser: true },
+    })
+    if (!order || order.status !== OrderStatus.WAIT_DELIVERY) return
+
+    const couriers = await this.prisma.courier.findMany({
+      where: { status: 1, online: 1, onRoute: 0 },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    })
+    if (!couriers.length) return
+
+    // 统计各配送员当前未完成任务数
+    const activeTasks = await this.prisma.deliveryTask.findMany({
+      where: { status: { in: [0, 1, 2] } },
+      select: { courierId: true },
+    })
+    const taskCount = new Map<number, number>()
+    for (const t of activeTasks) {
+      taskCount.set(Number(t.courierId), (taskCount.get(Number(t.courierId)) || 0) + 1)
+    }
+
+    // 找第一个未超单量限制的配送员
+    let target = null
+    for (const c of couriers) {
+      if ((taskCount.get(Number(c.id)) || 0) < c.maxOrders) {
+        target = c
+        break
+      }
+    }
+    if (!target) return
+
+    const stationList = [
+      { seq: 1, type: 'deliver', orderId: Number(order.id), shopName: order.purchaser.shopName, address: order.purchaser.address },
+    ]
+    const routeNo = `R${order.deliveryDate.toISOString().slice(0, 10).replace(/-/g, '')}-${Number(target.id)}`
+
+    await this.prisma.$transaction([
+      this.prisma.deliveryTask.create({ data: { courierId: target.id, routeNo, stationList, status: 0 } }),
+      this.prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.ASSIGNED } }),
+    ])
   }
 
   private deadline(deliveryDate: Date): string {

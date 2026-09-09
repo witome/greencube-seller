@@ -8,6 +8,7 @@
           <el-option label="商品" value="product" />
           <el-option label="订单" value="order" />
           <el-option label="结算" value="settlement" />
+          <el-option label="配送任务(含配送员异常)" value="delivery_task" />
         </el-select>
         <el-button type="primary" @click="load">查询</el-button>
       </div>
@@ -18,7 +19,9 @@
         <el-table-column label="时间" width="170">
           <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column prop="action" label="操作" width="140" />
+        <el-table-column label="操作" width="130">
+          <template #default="{ row }">{{ actionText(row.action) }}</template>
+        </el-table-column>
         <el-table-column prop="entity" label="对象类型" width="110" />
         <el-table-column prop="entityId" label="对象ID" width="90" />
         <el-table-column prop="operatorId" label="操作者ID" width="100" />
@@ -72,6 +75,21 @@ function jsonBrief(v) {
   } catch (e) {
     return String(v)
   }
+}
+
+// 操作名中文映射
+function actionText(action) {
+  const map = {
+    courier_report: '配送异常上报',
+    UPDATE_PRICING: '改价',
+    UPDATE_SERVICE_FEE: '改服务费',
+    BATCH_MARKUP: '批量加价',
+    SPLIT: '拆单',
+    RE_SPLIT: '改拆单',
+    GENERATE_SETTLEMENT: '生成结算',
+    UPDATE_DELIVERY_FEE: '改运费规则',
+  }
+  return map[action] || action
 }
 
 async function load() {

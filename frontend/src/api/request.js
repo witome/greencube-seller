@@ -4,50 +4,73 @@
  * - 统一处理 { code, msg, data } 信封：code≠0 时 toast + reject
  * - 401/2001 跳登录
  */
-const BASE_URL = import.meta.env.MODE === 'development'
-  ? 'http://localhost:3001/api/v1'  // NestJS 本地（含 /api/v1 前缀）
-  : 'https://api.example.com/api/v1' // TODO: 生产域名
+// 后端地址：开发/测试默认连本机 3001；生产部署时通过 VITE_API_BASE 环境变量覆盖
+const BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api/v1'
 
 function request({ url, method = 'GET', data, header = {} }) {
   return new Promise((resolve, reject) => {
-    uni.request({
-      url: BASE_URL + url,
-      method,
-      data,
-      header: {
-        Authorization: `Bearer ${uni.getStorageSync('token') || ''}`,
-        'X-Role': uni.getStorageSync('currentRole') || '',
-        ...header,
-      },
-      success: (res) => {
-        const body = res.data || {}
+    const doRequest = () => {
+      uni.request({
+        url: BASE_URL + url,
+        method,
+        data,
+        header: {
+          Authorization: `Bearer ${uni.getStorageSync('token') || ''}`,
+          'X-Role': uni.getStorageSync('currentRole') || '',
+          ...header,
+        },
+        success: (res) => {
+          const body = res.data || {}
 
-        // 未登录 / token 失效
-        if (res.statusCode === 401 || body.code === 2001) {
-          uni.reLaunch({ url: '/pages/buyer/home' }) // TODO: 登录页
-          reject(body)
-          return
-        }
+          // 未登录 / token 失效：清除凭据，跳登录页
+          if (res.statusCode === 401 || body.code === 2001) {
+            uni.removeStorageSync('token')
+            uni.removeStorageSync('currentRole')
+            uni.removeStorageSync('accountStatus')
+            uni.reLaunch({ url: '/pages/login/index' })
+            reject(body)
+            return
+          }
 
-        // 业务错误（HTTP 200 + code≠0）
-        if (body.code !== 0 && body.code !== undefined) {
-          uni.showToast({ title: body.msg || '操作失败', icon: 'none' })
-          reject(body)
-          return
-        }
+          // 业务错误（HTTP 200 + code≠0）
+          if (body.code !== 0 && body.code !== undefined) {
+            uni.showToast({ title: body.msg || '操作失败', icon: 'none' })
+            reject(body)
+            return
+          }
 
-        // 成功：直接解包 data
-        resolve(body.data !== undefined ? body.data : body)
-      },
-      fail: (err) => {
-        uni.showToast({ title: '网络异常，请检查后端是否启动', icon: 'none' })
-        reject(err)
-      },
-    })
+          // 成功：直接解包 data
+          resolve(body.data !== undefined ? body.data : body)
+        },
+        fail: (err) => {
+          uni.showToast({ title: '网络异常，请检查后端是否启动', icon: 'none' })
+          reject(err)
+        },
+      })
+    }
+
+    // 未登录时：登录接口本身直接发（无需 token），其它接口跳登录页
+    if (!uni.getStorageSync('token') && url !== '/auth/wx-login') {
+      uni.reLaunch({ url: '/pages/login/index' })
+      reject({ code: 2001, msg: '未登录' })
+      return
+    }
+    doRequest()
   })
 }
 
-export const get = (url, params) => request({ url, method: 'GET', data: params })
+export const get = (url, params) => {
+  // 过滤 undefined/null 字段：小程序端会把它们序列化成 "undefined"/"null" 字符串，后端误判（如 date=undefined）
+  let clean = params
+  if (params) {
+    clean = {}
+    for (const k in params) {
+      const v = params[k]
+      if (v !== undefined && v !== null) clean[k] = v
+    }
+  }
+  return request({ url, method: 'GET', data: clean })
+}
 export const post = (url, data) => request({ url, method: 'POST', data })
 export const put = (url, data) => request({ url, method: 'PUT', data })
 export const del = (url, data) => request({ url, method: 'DELETE', data })

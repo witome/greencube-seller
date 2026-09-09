@@ -3,8 +3,8 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
 import { DeliverDto, ReportDto } from './dto/courier.dto'
 
-/// 配送任务状态：0 待取货 / 1 配送中 / 3 已完成 / 4 异常
-const TaskStatus = { PENDING_PICKUP: 0, DELIVERING: 1, DONE: 3, EXCEPTION: 4 } as const
+/// 配送任务状态：0 待取货 / 1 已取货待出发 / 2 已出发配送中 / 3 已完成 / 4 异常
+const TaskStatus = { PENDING_PICKUP: 0, DELIVERING: 1, DEPARTED: 2, DONE: 3, EXCEPTION: 4 } as const
 
 @Injectable()
 export class CourierService {
@@ -26,26 +26,65 @@ export class CourierService {
   }
 
   // ────────────────────────────────────────
-  // 今日任务与站点序列
+  // 今日任务：进行中（待取货/配送中）+ 今日已完成
   // ⚠️ 铁律：配送员接口永不返回任何金额字段
   // ────────────────────────────────────────
   async todayTasks(userId: bigint) {
     const courier = await this.getCourier(userId)
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const tasks = await this.prisma.deliveryTask.findMany({
-      where: { courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING] } },
-      orderBy: { id: 'asc' },
+      where: {
+        courierId: courier.id,
+        OR: [
+          { status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED, TaskStatus.EXCEPTION] } },
+          { status: TaskStatus.DONE, completedAt: { gte: todayStart } },
+        ],
+      },
+      // 稳定按任务 id 排序：取货导致任务 status 变化时不再重排，保持配送员看到的顺序不变
+      orderBy: [{ id: 'asc' }],
     })
+
+    // 收集所有订单 ID，查货物明细（商品名 + 数量，⚠️ 不含金额）
+    const orderIds = [...new Set(tasks.flatMap((t) => this.orderIdsOf(t)))]
+    const orderItems = orderIds.length
+      ? await this.prisma.orderItem.findMany({
+          where: { orderId: { in: orderIds.map((id) => BigInt(id)) } },
+          include: { product: true },
+        })
+      : []
+    const itemMap = new Map<number, { name: string; qty: number; unit: string }[]>()
+    for (const it of orderItems) {
+      const key = Number(it.orderId)
+      if (!itemMap.has(key)) itemMap.set(key, [])
+      itemMap.get(key)!.push({ name: it.product?.name ?? '', qty: Number(it.qtyOrdered), unit: it.product?.unit ?? '' })
+    }
+
+    // 查异常订单（无法交付），供前端标记「异常订单」分类
+    const abnormalOrders = orderIds.length
+      ? await this.prisma.order.findMany({
+          where: { id: { in: orderIds.map((id) => BigInt(id)) }, status: OrderStatus.UNDELIVERABLE },
+          select: { id: true },
+        })
+      : []
+    const abnormalSet = new Set(abnormalOrders.map((o) => Number(o.id)))
 
     return tasks.map((t) => ({
       taskId: Number(t.id),
       routeNo: t.routeNo,
       status: t.status,
-      stationList: t.stationList,
+      stationList: (Array.isArray(t.stationList) ? t.stationList : []).map((s: any) => {
+        if (s.type === 'deliver' && s.orderId) {
+          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)) }
+        }
+        return s
+      }),
     }))
   }
 
   // ────────────────────────────────────────
-  // 扫码取货：任务 0→1，订单 40→50
+  // 扫码取货（任务级一键取货）：任务 0→1，订单 40→50
+  // 同时标记所有货物 picked=true，与订单级取货保持一致
   // ────────────────────────────────────────
   async pickup(userId: bigint, taskId: number) {
     const courier = await this.getCourier(userId)
@@ -58,8 +97,14 @@ export class CourierService {
     }
 
     const orderIds = this.orderIdsOf(task)
+    // 标记所有货物已取，保持与订单级取货一致
+    const stations = (Array.isArray(task.stationList) ? task.stationList : []).map((s: any) => {
+      if (s.type === 'deliver') return { ...s, picked: true }
+      return s
+    })
+
     await this.prisma.$transaction([
-      this.prisma.deliveryTask.update({ where: { id: task.id }, data: { status: TaskStatus.DELIVERING } }),
+      this.prisma.deliveryTask.update({ where: { id: task.id }, data: { stationList: stations, status: TaskStatus.DELIVERING } }),
       ...orderIds.map((oid) =>
         this.prisma.order.updateMany({
           where: { id: BigInt(oid), status: { in: [OrderStatus.ASSIGNED, OrderStatus.WAIT_DELIVERY] } },
@@ -80,15 +125,16 @@ export class CourierService {
       where: { id: BigInt(taskId), courierId: courier.id },
     })
     if (!task) throw new BizException(ErrorCode.NOT_FOUND, '任务不存在')
-    if (task.status !== TaskStatus.DELIVERING) {
-      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '任务状态不允许交付确认')
+    // 已出发(2)或异常(4)任务可交付确认：异常任务完成时异常订单(92)保持不变，仅正常订单交付
+    if (task.status !== TaskStatus.DEPARTED && task.status !== TaskStatus.EXCEPTION) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '请先点「出发」再交付确认')
     }
 
     const orderIds = this.orderIdsOf(task)
     await this.prisma.$transaction([
       this.prisma.deliveryTask.update({
         where: { id: task.id },
-        data: { status: TaskStatus.DONE, proof: { photos: dto.photos, signature: dto.signature, remark: dto.remark } },
+        data: { status: TaskStatus.DONE, completedAt: new Date(), proof: { photos: dto.photos, signature: dto.signature, remark: dto.remark } },
       }),
       ...orderIds.map((oid) =>
         this.prisma.order.updateMany({
@@ -100,7 +146,7 @@ export class CourierService {
 
     // 全部任务配送完成后，恢复可接单资格（onRoute → 0）
     const remaining = await this.prisma.deliveryTask.count({
-      where: { courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING] } },
+      where: { courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED] } },
     })
     if (remaining === 0) {
       await this.prisma.courier.update({ where: { id: courier.id }, data: { onRoute: 0 } })
@@ -110,7 +156,7 @@ export class CourierService {
   }
 
   // ────────────────────────────────────────
-  // 异常上报（记录到审计日志，后续可扩展独立工单表）
+  // 异常上报：写审计日志 + 标记任务异常 + 生成运营后台异常工单
   // ────────────────────────────────────────
   async report(userId: bigint, dto: ReportDto) {
     const courier = await this.getCourier(userId)
@@ -119,11 +165,52 @@ export class CourierService {
         operatorId: courier.userId,
         action: 'courier_report',
         entity: 'delivery_task',
-        entityId: BigInt(dto.taskId ?? 0),
-        after: { reason: dto.reason, photos: dto.photos },
+        entityId: BigInt(dto.taskId ?? dto.orderId ?? 0),
+        after: { orderId: dto.orderId ?? null, taskId: dto.taskId ?? null, reason: dto.reason, photos: dto.photos },
       },
     })
-    return { reported: true }
+
+    // 订单级异常：只标记该订单，不影响同任务其他订单与任务状态
+    let affectedOrders = 0
+    if (dto.orderId) {
+      const r = await this.prisma.order.updateMany({
+        where: { id: BigInt(dto.orderId), status: { in: [OrderStatus.ASSIGNED, OrderStatus.WAIT_DELIVERY, OrderStatus.DELIVERING] } },
+        data: { status: OrderStatus.UNDELIVERABLE },
+      })
+      affectedOrders = r.count
+    } else if (dto.taskId) {
+      // 任务级异常（车辆故障等）：标记整个任务 + 所有配送中订单
+      const task = await this.prisma.deliveryTask.findFirst({
+        where: { id: BigInt(dto.taskId), courierId: courier.id },
+      })
+      if (task) {
+        await this.prisma.deliveryTask.updateMany({
+          where: { id: BigInt(dto.taskId), courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED] } },
+          data: { status: TaskStatus.EXCEPTION },
+        })
+        const orderIds = this.orderIdsOf(task)
+        if (orderIds.length) {
+          const r = await this.prisma.order.updateMany({
+            where: { id: { in: orderIds.map((id) => BigInt(id)) }, status: OrderStatus.DELIVERING },
+            data: { status: OrderStatus.UNDELIVERABLE },
+          })
+          affectedOrders = r.count
+        }
+      }
+    }
+
+    // 生成异常工单，供运营后台处理
+    const exception = await this.prisma.deliveryException.create({
+      data: {
+        deliveryTaskId: dto.taskId ? BigInt(dto.taskId) : null,
+        courierId: courier.id,
+        orderId: dto.orderId ? BigInt(dto.orderId) : null,
+        reason: dto.reason,
+        status: 0,
+      },
+    })
+
+    return { reported: true, exceptionId: Number(exception.id), affectedOrders }
   }
 
   // ────────────────────────────────────────
@@ -143,12 +230,44 @@ export class CourierService {
   }
 
   // ────────────────────────────────────────
+  // 任务订单总金额（交付确认时显示，供配送员与采购方核对）
+  // ⚠️ 仅货到付款(payMethod=2)订单显示金额；微信支付(1)已线上支付，不显示金额
+  // ────────────────────────────────────────
+  async taskAmount(userId: bigint, taskId: number) {
+    const courier = await this.getCourier(userId)
+    const task = await this.prisma.deliveryTask.findFirst({
+      where: { id: BigInt(taskId), courierId: courier.id },
+    })
+    if (!task) throw new BizException(ErrorCode.NOT_FOUND, '任务不存在')
+
+    const orderIds = this.orderIdsOf(task)
+    const orders = orderIds.length
+      ? await this.prisma.order.findMany({
+          where: { id: { in: orderIds.map((id) => BigInt(id)) } },
+          select: { amountFinal: true, amountOrdered: true, deliveryFee: true, payMethod: true },
+        })
+      : []
+    // 仅货到付款订单需显示金额供配送员核对
+    const codOrders = orders.filter((o) => o.payMethod === 2)
+    const codAmount = codOrders.reduce(
+      (s, o) => s + (o.amountFinal != null ? Number(o.amountFinal) : Number(o.amountOrdered) + Number(o.deliveryFee)),
+      0,
+    )
+    return {
+      taskId,
+      orderCount: orders.length,
+      showAmount: codOrders.length > 0,
+      totalAmount: Math.round(codAmount * 100) / 100,
+    }
+  }
+
+  // ────────────────────────────────────────
   // 接单状态查询（上下线 / 接单模式 / 配送中 / 当前任务数）
   // ────────────────────────────────────────
   async getStatus(userId: bigint) {
     const courier = await this.getCourier(userId)
     const activeTasks = await this.prisma.deliveryTask.count({
-      where: { courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING] } },
+      where: { courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED] } },
     })
     return {
       courierId: Number(courier.id),
@@ -180,8 +299,44 @@ export class CourierService {
   }
 
   // ────────────────────────────────────────
+  // 扫码取货（订单级）：任务内单个订单取货，标记 station.picked=true
+  // 任务内全部订单取完后，任务 0→1（配送中）
+  // ────────────────────────────────────────
+  async pickupOrder(userId: bigint, orderId: number) {
+    const courier = await this.getCourier(userId)
+    const tasks = await this.prisma.deliveryTask.findMany({
+      where: { courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING] } },
+    })
+    const task = tasks.find((t) => {
+      const stations = Array.isArray(t.stationList) ? t.stationList : []
+      return stations.some((s: any) => s.type === 'deliver' && Number(s.orderId) === orderId)
+    })
+    if (!task) throw new BizException(ErrorCode.NOT_FOUND, '未找到该订单的配送任务')
+
+    const stations = (Array.isArray(task.stationList) ? task.stationList : []).map((s: any) => {
+      if (s.type === 'deliver' && Number(s.orderId) === orderId) return { ...s, picked: true }
+      return s
+    })
+    const deliverStations = stations.filter((s: any) => s.type === 'deliver')
+    const allPicked = deliverStations.length > 0 && deliverStations.every((s: any) => s.picked === true)
+
+    await this.prisma.$transaction([
+      this.prisma.deliveryTask.update({
+        where: { id: task.id },
+        data: { stationList: stations, status: allPicked ? TaskStatus.DELIVERING : TaskStatus.PENDING_PICKUP },
+      }),
+      this.prisma.order.updateMany({
+        where: { id: BigInt(orderId), status: { in: [OrderStatus.ASSIGNED, OrderStatus.WAIT_DELIVERY] } },
+        data: { status: OrderStatus.DELIVERING },
+      }),
+    ])
+
+    return { orderId, picked: true, taskId: Number(task.id), allPicked }
+  }
+
+  // ────────────────────────────────────────
   // 出发：取完所有安排订单后点「出发」，进入配送中，无法接新单；
-  // 配送完当前所有任务后自动恢复可接单（见 deliver）
+  // ⚠️ 校验所有货物均已取货，未取完则拒绝出发
   // ────────────────────────────────────────
   async depart(userId: bigint) {
     const courier = await this.getCourier(userId)
@@ -190,7 +345,36 @@ export class CourierService {
     })
     if (!active.length) throw new BizException(ErrorCode.PARAM_ERROR, '暂无待配送任务，无需出发')
 
-    await this.prisma.courier.update({ where: { id: courier.id }, data: { onRoute: 1 } })
-    return { courierId: Number(courier.id), onRoute: 1 }
+  // 查异常订单（无法交付），出发校验时跳过，避免异常订单阻塞整条路线
+  const allOrderIds = [...new Set(active.flatMap((t) => this.orderIdsOf(t)))]
+  const abnormal = allOrderIds.length
+    ? await this.prisma.order.findMany({
+        where: { id: { in: allOrderIds.map((id) => BigInt(id)) }, status: OrderStatus.UNDELIVERABLE },
+        select: { id: true },
+      })
+    : []
+  const abnormalSet = new Set(abnormal.map((o) => Number(o.id)))
+
+  // 校验所有货物均已取（跳过异常订单）
+  const unpicked: string[] = []
+  for (const t of active) {
+    const stations = Array.isArray(t.stationList) ? t.stationList : []
+    stations
+      .filter((s: any) => s.type === 'deliver' && s.picked !== true && !abnormalSet.has(Number(s.orderId)))
+      .forEach((s: any) => unpicked.push(s.shopName || `#${s.orderId}`))
+  }
+  if (unpicked.length) {
+    throw new BizException(ErrorCode.ORDER_STATUS_INVALID, `还有 ${unpicked.length} 件货物未取，无法出发`)
+  }
+
+    // 把已取货(1)的任务标记为已出发(2)，并设置配送员配送中
+    const readyIds = active.filter((t) => t.status === TaskStatus.DELIVERING).map((t) => t.id)
+    await this.prisma.$transaction([
+      ...(readyIds.length
+        ? [this.prisma.deliveryTask.updateMany({ where: { id: { in: readyIds }, courierId: courier.id }, data: { status: TaskStatus.DEPARTED } })]
+        : []),
+      this.prisma.courier.update({ where: { id: courier.id }, data: { onRoute: 1 } }),
+    ])
+    return { courierId: Number(courier.id), onRoute: 1, departedTasks: readyIds.length }
   }
 }

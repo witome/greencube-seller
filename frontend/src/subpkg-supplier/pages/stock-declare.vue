@@ -6,6 +6,7 @@
     <view v-for="it in order.items" :key="it.orderItemId" class="declare-item">
       <view class="di-name">{{ it.productName }}</view>
       <view class="di-order">订购 {{ it.qtyOrdered }}{{ it.unit }}</view>
+      <view v-if="it.remark" class="di-remark">备注：{{ it.remark }}</view>
       <view class="di-row">
         <text class="di-label">实交量</text>
         <input class="di-input" type="digit" v-model="form[it.orderItemId].qty" placeholder="0" />
@@ -88,9 +89,10 @@ onLoad(async (opts) => {
 .declare-item { background: #fff; border-radius: 8px; padding: 12px; margin: 0 12px 10px; }
 .di-name { font-size: 15px; font-weight: 700; color: $text-title; }
 .di-order { font-size: 12px; color: $text-second; margin: 4px 0 8px; }
+.di-remark { font-size: 12px; color: #fa8c16; margin: -4px 0 8px; }
 .di-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .di-label { font-size: 13px; color: $text-second; width: 60px; }
-.di-input { flex: 1; background: #f7f8fa; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+.di-input { flex: 1; background: #f7f8fa; border-radius: 6px; padding: 8px 10px; font-size: 14px; min-height: 40px; height: 40px; line-height: 24px; }
 .di-input.wide { flex: 2; }
 .di-unit { font-size: 13px; color: $text-second; }
 .row-btns { padding: 12px; }

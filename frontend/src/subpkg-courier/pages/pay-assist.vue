@@ -39,6 +39,6 @@ onLoad((opts) => {
 .qr { margin: 12px auto; width: 160px; height: 160px; border: 1px dashed #c0c6cd; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 40px; }
 .form-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
 .fr-l { color: $text-second; }
-.ipt { text-align: right; }
+.ipt { text-align: right; min-height: 40px; height: 40px; line-height: 40px; }
 .row-btns { padding: 12px; }
 </style>

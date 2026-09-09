@@ -23,6 +23,9 @@ import { AdminDispatchModule } from './modules/admin-dispatch/admin-dispatch.mod
 import { AdminFinanceModule } from './modules/admin-finance/admin-finance.module'
 import { AdminUserModule } from './modules/admin-user/admin-user.module'
 import { AuditModule } from './modules/audit/audit.module'
+import { AdminPricingModule } from './modules/admin-pricing/admin-pricing.module'
+import { AdminReportsModule } from './modules/admin-reports/admin-reports.module'
+import { RegisterModule } from './modules/register/register.module'
 
 @Module({
   imports: [
@@ -31,7 +34,7 @@ import { AuditModule } from './modules/audit/audit.module'
 
     // RolesGuard 依赖 JwtService，需全局注册
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'lvlifang-dev-secret',
+      secret: process.env.JWT_SECRET!,
       signOptions: { expiresIn: process.env.JWT_EXPIRES || '7d' },
     }),
 
@@ -50,6 +53,9 @@ import { AuditModule } from './modules/audit/audit.module'
     AdminFinanceModule,
     AdminUserModule,
     AuditModule,
+    AdminPricingModule,
+    AdminReportsModule,
+    RegisterModule,
   ],
   providers: [
     // 全局统一响应包装

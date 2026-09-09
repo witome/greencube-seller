@@ -5,7 +5,7 @@
   "versionName": "0.1.0",
   "versionCode": "1",
   "mp-weixin": {
-    "appid": "wx替换为你的小程序appid",
+    "appid": "wx82f6deee9c7750e4",
     "setting": {
       "urlCheck": false,
       "minified": true

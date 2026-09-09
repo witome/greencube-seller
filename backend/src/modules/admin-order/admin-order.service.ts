@@ -1,14 +1,16 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
+import { AuditService } from '../audit/audit.service'
 import { SplitDto } from './dto/split.dto'
+import { allocateByPriority } from '../../common/utils/split.util'
 
 @Injectable()
 export class AdminOrderService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   // ────────────────────────────────────────
-  // 待处理订单（待核单 status=10 + 待称重 status=20/30）
+  // 待处理订单（待核单 status=10 + 备货中 status=30）
   // ────────────────────────────────────────
   async pendingList() {
     const orders = await this.prisma.order.findMany({
@@ -34,6 +36,7 @@ export class AdminOrderService {
       items: o.items.map((it) => ({
         orderItemId: Number(it.id),
         productName: it.product?.name,
+        unit: it.product?.unit ?? '',
         supplierName: it.supplierId ? supplierNameMap.get(Number(it.supplierId)) : null,
         qtyOrdered: Number(it.qtyOrdered),
         qtyDeclared: it.qtyDeclared ? Number(it.qtyDeclared) : null,
@@ -60,54 +63,58 @@ export class AdminOrderService {
 
   // ────────────────────────────────────────
   // 拆单建议：按供货优先级 + 当日可供量自动分配
-  // 决策 1：核单时拆单
+  // 支持：待确认订单首次拆单 + 备货中订单「改拆单」
+  // 按商品维度聚合（已拆订单的明细按供应商拆了多条，合并回商品再重新分配）
   // ────────────────────────────────────────
   async splitPreview(orderId: number) {
     const order = await this.prisma.order.findUnique({
       where: { id: BigInt(orderId) },
-      include: { items: true },
+      include: { items: { include: { product: true } } },
     })
     if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
-    if (order.status !== OrderStatus.PENDING_CONFIRM) {
-      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅待确认订单可拆单')
+    if (order.status !== OrderStatus.PENDING_CONFIRM && order.status !== OrderStatus.STOCKING) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅待确认或备货中订单可拆单')
+    }
+
+    // 按商品维度聚合（合并已拆分结果）
+    const grouped = new Map<number, { productId: number; productName: string; qtyOrdered: number }>()
+    for (const item of order.items) {
+      const key = Number(item.productId)
+      if (!grouped.has(key)) {
+        grouped.set(key, { productId: key, productName: item.product?.name ?? '', qtyOrdered: 0 })
+      }
+      grouped.get(key)!.qtyOrdered += Number(item.qtyOrdered)
     }
 
     const result = []
-    for (const item of order.items) {
+    for (const g of grouped.values()) {
       const links = await this.prisma.productSupplierLink.findMany({
-        where: { productId: item.productId, status: 1 },
+        where: { productId: BigInt(g.productId), status: 1 },
         orderBy: { priority: 'asc' },
         include: { supplier: true },
       })
       if (links.length === 0) {
-        result.push({ orderItemId: Number(item.id), productName: item.id, allocations: [], noSupplier: true })
+        result.push({ productId: g.productId, productName: g.productName, qtyOrdered: g.qtyOrdered, allocations: [], noSupplier: true })
         continue
       }
 
-      // 按优先级分配：主供优先满足，不足则差额流转次供
-      let remaining = Number(item.qtyOrdered)
-      const allocations = []
-      for (const link of links) {
-        if (remaining <= 0) break
-        const take = Math.min(remaining, Number(link.dailySupply))
-        if (take > 0) {
-          allocations.push({
-            supplierId: Number(link.supplierId),
-            supplierName: link.supplier.stallName,
-            priority: link.priority,
-            qty: Math.round(take * 100) / 100,
-            supplyPrice: Number(link.supplyPrice),
-          })
-          remaining = Math.round((remaining - take) * 100) / 100
-        }
-      }
+      const { allocations, shortage } = allocateByPriority(
+        links.map((l) => ({
+          supplierId: l.supplierId,
+          supplierName: l.supplier.stallName,
+          priority: l.priority,
+          dailySupply: Number(l.dailySupply),
+          supplyPrice: Number(l.supplyPrice),
+        })),
+        g.qtyOrdered,
+      )
 
       result.push({
-        orderItemId: Number(item.id),
-        productId: Number(item.productId),
-        qtyOrdered: Number(item.qtyOrdered),
+        productId: g.productId,
+        productName: g.productName,
+        qtyOrdered: g.qtyOrdered,
         allocations,
-        shortage: remaining > 0 ? remaining : 0, // 可供量不足以满足的差额
+        shortage: shortage > 0 ? shortage : 0,
       })
     }
 
@@ -115,37 +122,50 @@ export class AdminOrderService {
   }
 
   // ────────────────────────────────────────
-  // 核单拆单（应用分配，落 supplierId + supplyPrice 快照）
-  // 决策 1：下单不拆单，核单时才拆
+  // 拆单/改拆单（应用分配，落 supplierId + supplyPrice 快照）
+  // 决策 1：按商品维度重建明细，拆完直接进入「备货中」
   // ────────────────────────────────────────
-  async split(orderId: number, dto: SplitDto) {
+  async split(orderId: number, dto: SplitDto, operatorId?: bigint) {
     const order = await this.prisma.order.findUnique({
       where: { id: BigInt(orderId) },
       include: { items: true },
     })
     if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
-    if (order.status !== OrderStatus.PENDING_CONFIRM) {
-      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅待确认订单可拆单')
+    if (order.status !== OrderStatus.PENDING_CONFIRM && order.status !== OrderStatus.STOCKING) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅待确认或备货中订单可拆单')
     }
 
-    // 校验：输入的 orderItemId 必须都属于本订单
-    const itemIds = new Set(order.items.map((i) => Number(i.id)))
+    // 校验：输入的 productId 必须都属于本订单
+    const productIds = new Set(order.items.map((i) => Number(i.productId)))
     for (const it of dto.items) {
-      if (!itemIds.has(it.orderItemId)) {
-        throw new BizException(ErrorCode.PARAM_ERROR, `orderItemId ${it.orderItemId} 不属于本订单`)
+      if (!productIds.has(it.productId)) {
+        throw new BizException(ErrorCode.PARAM_ERROR, `productId ${it.productId} 不属于本订单`)
+      }
+    }
+
+    // salePrice 快照：按商品取（同一商品 salePrice 一致）
+    const salePriceMap = new Map<number, number>()
+    for (const item of order.items) {
+      if (!salePriceMap.has(Number(item.productId))) {
+        salePriceMap.set(Number(item.productId), Number(item.salePrice))
+      }
+    }
+    // 商品备注快照：拆单重建明细时保留采购方备注
+    const remarkMap = new Map<number, string | null>()
+    for (const item of order.items) {
+      if (!remarkMap.has(Number(item.productId))) {
+        remarkMap.set(Number(item.productId), item.remark)
       }
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // 决策 1 落点：删除未拆单的明细，按供应商重新生成
+      // 决策 1 落点：删除全部明细，按供应商重新生成
       await tx.orderItem.deleteMany({ where: { orderId: BigInt(orderId) } })
 
       for (const it of dto.items) {
-        // 找到原明细拿 productId / salePrice 快照
-        const original = order.items.find((i) => Number(i.id) === it.orderItemId)!
         for (const alloc of it.allocations) {
           const link = await tx.productSupplierLink.findUnique({
-            where: { productId_supplierId: { productId: original.productId, supplierId: BigInt(alloc.supplierId) } },
+            where: { productId_supplierId: { productId: BigInt(it.productId), supplierId: BigInt(alloc.supplierId) } },
           })
           if (!link || link.status !== 1) {
             throw new BizException(ErrorCode.PARAM_ERROR, `供应商 ${alloc.supplierId} 不供应该商品`)
@@ -153,24 +173,191 @@ export class AdminOrderService {
           await tx.orderItem.create({
             data: {
               orderId: BigInt(orderId),
-              productId: original.productId,
+              productId: BigInt(it.productId),
               supplierId: BigInt(alloc.supplierId),
               qtyOrdered: alloc.qty,
               qtyDeclared: alloc.qty, // 默认满额：有货直接备货，缺货再做「异常申报」改小
-              salePrice: original.salePrice,
+              remark: remarkMap.get(it.productId) ?? null,
+              salePrice: salePriceMap.get(it.productId)!,
               supplyPrice: link.supplyPrice, // ⚠️ 拆单时写供货价快照
             },
           })
         }
       }
 
-      // 拆完直接进入「备货中」，供应商不再需要逐项申报
+      // 拆完直接进入「备货中」
       await tx.order.update({
         where: { id: BigInt(orderId) },
         data: { status: OrderStatus.STOCKING },
       })
     })
 
+    if (operatorId) {
+      await this.audit.log({
+        operatorId,
+        action: order.status === OrderStatus.STOCKING ? 'RE_SPLIT' : 'SPLIT',
+        entity: 'order',
+        entityId: orderId,
+        after: { orderId, allocations: dto.items },
+      })
+    }
+
     return { orderId, status: OrderStatus.STOCKING, supplierCount: dto.items.reduce((s, i) => s + i.allocations.length, 0) }
+  }
+
+  // ────────────────────────────────────────
+  // 一键自动拆单：按供应商优先级 + 当日可供量自动分配并直接应用
+  // 与「手动拆单」共用同一套分配算法，落库复用 split
+  // ────────────────────────────────────────
+  async autoSplit(orderId: number, operatorId?: bigint) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: BigInt(orderId) },
+      include: { items: true },
+    })
+    if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+    if (order.status !== OrderStatus.PENDING_CONFIRM && order.status !== OrderStatus.STOCKING) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅待确认或备货中订单可拆单')
+    }
+
+    // 按商品维度聚合
+    const grouped = new Map<number, { productId: number; qtyOrdered: number }>()
+    for (const item of order.items) {
+      const key = Number(item.productId)
+      if (!grouped.has(key)) grouped.set(key, { productId: key, qtyOrdered: 0 })
+      grouped.get(key)!.qtyOrdered += Number(item.qtyOrdered)
+    }
+
+    // 自动分配（主供优先，不足差额流转次供）
+    const items: { productId: number; allocations: { supplierId: number; qty: number }[] }[] = []
+    for (const g of grouped.values()) {
+      const links = await this.prisma.productSupplierLink.findMany({
+        where: { productId: BigInt(g.productId), status: 1 },
+        orderBy: { priority: 'asc' },
+      })
+      if (links.length === 0) continue // 无供应商：保留原明细不分配
+      const { allocations } = allocateByPriority(
+        links.map((l) => ({
+          supplierId: l.supplierId,
+          priority: l.priority,
+          dailySupply: Number(l.dailySupply),
+          supplyPrice: Number(l.supplyPrice),
+        })),
+        g.qtyOrdered,
+      )
+      if (allocations.length === 0) continue
+      items.push({ productId: g.productId, allocations })
+    }
+
+    if (!items.length) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该订单无可自动分配的商品（无供应商或可供量为 0）')
+    }
+
+    return this.split(orderId, { items }, operatorId)
+  }
+
+  // ────────────────────────────────────────
+  // 一键拆单：把所有待确认(10)订单自动拆单，逐个处理并统计成败
+  // ────────────────────────────────────────
+  async autoSplitAll(operatorId?: bigint) {
+    const orders = await this.prisma.order.findMany({
+      where: { status: OrderStatus.PENDING_CONFIRM },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    })
+
+    let success = 0
+    const failed: { orderId: number; reason: string }[] = []
+    for (const o of orders) {
+      try {
+        await this.autoSplit(Number(o.id), operatorId)
+        success++
+      } catch (e: any) {
+        failed.push({ orderId: Number(o.id), reason: e?.message || '拆单失败' })
+      }
+    }
+
+    return { total: orders.length, success, failed }
+  }
+
+  // ────────────────────────────────────────
+  // 缺货二次拆单：对无法交付(92)订单重新按优先级+可供量分配供应商，恢复为备货中(30)
+  // 用于配送员上报「缺货」异常后，运营重新分配供应商、让新供应商备货
+  // ────────────────────────────────────────
+  async reSplitShortage(orderId: number, operatorId?: bigint) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: BigInt(orderId) },
+      include: { items: true },
+    })
+    if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+    if (order.status !== OrderStatus.UNDELIVERABLE) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅无法交付(缺货)订单可二次拆单')
+    }
+
+    // 按商品聚合（忽略已有供应商，按当前优先级+可供量重新分配）
+    const grouped = new Map<number, { productId: number; qtyOrdered: number; salePrice: number; remark: string | null }>()
+    for (const item of order.items) {
+      const key = Number(item.productId)
+      if (!grouped.has(key)) grouped.set(key, { productId: key, qtyOrdered: 0, salePrice: Number(item.salePrice), remark: item.remark })
+      grouped.get(key)!.qtyOrdered += Number(item.qtyOrdered)
+    }
+
+    let supplierCount = 0
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orderItem.deleteMany({ where: { orderId: order.id } })
+      for (const g of grouped.values()) {
+        const links = await tx.productSupplierLink.findMany({
+          where: { productId: BigInt(g.productId), status: 1 },
+          orderBy: { priority: 'asc' },
+        })
+        // 无供应商 / 可供量为 0：保留原明细（不分配，等运营后续处理）
+        if (links.length === 0) {
+          await tx.orderItem.create({
+            data: { orderId: order.id, productId: BigInt(g.productId), qtyOrdered: g.qtyOrdered, remark: g.remark, salePrice: g.salePrice },
+          })
+          continue
+        }
+        const { allocations } = allocateByPriority(
+          links.map((l) => ({ supplierId: l.supplierId, priority: l.priority, dailySupply: Number(l.dailySupply), supplyPrice: Number(l.supplyPrice) })),
+          g.qtyOrdered,
+        )
+        if (allocations.length === 0) {
+          await tx.orderItem.create({
+            data: { orderId: order.id, productId: BigInt(g.productId), qtyOrdered: g.qtyOrdered, remark: g.remark, salePrice: g.salePrice },
+          })
+          continue
+        }
+        for (const a of allocations) {
+          await tx.orderItem.create({
+            data: {
+              orderId: order.id,
+              productId: BigInt(g.productId),
+              supplierId: BigInt(a.supplierId),
+              qtyOrdered: a.qty,
+              qtyDeclared: a.qty,
+              remark: g.remark,
+              salePrice: g.salePrice,
+              supplyPrice: a.supplyPrice,
+            },
+          })
+          supplierCount++
+        }
+      }
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.STOCKING },
+      })
+    })
+
+    if (operatorId) {
+      await this.audit.log({
+        operatorId,
+        action: 'RE_SPLIT_SHORTAGE',
+        entity: 'order',
+        entityId: orderId,
+        after: { orderId, supplierCount },
+      })
+    }
+
+    return { orderId, status: OrderStatus.STOCKING, supplierCount }
   }
 }

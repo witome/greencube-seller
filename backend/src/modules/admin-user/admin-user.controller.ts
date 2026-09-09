@@ -5,6 +5,7 @@ import { AppealReviewDto } from './dto/appeal-review.dto'
 import { AssignDto } from './dto/assign.dto'
 import { CategoryDto } from './dto/category.dto'
 import { SupplierCategoriesDto } from './dto/supplier-categories.dto'
+import { UpdateBuyerDto, UpdateSupplierDto, UpdateCourierDto } from './dto/update-profile.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -111,5 +112,40 @@ export class AdminUserController {
   @Roles(Role.ADMIN)
   async setSupplierCategories(@Param('id') id: string, @Body() dto: SupplierCategoriesDto) {
     return this.service.setSupplierCategories(Number(id), dto)
+  }
+
+  /// 审核供应商（0 待审核 / 1 合作中 / 2 停合作）
+  @Put('suppliers/:id/status')
+  @Roles(Role.ADMIN)
+  async updateSupplierStatus(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() body: any) {
+    return this.service.updateSupplierStatus(Number(id), Number(body?.status), userId)
+  }
+
+  /// 审核配送员（0 待审核 / 1 正常 / 2 停用 / 9 黑名单）
+  @Put('couriers/:id/status')
+  @Roles(Role.ADMIN)
+  async updateCourierStatus(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() body: any) {
+    return this.service.updateCourierStatus(Number(id), Number(body?.status), userId)
+  }
+
+  /// 编辑采购方信息
+  @Put('buyers/:id')
+  @Roles(Role.ADMIN)
+  async updateBuyer(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() dto: UpdateBuyerDto) {
+    return this.service.updateBuyer(Number(id), userId, dto)
+  }
+
+  /// 编辑供应商信息
+  @Put('suppliers/:id')
+  @Roles(Role.ADMIN)
+  async updateSupplier(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() dto: UpdateSupplierDto) {
+    return this.service.updateSupplier(Number(id), userId, dto)
+  }
+
+  /// 编辑配送员信息
+  @Put('couriers/:id')
+  @Roles(Role.ADMIN)
+  async updateCourier(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() dto: UpdateCourierDto) {
+    return this.service.updateCourier(Number(id), userId, dto)
   }
 }

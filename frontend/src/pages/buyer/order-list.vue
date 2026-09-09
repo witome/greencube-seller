@@ -44,7 +44,10 @@ const timeText = (w) => ({ 1: '早 05-08', 2: '中 10-13', 3: '晚 16-19' }[w] |
 
 const load = async () => {
   loading.value = true
-  const data = await buyerApi.getOrderList({ status: activeStatus.value || undefined, page: 1, pageSize: 20 })
+  // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成 "undefined"，导致后端误过滤
+  const params = { page: 1, pageSize: 20 }
+  if (activeStatus.value) params.status = activeStatus.value
+  const data = await buyerApi.getOrderList(params)
   orders.value = data.list
   loading.value = false
 }

@@ -1,7 +1,10 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common'
+import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common'
 import { AdminGoodsService } from './admin-goods.service'
 import { ReviewApplyDto } from './dto/review-apply.dto'
 import { ReviewChangeDto } from './dto/review-change.dto'
+import { SetPriorityDto } from './dto/set-priority.dto'
+import { CreateProductDto } from './dto/create-product.dto'
+import { UpdateProductDto } from './dto/update-product.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -24,6 +27,34 @@ export class AdminGoodsController {
     return this.service.changePending()
   }
 
+  /// 商品管理：在售/下架商品列表（搜索/分类/状态筛选）
+  @Get('list')
+  @Roles(Role.ADMIN)
+  async listProducts(@Query() query: any) {
+    return this.service.listProducts(query)
+  }
+
+  /// 新增商品（运营直接添加，归属供应商 + 供货价 + 加价比例）
+  @Post()
+  @Roles(Role.ADMIN)
+  async createProduct(@CurrentUser('userId') userId: bigint, @Body() dto: CreateProductDto) {
+    return this.service.createProduct(userId, dto)
+  }
+
+  /// 编辑商品
+  @Put(':id')
+  @Roles(Role.ADMIN)
+  async updateProduct(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() dto: UpdateProductDto) {
+    return this.service.updateProduct(Number(id), userId, dto)
+  }
+
+  /// 上下架（0 下架 / 1 上架）
+  @Put(':id/status')
+  @Roles(Role.ADMIN)
+  async updateProductStatus(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() body: any) {
+    return this.service.updateProductStatus(Number(id), Number(body?.status), userId)
+  }
+
   /// 新品审核（通过上架 / 驳回）
   @Post('pending/:applyId/review')
   @Roles(Role.ADMIN)
@@ -38,10 +69,17 @@ export class AdminGoodsController {
     return this.service.reviewChange(Number(changeId), userId, dto)
   }
 
-  /// 供货优先级
+  /// 供货优先级查询
   @Get(':productId/priority')
   @Roles(Role.ADMIN)
   async priority(@Param('productId') productId: string) {
     return this.service.priority(Number(productId))
+  }
+
+  /// 设置供货优先级（同一商品多供应商排序）
+  @Put(':productId/priority')
+  @Roles(Role.ADMIN)
+  async setPriority(@Param('productId') productId: string, @CurrentUser('userId') userId: bigint, @Body() dto: SetPriorityDto) {
+    return this.service.setPriority(Number(productId), userId, dto)
   }
 }

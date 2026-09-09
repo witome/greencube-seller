@@ -195,7 +195,9 @@ const onSwitchRole = () => {
 const logout = () => {
   uni.removeStorageSync('token')
   uni.removeStorageSync('currentRole')
-  uni.reLaunch({ url: '/pages/buyer/home' })
+  uni.removeStorageSync('accountStatus')
+  uni.removeStorageSync('devRole')
+  uni.reLaunch({ url: '/pages/login/index' })
 }
 
 const currentPeriod = () => {

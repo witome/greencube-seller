@@ -59,6 +59,29 @@
           <el-empty v-if="!changeList.length && !loading" description="暂无待审核变更" />
         </el-card>
       </el-tab-pane>
+
+      <!-- 供货优先级（在售商品多供应商排序） -->
+      <el-tab-pane label="供货优先级" name="priority">
+        <el-card shadow="never">
+          <el-table :data="priorityProducts" v-loading="priorityLoading" stripe>
+            <el-table-column prop="name" label="商品名称" min-width="160" />
+            <el-table-column label="销售价" width="100">
+              <template #default="{ row }">¥{{ row.salePrice }}</template>
+            </el-table-column>
+            <el-table-column label="供货供应商数" width="120">
+              <template #default="{ row }">
+                <el-tag size="small" type="info">{{ row.supplierCount }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="140" fixed="right">
+              <template #default="{ row }">
+                <el-button type="primary" link @click="openPriority(row)">设置优先级</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!priorityProducts.length && !priorityLoading" description="暂无可设置优先级的商品" />
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 新品通过弹窗 -->
@@ -98,13 +121,36 @@
         <el-button type="danger" :loading="submitting" @click="submitRejectChange">确认驳回</el-button>
       </template>
     </el-dialog>
+
+    <!-- 供货优先级设置弹窗 -->
+    <el-dialog v-model="priorityDialog" :title="`供货优先级 · ${currentPriority?.productName || ''}`" width="560px">
+      <el-alert type="info" :closable="false" title="优先级数字越小越优先（自动拆单时优先分配），按供应商调整后保存" style="margin-bottom:12px" />
+      <el-table :data="priorityList" v-loading="priorityDetailLoading" stripe>
+        <el-table-column prop="supplierName" label="供应商" min-width="140" />
+        <el-table-column label="供货价" width="100">
+          <template #default="{ row }">¥{{ row.supplyPrice }}</template>
+        </el-table-column>
+        <el-table-column label="日可供量" width="100">
+          <template #default="{ row }">{{ row.dailySupply }}</template>
+        </el-table-column>
+        <el-table-column label="优先级" width="140">
+          <template #default="{ row }">
+            <el-input-number v-model="row.priority" :min="1" :max="99" size="small" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="priorityDialog = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="savePriority">保存优先级</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { goodsAdminApi } from '../../api/modules'
+import { goodsAdminApi, pricingAdminApi } from '../../api/modules'
 
 const activeTab = ref('apply')
 const loading = ref(false)
@@ -112,6 +158,14 @@ const submitting = ref(false)
 
 const pendingList = ref([])
 const changeList = ref([])
+
+// 供货优先级
+const priorityProducts = ref([])
+const priorityLoading = ref(false)
+const priorityDialog = ref(false)
+const priorityDetailLoading = ref(false)
+const currentPriority = ref(null)
+const priorityList = ref([])
 
 const approveDialog = ref(false)
 const rejectDialog = ref(false)
@@ -210,7 +264,47 @@ async function submitRejectChange() {
   }
 }
 
-onMounted(load)
+// ── 供货优先级 ──
+async function loadPriorityProducts() {
+  priorityLoading.value = true
+  try {
+    priorityProducts.value = await pricingAdminApi.getList()
+  } catch (e) { /* 已提示 */ } finally {
+    priorityLoading.value = false
+  }
+}
+
+async function openPriority(row) {
+  currentPriority.value = row
+  priorityDetailLoading.value = true
+  priorityDialog.value = true
+  try {
+    const detail = await goodsAdminApi.getPriority(row.productId)
+    priorityList.value = detail.suppliers || []
+  } catch (e) {
+    priorityList.value = []
+  } finally {
+    priorityDetailLoading.value = false
+  }
+}
+
+async function savePriority() {
+  submitting.value = true
+  try {
+    const items = priorityList.value.map((s) => ({ supplierId: s.supplierId, priority: s.priority }))
+    await goodsAdminApi.setPriority(currentPriority.value.productId, items)
+    ElMessage.success('优先级已保存')
+    priorityDialog.value = false
+    loadPriorityProducts()
+  } catch (e) { /* 已提示 */ } finally {
+    submitting.value = false
+  }
+}
+
+onMounted(() => {
+  load()
+  loadPriorityProducts()
+})
 </script>
 
 <style scoped>

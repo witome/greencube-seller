@@ -49,7 +49,7 @@ export class AuthService {
     if (user.status === 0) throw new BizException(ErrorCode.FORBIDDEN, '账号已被禁用')
 
     const roles = await this.resolveRoles(user.id, user)
-    const currentRole = this.pickDefaultRole(roles)
+    const currentRole = this.pickRole(dto.code, roles)
 
     return {
       token: this.signToken(user.id, roles, currentRole),
@@ -154,6 +154,24 @@ export class AuthService {
     return order.find((r) => roles.includes(r)) ?? Role.PURCHASER
   }
 
+  /**
+   * 登录时选择当前身份：
+   * 开发 mock 登录（WX_MOCK_LOGIN=1）时，code 即角色意图（buyer/demo_supplier/courier/admin），
+   * 优先选 code 对应角色，避免 pickDefaultRole 总是优先 purchaser 导致切换角色时 currentRole 错乱。
+   */
+  private pickRole(code: string, roles: string[]): string {
+    const roleMap: Record<string, string> = {
+      buyer: Role.PURCHASER,
+      demo_supplier: Role.SUPPLIER,
+      courier: Role.COURIER,
+      admin: Role.ADMIN,
+      business_agent: Role.BUSINESS_AGENT,
+    }
+    const intended = roleMap[code]
+    if (intended && roles.includes(intended)) return intended
+    return this.pickDefaultRole(roles)
+  }
+
   /** 决策 4：JWT payload 内嵌 currentRole */
   private signToken(userId: bigint, roles: string[], currentRole: string): string {
     return this.jwt.sign({
@@ -172,9 +190,12 @@ export class AuthService {
   private async code2session(code: string): Promise<WxSession> {
     const appid = process.env.WX_APPID
     const secret = process.env.WX_SECRET
+    // 开发 mock 开关：WX_MOCK_LOGIN=1 时用 code 直接当 openid（H5 无 wx.login），
+    // 否则走真实 code2session（小程序端需设置 WX_MOCK_LOGIN=0）
+    const mockLogin = process.env.WX_MOCK_LOGIN === '1'
 
-    if (!appid || !secret) {
-      console.warn('[auth] 未配置 WX_APPID/WX_SECRET，使用开发 mock 登录')
+    if (mockLogin || !appid || !secret) {
+      console.warn('[auth] 使用开发 mock 登录')
       return { openid: `dev_${code}` }
     }
 

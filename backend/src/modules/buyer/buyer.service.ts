@@ -41,9 +41,10 @@ export class BuyerService {
         phone: dto.phone,
         address: dto.address,
         deliveryWindows: dto.deliveryWindows ?? ['中 10-13'],
-        businessLicenseNo: dto.businessLicenseNo,
-        businessLicenseImg: dto.licenseImg,
-        foodPermitImg: dto.permitImg,
+        // 空字符串统一转 null，避免 business_license_no 唯一约束冲突（前端会传 ''）
+        businessLicenseNo: dto.businessLicenseNo || null,
+        businessLicenseImg: dto.licenseImg || null,
+        foodPermitImg: dto.permitImg || null,
         accountStatus: AccountStatus.PENDING,
       },
     })

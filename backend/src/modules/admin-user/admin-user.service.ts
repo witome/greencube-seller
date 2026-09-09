@@ -6,10 +6,12 @@ import { AppealReviewDto } from './dto/appeal-review.dto'
 import { AssignDto } from './dto/assign.dto'
 import { CategoryDto } from './dto/category.dto'
 import { SupplierCategoriesDto } from './dto/supplier-categories.dto'
+import { UpdateBuyerDto, UpdateSupplierDto, UpdateCourierDto } from './dto/update-profile.dto'
+import { AuditService } from '../audit/audit.service'
 
 @Injectable()
 export class AdminUserService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   // ────────────────────────────────────────
   // 待审核采购方队列
@@ -45,6 +47,7 @@ export class AdminUserService {
         shopName: p.shopName,
         contact: p.contact,
         phone: p.phone,
+        address: p.address,
         registeredAt: p.registeredAt.toISOString(),
         overdue,
         agentName: p.verifiedBy ? `业务员#${p.verifiedBy}` : null, // 简化：暂存 ID
@@ -191,12 +194,17 @@ export class AdminUserService {
       orderBy: { id: 'asc' },
       include: { user: true },
     })
-    return suppliers.map((s) => ({
-      supplierId: Number(s.id),
-      stallName: s.stallName,
-      status: s.status,
-      phone: s.user?.phone || null,
-    }))
+    return suppliers.map((s) => {
+      const qual = (s.qualification as any) || {}
+      return {
+        supplierId: Number(s.id),
+        stallName: s.stallName,
+        address: s.address || null,
+        contact: qual.contact || null,
+        status: s.status,
+        phone: s.user?.phone || qual.phone || null,
+      }
+    })
   }
 
   // ────────────────────────────────────────
@@ -210,7 +218,12 @@ export class AdminUserService {
     return couriers.map((c) => ({
       courierId: Number(c.id),
       source: c.source,
+      name: c.user?.name || null,
       vehicleType: c.vehicleType,
+      ownVehicle: c.ownVehicle,
+      hasDriverLicense: c.hasDriverLicense,
+      licenseType: c.licenseType || null,
+      idCardNo: c.idCardNo || null,
       status: c.status,
       phone: c.user?.phone || null,
     }))
@@ -277,6 +290,139 @@ export class AdminUserService {
       })
     }
     return { supplierId: Number(id), categoryIds: dto.categoryIds }
+  }
+
+  // ────────────────────────────────────────
+  // 供应商审核（0 待审核 / 1 合作中 / 2 停合作）
+  // ────────────────────────────────────────
+  async updateSupplierStatus(id: number, status: number, operatorId: bigint) {
+    const supplier = await this.prisma.supplier.findUnique({ where: { id: BigInt(id) } })
+    if (!supplier) throw new BizException(ErrorCode.NOT_FOUND, '供应商不存在')
+    if (![0, 1, 2].includes(status)) throw new BizException(ErrorCode.PARAM_ERROR, '状态值不合法')
+
+    const before = { status: supplier.status }
+    await this.prisma.supplier.update({ where: { id: BigInt(id) }, data: { status } })
+    await this.audit.log({
+      operatorId,
+      action: 'REVIEW_SUPPLIER',
+      entity: 'supplier',
+      entityId: id,
+      before,
+      after: { status },
+    })
+    return { supplierId: id, status }
+  }
+
+  // ────────────────────────────────────────
+  // 配送员审核（0 待审核 / 1 正常 / 2 停用 / 9 黑名单）
+  // ────────────────────────────────────────
+  async updateCourierStatus(id: number, status: number, operatorId: bigint) {
+    const courier = await this.prisma.courier.findUnique({ where: { id: BigInt(id) } })
+    if (!courier) throw new BizException(ErrorCode.NOT_FOUND, '配送员不存在')
+    if (![0, 1, 2, 9].includes(status)) throw new BizException(ErrorCode.PARAM_ERROR, '状态值不合法')
+
+    const before = { status: courier.status }
+    await this.prisma.courier.update({ where: { id: BigInt(id) }, data: { status } })
+    await this.audit.log({
+      operatorId,
+      action: 'REVIEW_COURIER',
+      entity: 'courier',
+      entityId: id,
+      before,
+      after: { status },
+    })
+    return { courierId: id, status }
+  }
+
+  // ────────────────────────────────────────
+  // 编辑采购方信息（运营后台）
+  // ────────────────────────────────────────
+  async updateBuyer(id: number, operatorId: bigint, dto: UpdateBuyerDto) {
+    const p = await this.prisma.purchaser.findUnique({ where: { id: BigInt(id) } })
+    if (!p) throw new BizException(ErrorCode.NOT_FOUND, '采购方不存在')
+
+    const data: any = {}
+    if (dto.shopName !== undefined) data.shopName = dto.shopName
+    if (dto.contact !== undefined) data.contact = dto.contact
+    if (dto.phone !== undefined) data.phone = dto.phone
+    if (dto.address !== undefined) data.address = dto.address
+    if (dto.businessLicenseNo !== undefined) data.businessLicenseNo = dto.businessLicenseNo || null
+    if (dto.deliveryWindows !== undefined) data.deliveryWindows = dto.deliveryWindows
+
+    await this.prisma.purchaser.update({ where: { id: BigInt(id) }, data })
+    if (dto.phone !== undefined) {
+      await this.prisma.user.update({ where: { id: p.userId }, data: { phone: dto.phone } })
+    }
+    await this.audit.log({
+      operatorId,
+      action: 'UPDATE_BUYER',
+      entity: 'purchaser',
+      entityId: id,
+      after: data,
+    })
+    return { purchaserId: id, updated: true }
+  }
+
+  // ────────────────────────────────────────
+  // 编辑供应商信息（运营后台）
+  // ────────────────────────────────────────
+  async updateSupplier(id: number, operatorId: bigint, dto: UpdateSupplierDto) {
+    const s = await this.prisma.supplier.findUnique({ where: { id: BigInt(id) } })
+    if (!s) throw new BizException(ErrorCode.NOT_FOUND, '供应商不存在')
+
+    const data: any = {}
+    if (dto.stallName !== undefined) data.stallName = dto.stallName
+    if (dto.address !== undefined) data.address = dto.address || null
+
+    const qual = (s.qualification as any) || {}
+    if (dto.contact !== undefined) qual.contact = dto.contact
+    if (dto.phone !== undefined) qual.phone = dto.phone
+    if (dto.contact !== undefined || dto.phone !== undefined) data.qualification = qual
+
+    await this.prisma.supplier.update({ where: { id: BigInt(id) }, data })
+    if (dto.phone !== undefined) {
+      await this.prisma.user.update({ where: { id: s.userId }, data: { phone: dto.phone } })
+    }
+    await this.audit.log({
+      operatorId,
+      action: 'UPDATE_SUPPLIER',
+      entity: 'supplier',
+      entityId: id,
+      after: data,
+    })
+    return { supplierId: id, updated: true }
+  }
+
+  // ────────────────────────────────────────
+  // 编辑配送员信息（运营后台）
+  // ────────────────────────────────────────
+  async updateCourier(id: number, operatorId: bigint, dto: UpdateCourierDto) {
+    const c = await this.prisma.courier.findUnique({ where: { id: BigInt(id) } })
+    if (!c) throw new BizException(ErrorCode.NOT_FOUND, '配送员不存在')
+
+    const data: any = {}
+    if (dto.idCardNo !== undefined) data.idCardNo = dto.idCardNo || null
+    if (dto.vehicleType !== undefined) data.vehicleType = dto.vehicleType
+    if (dto.ownVehicle !== undefined) data.ownVehicle = dto.ownVehicle
+    if (dto.hasDriverLicense !== undefined) data.hasDriverLicense = dto.hasDriverLicense
+    if (dto.licenseType !== undefined) data.licenseType = dto.licenseType || null
+    if (dto.healthCertExpiry !== undefined) data.healthCertExpiry = dto.healthCertExpiry ? new Date(dto.healthCertExpiry) : null
+
+    await this.prisma.courier.update({ where: { id: BigInt(id) }, data })
+    if (dto.name !== undefined || dto.phone !== undefined) {
+      const ud: any = {}
+      if (dto.name !== undefined) ud.name = dto.name
+      if (dto.phone !== undefined) ud.phone = dto.phone
+      await this.prisma.user.update({ where: { id: c.userId }, data: ud })
+    }
+    await this.audit.log({
+      operatorId,
+      action: 'UPDATE_COURIER',
+      entity: 'courier',
+      entityId: id,
+      after: { ...data, name: dto.name, phone: dto.phone },
+    })
+    return { courierId: id, updated: true }
   }
 
   private statusText(status: number): string {

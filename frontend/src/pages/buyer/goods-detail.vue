@@ -33,6 +33,7 @@
 import { ref, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
+import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
 
 const goods = ref(null)
 const qty = ref(1)
@@ -45,9 +46,16 @@ const addCart = async () => {
 }
 
 const buyNow = async () => {
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  // 配送日期：当天有可选时段用当天，否则顺延次日；自动选最早可用时段（不弹窗）
+  let deliveryDate = dateStr()
+  let winList = availableTimeWindows(deliveryDate)
+  if (!winList.length) {
+    deliveryDate = tomorrowStr()
+    winList = availableTimeWindows(deliveryDate)
+  }
+  const w = winList[0]
   const order = await buyerApi.placeOrder({
-    deliveryDate: tomorrow, timeWindow: 1,
+    deliveryDate, timeWindow: w.value,
     items: [{ productId: Number(id.value), qty: qty.value }],
   })
   uni.redirectTo({ url: `/pages/buyer/order-detail?id=${order.orderId}` })

@@ -53,7 +53,6 @@ const supplierTabs = [
 ]
 
 onShow(() => {
-  uni.hideTabBar({ animation: false })
 })
 
 const switchRole = async (r) => {
@@ -66,7 +65,8 @@ const switchRole = async (r) => {
 
 const logout = () => {
   uni.removeStorageSync('token'); uni.removeStorageSync('currentRole')
-  uni.reLaunch({ url: '/pages/buyer/home' })
+  uni.removeStorageSync('accountStatus'); uni.removeStorageSync('devRole')
+  uni.reLaunch({ url: '/pages/login/index' })
 }
 
 onMounted(async () => { try { profile.value = await authApi.getProfile() } catch (e) {} })

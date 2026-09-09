@@ -147,7 +147,6 @@ const icoBg = (s) => ({ on_sale: '#E6F9F0', changing: '#E6F9F0', pending: '#FFF3
 const tagType = (s) => ({ on_sale: 'g', changing: 'o', pending: 'o', rejected: 'r', off_shelf: 'gray' }[s] || 'gray')
 
 onShow(() => {
-  uni.hideTabBar({ animation: false })
 })
 
 async function load() {

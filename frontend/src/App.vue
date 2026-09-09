@@ -60,19 +60,13 @@ function injectDevRoleSwitcher() {
 }
 
 export default {
-  async onLaunch() {
-    // 已有 token 直接跳过
-    if (uni.getStorageSync('token')) return
-    // 开发期自动登录（H5 无真实 wx.login，走后端 dev mock）
-    const devRole = uni.getStorageSync('devRole') || 'buyer'
+  onLaunch() {
+    // 暴露补登方法（供切换角色等场景复用）
     try {
-      const data = await authApi.login(devRole)
-      uni.setStorageSync('token', data.token)
-      uni.setStorageSync('currentRole', data.currentRole)
-      uni.setStorageSync('accountStatus', data.accountStatus)
-    } catch (e) {
-      console.warn('自动登录失败（后端可能未启动）', e)
-    }
+      const app = getApp()
+      app.globalData = app.globalData || {}
+      app.globalData.relogin = () => this.autoLogin()
+    } catch (e) {}
   },
   onShow() {
     // #ifdef H5
@@ -84,6 +78,68 @@ export default {
       }
     }
     // #endif
+    // 登录页方案：token 被清除后，若不在登录页则跳登录页（不再自动补登）
+    if (!uni.getStorageSync('token')) {
+      const pages = getCurrentPages()
+      if (pages.length) {
+        const cur = pages[pages.length - 1]
+        if (!cur.route || cur.route.indexOf('pages/login') !== 0) {
+          uni.reLaunch({ url: '/pages/login/index' })
+        }
+      }
+    }
+  },
+  methods: {
+    async autoLogin() {
+      const token = uni.getStorageSync('token')
+      if (token) {
+        // 主动校验本地 token 是否仍有效（后端换密钥/过期时自动清除重登）
+        try {
+          await authApi.getProfile()
+          return uni.getStorageSync('currentRole') || null // 有效，跳过
+        } catch (e) {
+          // 失效：getProfile 内部已通过 request 清除凭据，这里落到重登
+        }
+      }
+      // 登录 code：mock 阶段用固定 devRole（保证 openid 稳定，多端共用同一测试身份）
+      // 切真实登录时：把 USE_MOCK_LOGIN 改 false + 后端 .env WX_MOCK_LOGIN=0
+      const USE_MOCK_LOGIN = true
+      let code = uni.getStorageSync('devRole') || 'buyer'
+      // #ifdef MP-WEIXIN
+      if (!USE_MOCK_LOGIN) {
+        code = await new Promise((resolve) => {
+          uni.login({
+            provider: 'weixin',
+            success: (res) => resolve(res.code || ''),
+            fail: () => resolve(''),
+          })
+        })
+      }
+      // #endif
+      try {
+        const data = await authApi.login(code)
+        uni.setStorageSync('token', data.token)
+        uni.setStorageSync('currentRole', data.currentRole)
+        uni.setStorageSync('accountStatus', data.accountStatus)
+        return data.currentRole
+      } catch (e) {
+        console.warn('自动登录失败（后端可能未启动）', e)
+        return null
+      }
+    },
+
+    // 登录后按角色跳转对应首页（配送员/供应商身份不进入采购方首页，避免「无权限」）
+    routeToRoleHome(currentRole) {
+      if (!currentRole || currentRole === 'purchaser') return
+      const homeMap = {
+        supplier: '/subpkg-supplier/pages/home',
+        courier: '/subpkg-courier/pages/home',
+      }
+      const path = homeMap[currentRole]
+      if (path) {
+        setTimeout(() => uni.reLaunch({ url: path }), 100)
+      }
+    },
   },
 }
 </script>
