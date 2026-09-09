@@ -53,4 +53,11 @@ export class BuyerController {
   async submitAftersale(@CurrentUser('userId') userId: bigint, @Body() dto: AftersaleDto) {
     return this.service.submitAftersale(userId, dto)
   }
+
+  /// 我的售后工单（含处理状态，2026-09-10 补，修复单缺陷 3）
+  @Get('aftersale')
+  @Roles(Role.PURCHASER)
+  async myAftersales(@CurrentUser('userId') userId: bigint) {
+    return this.service.myAftersales(userId)
+  }
 }

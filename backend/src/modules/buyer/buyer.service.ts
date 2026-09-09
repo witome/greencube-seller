@@ -216,6 +216,47 @@ export class BuyerService {
     return { aftersaleId: Number(aftersale.id), status: 'pending' }
   }
 
+  /// 我的售后工单（含运营处理状态，2026-09-10 补，修复单缺陷 3）
+  async myAftersales(userId: bigint) {
+    const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
+    if (!purchaser) throw new BizException(ErrorCode.NOT_FOUND, '未找到采购方档案')
+
+    const myOrders = await this.prisma.order.findMany({
+      where: { purchaserId: purchaser.id },
+      select: { id: true, items: { include: { product: true } } },
+    })
+    const myOrderIds = myOrders.map((o) => o.id)
+    if (myOrderIds.length === 0) return []
+
+    const rows = await this.prisma.aftersaleOrder.findMany({
+      where: { orderId: { in: myOrderIds } },
+      orderBy: { createdAt: 'desc' },
+    })
+    const itemMap = new Map<bigint, string>()
+    for (const o of myOrders) {
+      for (const it of o.items) itemMap.set(it.id, it.product?.name ?? '')
+    }
+
+    const statusText: Record<number, string> = { 0: '待处理', 1: '处理中', 2: '已解决', 3: '已关闭' }
+    return rows.map((r) => ({
+      aftersaleId: Number(r.id),
+      orderId: Number(r.orderId),
+      orderItemId: Number(r.orderItemId),
+      type: r.type,
+      reason: r.reason,
+      qtyDiff: Number(r.qtyDiff),
+      amountDiff: Number(r.amountDiff),
+      status: r.status,
+      statusText: statusText[r.status] ?? '未知',
+      compensateAmount: r.compensateAmount != null ? Number(r.compensateAmount) : null,
+      compensateMethod: r.compensateMethod ?? null,
+      handleRemark: r.handleRemark,
+      handledAt: r.handledAt ? r.handledAt.toISOString() : null,
+      createdAt: r.createdAt.toISOString(),
+      itemName: r.orderItemId ? itemMap.get(r.orderItemId) ?? null : null,
+    }))
+  }
+
   private orderStatusText(status: number): string {
     const map: Record<number, string> = {
       [OrderStatus.PENDING_CONFIRM]: '待确认',

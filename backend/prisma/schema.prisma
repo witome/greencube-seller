@@ -463,6 +463,12 @@ model AftersaleOrder {
   status       Int      @default(0) @db.TinyInt
   handledBy    BigInt?  @map("handled_by")
   handledAt    DateTime? @map("handled_at")
+  /// 运营处理：补偿金额（同意补偿时记录，2026-09-10 补）
+  compensateAmount Decimal? @map("compensate_amount") @db.Decimal(12, 2)
+  /// 运营处理：补偿方式 1 退款 / 2 补货 / 3 下次账单抵扣
+  compensateMethod Int?   @map("compensate_method") @db.TinyInt
+  /// 运营处理：处理备注/驳回原因
+  handleRemark String?  @map("handle_remark") @db.VarChar(255)
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([orderId])

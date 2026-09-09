@@ -36,6 +36,9 @@
         <el-menu-item index="/order">
           <el-icon><Tickets /></el-icon><span>订单履约</span>
         </el-menu-item>
+        <el-menu-item index="/aftersale">
+          <el-icon><Service /></el-icon><span>售后管理</span>
+        </el-menu-item>
         <el-menu-item index="/dispatch">
           <el-icon><Van /></el-icon><span>派送调度</span>
         </el-menu-item>

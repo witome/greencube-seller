@@ -16,6 +16,7 @@ const routes = [
       { path: 'suppliers', name: 'suppliers', component: () => import('../views/dispatch/Suppliers.vue'), meta: { title: '供应商管理' } },
       { path: 'couriers', name: 'couriers', component: () => import('../views/dispatch/Couriers.vue'), meta: { title: '配送员管理' } },
       { path: 'order', name: 'order', component: () => import('../views/order/OrderFulfill.vue'), meta: { title: '订单履约' } },
+      { path: 'aftersale', name: 'aftersale', component: () => import('../views/order/Aftersale.vue'), meta: { title: '售后管理' } },
       { path: 'dispatch', name: 'dispatch', component: () => import('../views/dispatch/Dispatch.vue'), meta: { title: '派送调度' } },
       { path: 'finance', name: 'finance', component: () => import('../views/finance/Finance.vue'), meta: { title: '资金结算' } },
       { path: 'audit', name: 'audit', component: () => import('../views/audit/AuditLog.vue'), meta: { title: '审计日志' } },

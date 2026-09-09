@@ -98,3 +98,10 @@ export const categoryAdminApi = {
   getSupplierCategories: (id) => request.get(`/admin/suppliers/${id}/categories`),
   setSupplierCategories: (id, categoryIds) => request.put(`/admin/suppliers/${id}/categories`, { categoryIds }),
 }
+
+/* ── 售后管理（2026-09-10 新增，修复单缺陷 3） ── */
+export const aftersaleAdminApi = {
+  list: (params) => request.get('/admin/aftersale', { params }),
+  detail: (id) => request.get(`/admin/aftersale/${id}`),
+  handle: (id, data) => request.post(`/admin/aftersale/${id}/handle`, data),
+}
