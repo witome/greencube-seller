@@ -21,15 +21,16 @@ C:\Users\Administrator\Documents\Obsidian Vault\绿立方卖菜平台workbuddy�
 
 ```
 绿立方开发\
-├── backend\              NestJS 后端
+├── backend\              NestJS 后端（端口 3001）
 │   ├── prisma\schema.prisma   ← 全部数据表（从数据字典翻译）
 │   └── src\
 │       ├── common\            统一响应、异常过滤、角色守卫、错误码
-│       └── modules\           15 个业务模块（controller/service/module）
-└── frontend\             uni-app 前端（Vue3 + Vite + Pinia）
-    ├── src\pages.json         27 个页面路由
-    ├── src\styles\tokens.scss 设计 token（与原型一致）
-    └── src\pages\...          5 页完整实现 + 22 页占位
+│       └── modules\           业务模块（controller/service/module）
+├── frontend\             uni-app 前端（Vue3 + Vite + Pinia，H5 端口 5180）
+│   ├── src\pages.json         27 个页面路由（另有 subpkg-supplier / subpkg-courier 分包）
+│   ├── src\styles\tokens.scss 设计 token（与原型一致）
+│   └── src\pages\...          采购方/供应商/配送员端页面已实现（39/41 对齐原型，AI 客服 2 页为阶段 2）
+└── admin-web\            运营后台（Vue3 + Element Plus，端口 5190）
 ```
 
 ## 🚀 启动
@@ -41,7 +42,7 @@ cd backend
 npm install
 cp .env.example .env          # 然后改 DATABASE_URL 等
 npx prisma migrate dev --name init
-npm run dev                   # http://localhost:3000/api/v1
+npm run dev                   # http://localhost:3001/api/v1（.env PORT=3001，本机 3000 被占用）
 ```
 
 ### 前端
@@ -59,7 +60,7 @@ npm run dev:mp-weixin         # 微信开发者工具导入 dist/dev/mp-weixin
 
 | # | 决策 | 影响 |
 |---|---|---|
-| 1 | **核单时拆单**（下单不拆） | 下单只落 `status=10`，运营核单时才写 `order_item.supplier_id` |
+| 1 | **下单时即自动拆单**（2026-09-10 拍板修订，原「核单时拆单」已作废） | 下单落 `status=10`（待核单），并在下单事务内按供货优先级 + 当日可供量自动拆单写 `order_item.supplier_id`；运营核单时对明细做确认/调整，支持重新拆单（改拆单按商品维度重建明细） |
 | 2 | **申报超时自动兜底** | 每日 22:00 截止，超时取 `daily_supply`，标 `is_auto_declared=1` |
 | 3 | **拒收从结算剔除 + 生成售后工单** | 对账基数恒为 `qty_accepted`，差额进 `aftersale_order` |
 | 4 | **token 内嵌身份，切换重签** | JWT payload 含 `currentRole`；`/auth/switch-role` 重签，旧 token 失效 |
@@ -67,7 +68,7 @@ npm run dev:mp-weixin         # 微信开发者工具导入 dist/dev/mp-weixin
 
 ## ⚠️ 三条权限铁律（写代码时不能违反）
 
-1. **配送员不碰钱** —— `courier` 模块的接口**永不返回任何金额字段**
+1. **配送员不碰钱** —— `courier` 模块接口不返回任何金额字段；唯一例外是「收款协助」`GET /courier/task/:id/amount`，仅展示**货到付款订单的应收数字**供核对（非 COD 订单隐藏），且配送员只标记收款、不作核销，不碰资金流
 2. **供应商不见销售价** —— `product` 模块对 `supplier` 角色**不返回 `salePrice`**
 3. **运营看得全、改得慎** —— 金额相关操作二次确认 + 全量写 `audit_log`
 
