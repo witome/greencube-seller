@@ -98,14 +98,7 @@ export class SupplierFulfillService {
           throw new BizException(ErrorCode.PARAM_ERROR, `明细 ${it.orderItemId} 缺货，必须填写缺货原因`)
         }
 
-        await tx.orderItem.update({
-          where: { id: item.id },
-          data: {
-            qtyDeclared: it.qtyDeclared,
-            shortageReason: it.shortageReason,
-            isAutoDeclared: 0,
-          },
-        })
+        await this.applyDeclareUpdate(tx, item.id, it.qtyDeclared, it.shortageReason ?? null, 0)
         declaredCount.push(Number(item.id))
       }
     })
@@ -120,6 +113,28 @@ export class SupplierFulfillService {
     })
 
     return { orderId: Number(dto.orderId), shortageDeclared: declaredCount.length }
+  }
+
+  // ────────────────────────────────────────
+  // 申报落库共用路径（决策 2）：手动异常申报与 22:00 超时兜底统一走这里，避免逻辑分叉。
+  // 幂等保护：仅当明细尚未验收（qtyAccepted=null）时生效；
+  // 兜底（isAutoDeclared=1）仅当未被兜底过（isAutoDeclared=0）时生效，重复触发不产生双份。
+  // 返回实际更新行数（0 = 已被跳过）。
+  // ────────────────────────────────────────
+  async applyDeclareUpdate(
+    tx: any,
+    orderItemId: bigint,
+    qtyDeclared: number,
+    shortageReason: string | null,
+    isAutoDeclared: 0 | 1,
+  ): Promise<number> {
+    const where: any = { id: orderItemId, qtyAccepted: null }
+    if (isAutoDeclared === 1) where.isAutoDeclared = 0
+    const res = await tx.orderItem.updateMany({
+      where,
+      data: { qtyDeclared, shortageReason, isAutoDeclared },
+    })
+    return res.count
   }
 
   // ────────────────────────────────────────
