@@ -2,7 +2,7 @@ import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { JwtService } from '@nestjs/jwt'
 import { ROLES_KEY } from '../decorators/roles.decorator'
-import { BizException, ErrorCode, Role } from '../constants/error-codes'
+import { BizException, ErrorCode } from '../constants/error-codes'
 
 /**
  * 全局角色守卫
@@ -36,13 +36,14 @@ export class RolesGuard implements CanActivate {
       throw new BizException(ErrorCode.UNAUTHORIZED)
     }
 
-    // 业务员是运营子账号（决策5）：拥有 admin 权限的子集
+    // 业务员是运营子账号（决策5）：其权限**仅在接口显式声明** Role.BUSINESS_AGENT 时生效。
+    // ⚠️ 禁止在此对 BUSINESS_AGENT 做「ADMIN 兜底放行」——
+    //    那会让业务员越权访问全部 @Roles(Role.ADMIN) 接口（资金/派单/商品/审计/支付流水），违反权限铁律 3。
+    //    铁律 3：业务员仅限采购方审核（对应 5 个接口已显式声明 @Roles(Role.ADMIN, Role.BUSINESS_AGENT)）。
     const currentRole = payload.currentRole
     const allRoles: string[] = payload.roles ?? []
 
-    const allowed =
-      required.includes(currentRole) ||
-      (currentRole === Role.BUSINESS_AGENT && required.includes(Role.ADMIN))
+    const allowed = required.includes(currentRole)
 
     if (!allowed) throw new BizException(ErrorCode.FORBIDDEN)
 

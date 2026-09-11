@@ -191,17 +191,18 @@ async function load() {
     const params = { page: page.value, pageSize }
     if (statusFilter.value !== '') params.status = statusFilter.value
     if (typeFilter.value) params.type = typeFilter.value
-    const res = await aftersaleAdminApi.list(params)
-    list.value = res.data.list
-    total.value = res.data.total
+    // 注意：request 拦截器已解包 { code, msg, data }，这里直接取 list / total
+    const data = await aftersaleAdminApi.list(params)
+    list.value = data.list || []
+    total.value = data.total || 0
   } finally {
     loading.value = false
   }
 }
 
 async function openDetail(row) {
-  const res = await aftersaleAdminApi.detail(row.aftersaleId)
-  detail.value = res.data
+  // 同上：拦截器已解包，detail 接口直接返回 VO，取 res 而非 res.data
+  detail.value = await aftersaleAdminApi.detail(row.aftersaleId)
   detailVisible.value = true
 }
 

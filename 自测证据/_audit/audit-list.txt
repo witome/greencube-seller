@@ -1,0 +1,85 @@
+=== ADMIN-ONLY total: 56
+  admin: 13
+  admin/aftersale: 3
+  admin/dispatch: 7
+  admin/finance: 9
+  admin/fulfill: 1
+  admin/goods: 10
+  admin/order: 6
+  admin/payments: 1
+  admin/pricing: 3
+  admin/reports: 2
+  audit: 1
+
+=== WITH BUSINESS_AGENT total: 11
+  admin  pendingBuyers  src/modules/admin-user/admin-user.controller.ts:20
+  admin  verifyDetail  src/modules/admin-user/admin-user.controller.ts:27
+  admin  submitVerification  src/modules/admin-user/admin-user.controller.ts:34
+  admin  reviewAppeal  src/modules/admin-user/admin-user.controller.ts:45
+  admin  assignAgent  src/modules/admin-user/admin-user.controller.ts:56
+  ai  parse  src/modules/ai/ai.controller.ts:13
+  buyer  register  src/modules/buyer/buyer.controller.ts:17
+  buyer  pending  src/modules/buyer/buyer.controller.ts:24
+  buyer  appeal  src/modules/buyer/buyer.controller.ts:31
+  buyer  urgeVerify  src/modules/buyer/buyer.controller.ts:38
+  upload  uploadImage  src/modules/upload/upload.controller.ts:12
+
+=== OTHER total: 45
+
+=== ADMIN-ONLY detail ===
+  admin/dispatch  exceptions  src/modules/admin-dispatch/admin-dispatch.controller.ts:15
+  admin/dispatch  handleException  src/modules/admin-dispatch/admin-dispatch.controller.ts:22
+  admin/dispatch  couriers  src/modules/admin-dispatch/admin-dispatch.controller.ts:29
+  admin/dispatch  list  src/modules/admin-dispatch/admin-dispatch.controller.ts:36
+  admin/dispatch  assign  src/modules/admin-dispatch/admin-dispatch.controller.ts:43
+  admin/dispatch  autoAssign  src/modules/admin-dispatch/admin-dispatch.controller.ts:50
+  admin/dispatch  updateSettings  src/modules/admin-dispatch/admin-dispatch.controller.ts:57
+  admin/finance  settlements  src/modules/admin-finance/admin-finance.controller.ts:15
+  admin/finance  serviceFeeConfigs  src/modules/admin-finance/admin-finance.controller.ts:22
+  admin/finance  serviceFeePreview  src/modules/admin-finance/admin-finance.controller.ts:29
+  admin/finance  serviceFeeConfig  src/modules/admin-finance/admin-finance.controller.ts:36
+  admin/finance  generate  src/modules/admin-finance/admin-finance.controller.ts:43
+  admin/finance  getDeliveryFee  src/modules/admin-finance/admin-finance.controller.ts:50
+  admin/finance  updateDeliveryFee  src/modules/admin-finance/admin-finance.controller.ts:57
+  admin/finance  getPayQr  src/modules/admin-finance/admin-finance.controller.ts:64
+  admin/finance  updatePayQr  src/modules/admin-finance/admin-finance.controller.ts:71
+  admin/goods  pending  src/modules/admin-goods/admin-goods.controller.ts:18
+  admin/goods  changePending  src/modules/admin-goods/admin-goods.controller.ts:25
+  admin/goods  listProducts  src/modules/admin-goods/admin-goods.controller.ts:32
+  admin/goods  createProduct  src/modules/admin-goods/admin-goods.controller.ts:39
+  admin/goods  updateProduct  src/modules/admin-goods/admin-goods.controller.ts:46
+  admin/goods  updateProductStatus  src/modules/admin-goods/admin-goods.controller.ts:53
+  admin/goods  reviewApply  src/modules/admin-goods/admin-goods.controller.ts:60
+  admin/goods  reviewChange  src/modules/admin-goods/admin-goods.controller.ts:67
+  admin/goods  priority  src/modules/admin-goods/admin-goods.controller.ts:74
+  admin/goods  setPriority  src/modules/admin-goods/admin-goods.controller.ts:81
+  admin/aftersale  list  src/modules/admin-order/admin-aftersale.controller.ts:14
+  admin/aftersale  detail  src/modules/admin-order/admin-aftersale.controller.ts:21
+  admin/aftersale  handle  src/modules/admin-order/admin-aftersale.controller.ts:28
+  admin/order  pendingList  src/modules/admin-order/admin-order.controller.ts:14
+  admin/order  splitPreview  src/modules/admin-order/admin-order.controller.ts:21
+  admin/order  split  src/modules/admin-order/admin-order.controller.ts:28
+  admin/order  autoSplit  src/modules/admin-order/admin-order.controller.ts:35
+  admin/order  autoSplitAll  src/modules/admin-order/admin-order.controller.ts:42
+  admin/order  reSplitShortage  src/modules/admin-order/admin-order.controller.ts:49
+  admin/payments  list  src/modules/admin-payment/admin-payment.controller.ts:21
+  admin/pricing  list  src/modules/admin-pricing/admin-pricing.controller.ts:15
+  admin/pricing  batch  src/modules/admin-pricing/admin-pricing.controller.ts:22
+  admin/pricing  update  src/modules/admin-pricing/admin-pricing.controller.ts:29
+  admin/reports  overview  src/modules/admin-reports/admin-reports.controller.ts:12
+  admin/reports  categorySales  src/modules/admin-reports/admin-reports.controller.ts:19
+  admin  suppliers  src/modules/admin-user/admin-user.controller.ts:63
+  admin  couriers  src/modules/admin-user/admin-user.controller.ts:70
+  admin  listCategories  src/modules/admin-user/admin-user.controller.ts:77
+  admin  createCategory  src/modules/admin-user/admin-user.controller.ts:84
+  admin  updateCategory  src/modules/admin-user/admin-user.controller.ts:91
+  admin  deleteCategory  src/modules/admin-user/admin-user.controller.ts:98
+  admin  getSupplierCategories  src/modules/admin-user/admin-user.controller.ts:105
+  admin  setSupplierCategories  src/modules/admin-user/admin-user.controller.ts:112
+  admin  updateSupplierStatus  src/modules/admin-user/admin-user.controller.ts:119
+  admin  updateCourierStatus  src/modules/admin-user/admin-user.controller.ts:126
+  admin  updateBuyer  src/modules/admin-user/admin-user.controller.ts:133
+  admin  updateSupplier  src/modules/admin-user/admin-user.controller.ts:140
+  admin  updateCourier  src/modules/admin-user/admin-user.controller.ts:147
+  audit  list  src/modules/audit/audit.controller.ts:12
+  admin/fulfill  run  src/modules/supplier-fulfill/admin-auto-declare.controller.ts:20

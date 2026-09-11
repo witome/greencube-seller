@@ -205,7 +205,11 @@ async function main() {
   check('采购方被拒(2002)', (await call('GET', PAY_API, null, bt2)).code === 2002)
   check('无 token 被拒(2001)', (await call('GET', PAY_API)).code === 2001)
   // 业务员：项目无 business_agent 演示账号，用同密钥签一个「业务员身份」token 仅验证守卫口径（不写库、不建账号）
-  const jwtSecret = (require('fs').readFileSync(__dirname + '/.env', 'utf8').match(/JWT_SECRET=(\S+)/) || [])[1]
+  // 注意：.env 中 JWT_SECRET 可能带引号（如 JWT_SECRET="xxx"），dotenv 会剥掉引号，
+  // 这里必须同样剥引号，否则签名密钥不匹配 → 守卫抛 2001（未登录），用例会「假红/假绿」。
+  const jwtSecret = ((require('fs').readFileSync(__dirname + '/.env', 'utf8').match(/^JWT_SECRET=(.*)$/m) || [])[1] || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
   const agentToken = (() => {
     const h = b64({ alg: 'HS256', typ: 'JWT' })
@@ -213,6 +217,36 @@ async function main() {
     return `${h}.${p}.${crypto.createHmac('sha256', jwtSecret).update(`${h}.${p}`).digest('base64url')}`
   })()
   check('业务员被拒(2002，仅限采购方审核)', (await call('GET', PAY_API, null, agentToken)).code === 2002)
+
+  // ── 3.7 业务员权限收口回归（本卡：删除 RolesGuard 对 business_agent 的 ADMIN 兜底放行）──
+  // 背景：原 roles.guard.ts:43-45 有兜底 `currentRole==='business_agent' && required.includes(ADMIN)`，
+  //       导致业务员可进全部 56 个 @Roles(Role.ADMIN) 接口（资金/派单/商品/审计/支付），违反铁律 3。
+  console.log('\n【3.7 业务员权限收口（删兜底回归）】')
+  // (a) 「将失去」抽样：业务员访问 ADMIN 接口 → 明确拒绝 2002
+  check('业务员被拒·资金结算 /admin/finance/settlements', (await call('GET', '/admin/finance/settlements', null, agentToken)).code === 2002)
+  check('业务员被拒·派单调度 /admin/dispatch', (await call('GET', '/admin/dispatch', null, agentToken)).code === 2002)
+  check('业务员被拒·商品管理 /admin/goods/pending', (await call('GET', '/admin/goods/pending', null, agentToken)).code === 2002)
+  check('业务员被拒·订单核单 /admin/order/pending', (await call('GET', '/admin/order/pending', null, agentToken)).code === 2002)
+  check('业务员被拒·审计日志 /audit', (await call('GET', '/audit', null, agentToken)).code === 2002)
+  check('业务员被拒·售后工单 /admin/aftersale', (await call('GET', '/admin/aftersale', null, agentToken)).code === 2002)
+
+  // (b) ★ 反向用例（防修过头）：业务员【仍能】进 5 个采购方审核接口 → 守卫放行（非 2001/2002）
+  //     写接口统一用不存在的 id(999999999)：守卫放行后由 service 先查存在性抛 NOT_FOUND(4001)，
+  //     既证明「进得去」又保证不产生任何写操作/副作用。
+  const NA = 999999999
+  const notBlocked = (r) => r.code !== 2002 && r.code !== 2001
+  const ag1 = await call('GET', '/admin/buyers/pending?pageSize=1', null, agentToken)
+  check('业务员仍可进·采购方待审列表(GET buyers/pending)', notBlocked(ag1) && ag1.code === 0)
+  const ag2 = await call('GET', `/admin/buyers/${target.purchaserId}/verify-detail`, null, agentToken)
+  check('业务员仍可进·审核详情(GET buyers/:id/verify-detail)', notBlocked(ag2) && ag2.code === 0)
+  const ag3 = await call('POST', `/admin/buyers/${NA}/verify`, { methods: [1], result: 1 }, agentToken)
+  check('业务员仍可进·提交审核(POST buyers/:id/verify → 守卫放行/业务4001)', notBlocked(ag3))
+  const ag4 = await call('POST', `/admin/buyers/${NA}/appeal-review`, { approved: true }, agentToken)
+  check('业务员仍可进·申诉复核(POST buyers/:id/appeal-review → 守卫放行/业务4001)', notBlocked(ag4))
+  const ag5 = await call('POST', `/admin/buyers/${NA}/assign`, { agentId: 1 }, agentToken)
+  check('业务员仍可进·指派业务员(POST buyers/:id/assign → 守卫放行/业务4001)', notBlocked(ag5))
+  // (c) 反向用例零副作用：上面用的不存在 id，运营查它仍是 4001（未因反向用例被创建/写入）
+  check('反向用例未写库(不存在id经运营查仍4001)', (await call('GET', `/admin/buyers/${NA}/verify-detail`, null, at)).code === 4001)
 
   // ── 4. 核单拆单（10 待确认 → 30 备货中）──
   // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行

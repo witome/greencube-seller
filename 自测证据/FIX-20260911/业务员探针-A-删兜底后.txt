@@ -1,0 +1,8 @@
+业务员 token 探针（2026-09-11T08:34:32.685Z）
+----------------------------------------------------------------
+2002  拒绝(2002 FORBIDDEN)      /admin/payments   # ADMIN接口·支付流水
+2002  拒绝(2002 FORBIDDEN)      /admin/finance/settlements   # ADMIN接口·资金结算
+2002  拒绝(2002 FORBIDDEN)      /admin/dispatch   # ADMIN接口·派单调度
+2002  拒绝(2002 FORBIDDEN)      /admin/goods/pending   # ADMIN接口·商品管理
+2002  拒绝(2002 FORBIDDEN)      /audit   # ADMIN接口·审计日志
+0     ★放行(0 OK)               /admin/buyers/pending?pageSize=1   # 应得·采购方待审列表
