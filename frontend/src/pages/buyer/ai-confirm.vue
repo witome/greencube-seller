@@ -25,7 +25,7 @@
 
     <!-- 添加商品 -->
     <view class="add-row">
-      <view class="add-btn" @tap="addMore">＋ 添加商品</view>
+      <view class="add-btn" @tap="openPicker">＋ 添加商品</view>
     </view>
 
     <!-- 配送信息 -->
@@ -58,6 +58,51 @@
     <view class="action-bar">
       <view class="ab-total">共 {{ items.length }} 项 · 预估合计 <b>¥{{ total.toFixed(2) }}</b></view>
       <view class="pbtn primary" :class="{ disabled: !items.length || submitting }" @tap="submit">确认下单</view>
+    </view>
+
+    <!-- 添加商品弹层（页内选品，不切页、不丢草稿） -->
+    <view v-if="pickerOpen" class="pk-mask" @tap="closePicker">
+      <view class="pk-sheet" @tap.stop>
+        <view class="pk-head">
+          <text class="pk-title">添加商品</text>
+          <text class="pk-close" @tap="closePicker">✕</text>
+        </view>
+
+        <view class="pk-search">
+          <input class="pk-input" v-model="pkKeyword" placeholder="搜索商品" confirm-type="search" @confirm="loadPkGoods" />
+          <text class="pk-search-btn" @tap="loadPkGoods">搜索</text>
+        </view>
+
+        <view class="pk-body">
+          <scroll-view scroll-y class="pk-cate">
+            <view :class="['pk-cate-item', { on: pkCate === 0 }]" @tap="switchPkCate(0)">全部</view>
+            <view v-for="c in categories" :key="c.id" :class="['pk-cate-item', { on: pkCate === c.id }]" @tap="switchPkCate(c.id)">{{ c.name }}</view>
+          </scroll-view>
+
+          <scroll-view scroll-y class="pk-list">
+            <view v-for="g in pickerGoods" :key="g.id" class="pk-row">
+              <view class="pk-info">
+                <view class="pk-name">{{ g.name }}</view>
+                <view class="pk-spec">{{ g.specText || (g.weighType === 1 ? '称重' : '固定规格') }}</view>
+                <view class="pk-price">¥{{ g.salePrice }}/{{ g.unit }}</view>
+              </view>
+              <view v-if="qtyOf(g.id)" class="pk-stepper">
+                <view class="st-btn" @tap="decProduct(g)">−</view>
+                <text class="pk-qty">{{ qtyOf(g.id) }}</text>
+                <view class="st-btn" @tap="addProduct(g)">＋</view>
+              </view>
+              <view v-else class="pk-add" @tap="addProduct(g)">＋</view>
+            </view>
+            <view v-if="pkLoading" class="empty-tip">加载中…</view>
+            <view v-else-if="!pickerGoods.length" class="empty-tip">暂无商品</view>
+          </scroll-view>
+        </view>
+
+        <view class="pk-foot">
+          <text class="pk-foot-txt">已选 {{ items.length }} 项 · 预估 ¥{{ total.toFixed(2) }}</text>
+          <view class="pbtn primary" @tap="closePicker">完成</view>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -100,9 +145,69 @@ const change = (i, delta) => {
   const next = items.value[i].qty + delta
   if (next < 1) return
   items.value[i].qty = Math.round(next * 10) / 10
+  syncDraft()
 }
-const remove = (i) => items.value.splice(i, 1)
-const addMore = () => uni.switchTab({ url: '/pages/buyer/goods' })
+const remove = (i) => { items.value.splice(i, 1); syncDraft() }
+
+// 草稿回写：数量/新增/删除改动同步到本地草稿，避免页面重载丢失
+const syncDraft = () => {
+  try {
+    uni.setStorageSync('aiDraft', { ...(draft.value || {}), items: items.value.map((it) => ({ ...it })) })
+  } catch (e) { /* 忽略 */ }
+}
+
+// ── 添加商品弹层（页内选品：原实现 switchTab 跳商品页，会丢掉 AI 草稿） ──
+const pickerOpen = ref(false)
+const categories = ref([])
+const pickerGoods = ref([])
+const pkCate = ref(0)
+const pkKeyword = ref('')
+const pkLoading = ref(false)
+
+const qtyOf = (id) => items.value.find((it) => it.productId === id)?.qty || 0
+
+const addProduct = (g) => {
+  const hit = items.value.find((it) => it.productId === g.id)
+  if (hit) hit.qty = Math.round(hit.qty * 10 + 10) / 10
+  else items.value.push({ productId: g.id, name: g.name, unit: g.unit, specText: g.specText, weighType: g.weighType, qty: 1, price: g.salePrice })
+  syncDraft()
+}
+
+const decProduct = (g) => {
+  const i = items.value.findIndex((it) => it.productId === g.id)
+  if (i < 0) return
+  const next = Math.round(items.value[i].qty * 10 - 10) / 10
+  if (next < 1) items.value.splice(i, 1)
+  else items.value[i].qty = next
+  syncDraft()
+}
+
+const loadPkGoods = async () => {
+  pkLoading.value = true
+  // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成字符串 "undefined"，导致后端误当搜索词
+  const params = { page: 1, pageSize: 50 }
+  if (pkCate.value) params.categoryId = pkCate.value
+  if (pkKeyword.value) params.keyword = pkKeyword.value
+  try {
+    const data = await buyerApi.getGoods(params)
+    pickerGoods.value = data.list || []
+  } catch (e) {
+    pickerGoods.value = []
+  }
+  pkLoading.value = false
+}
+
+const switchPkCate = (id) => { pkCate.value = id; loadPkGoods() }
+
+const openPicker = async () => {
+  pickerOpen.value = true
+  if (!categories.value.length) {
+    try { categories.value = await buyerApi.getCategories() } catch (e) { categories.value = [] }
+  }
+  if (!pickerGoods.value.length) loadPkGoods()
+}
+
+const closePicker = () => { pickerOpen.value = false }
 
 const submit = async () => {
   if (!items.value.length || submitting.value) return
@@ -179,4 +284,29 @@ onLoad(async () => {
 .pbtn { flex: none; border-radius: 10px; padding: 11px 24px; text-align: center; font-size: 14px; font-weight: 600; }
 .pbtn.primary { background: $brand; color: #fff; }
 .pbtn.disabled { opacity: 0.5; }
+
+/* ── 添加商品弹层 ── */
+.pk-mask { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0, 0, 0, 0.45); z-index: 90; display: flex; align-items: flex-end; }
+.pk-sheet { width: 100%; height: 78vh; background: #fff; border-radius: 14px 14px 0 0; display: flex; flex-direction: column; overflow: hidden; }
+.pk-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid $bg-soft; }
+.pk-title { font-size: 15px; font-weight: 700; color: $text-title; }
+.pk-close { color: $text-placeholder; font-size: 16px; padding: 0 4px; }
+.pk-search { display: flex; align-items: center; gap: 8px; padding: 8px 14px; }
+.pk-input { flex: 1; background: $bg-soft; border-radius: 16px; padding: 7px 14px; font-size: 13px; }
+.pk-search-btn { font-size: 13px; color: $brand; font-weight: 600; flex-shrink: 0; }
+.pk-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+.pk-cate { width: 84px; background: #f7f8fa; height: 100%; flex-shrink: 0; }
+.pk-cate-item { padding: 12px 6px; font-size: 12px; color: $text-second; text-align: center; }
+.pk-cate-item.on { background: #fff; color: $brand; font-weight: 700; }
+.pk-list { flex: 1; min-width: 0; height: 100%; padding: 6px 12px; box-sizing: border-box; }
+.pk-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid $bg-soft; }
+.pk-info { flex: 1; min-width: 0; }
+.pk-name { font-size: 13px; font-weight: 600; color: $text-title; }
+.pk-spec { font-size: 10px; color: $text-second; margin-top: 2px; overflow: hidden; white-space: nowrap; }
+.pk-price { font-size: 12px; color: $danger; font-weight: 700; margin-top: 2px; }
+.pk-stepper { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.pk-qty { min-width: 34px; text-align: center; font-size: 13px; font-weight: 700; color: $text-title; }
+.pk-add { width: 26px; height: 26px; border-radius: 50%; background: $brand; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.pk-foot { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid $border; }
+.pk-foot-txt { flex: 1; font-size: 12px; color: $text-second; }
 </style>
