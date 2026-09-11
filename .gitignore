@@ -9,5 +9,8 @@ dist/
 coverage/
 tmp/
 
+# 本机 AI 会话记忆（不入库；避免密钥/本机信息被推到远端）
+.workbuddy/
+
 # vite 构建临时文件
 *.timestamp-*.mjs
