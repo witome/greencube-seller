@@ -24,7 +24,6 @@
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span>待处理订单</span>
-          <el-button type="success" :loading="batchSplitting" @click="doAutoSplitAll">⚡ 一键拆单</el-button>
         </div>
       </template>
       <el-table :data="filteredList" v-loading="loading" stripe>
@@ -154,7 +153,6 @@ const splitLoading = ref(false)
 const splitPreview = ref([])
 const currentOrder = ref(null)
 const autoSplittingId = ref(null)
-const batchSplitting = ref(false)
 
 const detailDialog = ref(false)
 
@@ -210,8 +208,8 @@ async function confirmSplit() {
 async function doAutoSplit(row) {
   try {
     await ElMessageBox.confirm(
-      `确认对订单 #${row.orderId} 按「供应商优先级 + 当日可供量」自动拆单？`,
-      '一键自动拆单',
+      `确认对订单 #${row.orderId} 按「供应商优先级 + 当日可供量」重新自动拆单？该订单当前的供应商分配将被覆盖。`,
+      '自动拆单',
       { type: 'warning', confirmButtonText: '确认拆单', cancelButtonText: '取消' },
     )
   } catch (e) {
@@ -224,31 +222,6 @@ async function doAutoSplit(row) {
     load()
   } catch (e) { /* 已提示 */ } finally {
     autoSplittingId.value = null
-  }
-}
-
-async function doAutoSplitAll() {
-  try {
-    await ElMessageBox.confirm(
-      '确认对所有「待核单」订单按「供应商优先级 + 当日可供量」自动拆单？',
-      '一键拆单',
-      { type: 'warning', confirmButtonText: '全部拆单', cancelButtonText: '取消' },
-    )
-  } catch (e) {
-    return
-  }
-  batchSplitting.value = true
-  try {
-    const res = await orderAdminApi.autoSplitAll()
-    const { total = 0, success = 0, failed = [] } = res || {}
-    if (failed.length) {
-      ElMessage.warning(`拆单完成：成功 ${success} 单，失败 ${failed.length} 单（共 ${total} 单）`)
-    } else {
-      ElMessage.success(`已自动拆单 ${success} 单`)
-    }
-    load()
-  } catch (e) { /* 已提示 */ } finally {
-    batchSplitting.value = false
   }
 }
 

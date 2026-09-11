@@ -37,13 +37,6 @@ export class AdminOrderController {
     return this.service.autoSplit(Number(id), userId)
   }
 
-  /// 一键拆单：把所有待确认订单批量自动拆单
-  @Post('auto-split-all')
-  @Roles(Role.ADMIN)
-  async autoSplitAll(@CurrentUser('userId') userId: bigint) {
-    return this.service.autoSplitAll(userId)
-  }
-
   /// 缺货二次拆单：对无法交付订单重新分配供应商，恢复为备货中
   @Post(':id/re-split-shortage')
   @Roles(Role.ADMIN)

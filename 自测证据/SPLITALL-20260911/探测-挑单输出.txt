@@ -1,0 +1,9 @@
+demo_supplier user = { id: 1, roles: [ 'supplier' ] }
+supplier = { id: 1, stallName: '陈记蔬菜档' }
+status=30 订单数 = 46 ；含 demo_supplier 明细的 = 46
+  候选 orderId=28 items=2 suppliers=1,2
+  候选 orderId=58 items=2 suppliers=1
+  候选 orderId=60 items=1 suppliers=1
+  候选 orderId=94 items=1 suppliers=1
+  候选 orderId=95 items=1 suppliers=1
+当前 92 态订单数 = 0

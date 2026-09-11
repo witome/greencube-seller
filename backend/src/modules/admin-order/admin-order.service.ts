@@ -256,30 +256,6 @@ export class AdminOrderService {
   }
 
   // ────────────────────────────────────────
-  // 一键拆单：把所有待确认(10)订单自动拆单，逐个处理并统计成败
-  // ────────────────────────────────────────
-  async autoSplitAll(operatorId?: bigint) {
-    const orders = await this.prisma.order.findMany({
-      where: { status: OrderStatus.PENDING_CONFIRM },
-      select: { id: true },
-      orderBy: { id: 'asc' },
-    })
-
-    let success = 0
-    const failed: { orderId: number; reason: string }[] = []
-    for (const o of orders) {
-      try {
-        await this.autoSplit(Number(o.id), operatorId)
-        success++
-      } catch (e: any) {
-        failed.push({ orderId: Number(o.id), reason: e?.message || '拆单失败' })
-      }
-    }
-
-    return { total: orders.length, success, failed }
-  }
-
-  // ────────────────────────────────────────
   // 缺货二次拆单：对无法交付(92)订单重新按优先级+可供量分配供应商，恢复为备货中(30)
   // 用于配送员上报「缺货」异常后，运营重新分配供应商、让新供应商备货
   // ────────────────────────────────────────
