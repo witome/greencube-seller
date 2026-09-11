@@ -18,6 +18,7 @@
     <!-- ③ 平台公告（原型此块为黄底公告条；真公告接口化另记待办，无公告时不渲染避免假信息） -->
     <view v-if="platformNotice" class="buyer-home-notice">{{ platformNotice }}</view>
 
+
     <!-- ④ 常用功能宫格（8 入口） -->
     <view class="buyer-home-title">常用功能</view>
     <view class="buyer-home-grid">
@@ -45,9 +46,9 @@
           <view class="buyer-home-rec-body"><view class="buyer-home-skeleton-line"></view><view class="buyer-home-skeleton-line buyer-home-skeleton-line--short"></view><view class="buyer-home-skeleton-line buyer-home-skeleton-line--price"></view></view>
         </view>
       </template>
-      <view v-else-if="!recList.length" class="buyer-home-empty buyer-home-rec-empty">暂无推荐，去商品页逛逛 ›</view>
+      <view v-else-if="!recs.length" class="buyer-home-empty buyer-home-rec-empty">暂无推荐，去商品页逛逛 ›</view>
       <template v-else>
-        <view v-for="g in recList" :key="g.id" class="buyer-home-rec-card" @tap="goDetail(g.id)">
+        <view v-for="g in recs" :key="g.id" class="buyer-home-rec-card" @tap="goDetail(g.id)">
           <view class="buyer-home-rec-img">{{ emojiOf(g.name) }}</view>
           <view class="buyer-home-rec-body">
             <view class="buyer-home-rec-name">{{ g.name }}</view>
@@ -85,7 +86,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
@@ -97,30 +98,20 @@ import DevRoleSwitcher from '@/components/DevRoleSwitcher.vue'
 const go = (url) => uni.navigateTo({ url })
 const goTab = (url) => uni.switchTab({ url })
 const goOrder = (id) => uni.navigateTo({ url: `/pages/buyer/order-detail?id=${id}` })
-// 商品详情：真实商品跳详情页；演示兜底数据（非数字 id）不跳 broken 页，引导去商品页
-const goDetail = (id) => {
-  if (String(id) !== '' && !/^\d+$/.test(String(id))) {
-    uni.showToast({ title: '演示商品，请到商品页选购', icon: 'none' })
-    return
-  }
-  uni.navigateTo({ url: `/pages/buyer/goods-detail?id=${id}` })
-}
+// 商品详情页跳转（推荐位只展示真实商品，均为数字 id）
+const goDetail = (id) => uni.navigateTo({ url: `/pages/buyer/goods-detail?id=${id}` })
 
 // 暂未实现的入口：给出「功能建设中」提示，不做无声跳转
 const todo = (name) => uni.showToast({ title: `${name} · 功能建设中`, icon: 'none' })
 
 const needRegister = ref(false)
 
+// 平台公告：暂无公告接口，先置空（接口化后由此 ref 赋值，见剩余清单待办）；为空不渲染
+const platformNotice = ref('')
+
 // ── 今日推荐 ──
 const recsLoading = ref(true)
 const recs = ref([])
-// 演示数据兜底：暂无「推荐位」接口时，展示原型中的示例（字段结构与 /product/list 一致）
-const REC_FALLBACK = [
-  { id: 'demo-1', name: '大白菜', specText: '约4-5斤/颗·称重', weighType: 1, salePrice: 1.28, unit: '斤' },
-  { id: 'demo-2', name: '五花肉', specText: '冷冻·500g/份', weighType: 0, salePrice: 18.8, unit: '份' },
-  { id: 'demo-3', name: '鲜鸡蛋', specText: '30枚/箱·固定规格', weighType: 0, salePrice: 32.0, unit: '箱' },
-]
-const recList = computed(() => (recs.value.length ? recs.value : REC_FALLBACK))
 
 // ── 进行中的订单（10 待确认 ~ 50 配送中） ──
 const ACTIVE_STATUS = [10, 20, 30, 40, 45, 50]
@@ -177,7 +168,7 @@ const loadRecs = async () => {
     const data = await buyerApi.getGoods({ page: 1, pageSize: 3 })
     recs.value = data.list || []
   } catch (e) {
-    recs.value = [] // 失败回退演示数据
+    recs.value = [] // 失败显示空态，不用假数据兜底
   } finally {
     recsLoading.value = false
   }
