@@ -28,6 +28,7 @@ import { AdminReportsModule } from './modules/admin-reports/admin-reports.module
 import { RegisterModule } from './modules/register/register.module'
 import { AiModule } from './modules/ai/ai.module'
 import { UploadModule } from './modules/upload/upload.module'
+import { PaymentModule } from './modules/payment/payment.module'
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { UploadModule } from './modules/upload/upload.module'
     RegisterModule,
     AiModule,
     UploadModule,
+    PaymentModule,
   ],
   providers: [
     // 全局统一响应包装

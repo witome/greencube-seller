@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { randomBytes } from 'crypto'
 import { PrismaService } from '../../prisma/prisma.service'
 import {
   BizException,
@@ -356,7 +357,9 @@ export class OrderService {
 
   // ────────────────────────────────────────
   // 选择支付方式（1 微信支付 / 2 货到付款）
-  // 支付生效后自动拆单：按供应商优先级 + 当日可供量分配，订单 10 → 30 备货中
+  // 2 货到付款：支付生效后自动拆单：按供应商优先级 + 当日可供量分配，订单 10 → 30 备货中
+  // 1 微信支付（2026-09-11 拍板）：创建支付流水（payment_record），订单停留 10 待支付；
+  //   支付回调到达后经 PaymentService → completePaidOrder 推进 10 → 30（金额口径②=A：下单时刻应付）
   // ────────────────────────────────────────
   async pay(userId: bigint, orderId: number, dto: PayOrderDto) {
     const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
@@ -371,6 +374,33 @@ export class OrderService {
     }
     if (order.payMethod !== 0) {
       throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '订单已支付')
+    }
+
+    // 微信支付：创建支付单即返回，订单不推进（放弃支付则停在 10，仍可手动取消——拍板④ Hermes 补充）
+    if (dto.payMethod === 1) {
+      // 同单历史「待支付」流水先关闭（重开新单，减少悬挂记录）
+      await this.prisma.paymentRecord.updateMany({
+        where: { orderId: order.id, status: 0 },
+        data: { status: 2 },
+      })
+      const amount = Math.round((Number(order.amountOrdered) + Number(order.deliveryFee)) * 100) / 100
+      const rec = await this.prisma.paymentRecord.create({
+        data: {
+          orderId: order.id,
+          payNo: randomBytes(16).toString('hex'), // 不可枚举随机（拍板③=A）
+          channel: 'mock',
+          amount,
+        },
+      })
+      return {
+        orderId,
+        payMethod: 1,
+        payNo: rec.payNo,
+        channel: rec.channel,
+        amount,
+        status: OrderStatus.PENDING_CONFIRM,
+        note: '微信支付（模拟通道）：待支付回调',
+      }
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -389,7 +419,25 @@ export class OrderService {
       })
     })
 
-    return { orderId, payMethod: dto.payMethod, status: OrderStatus.STOCKING, note: dto.payMethod === 1 ? '微信支付（模拟成功）' : '货到付款' }
+    return { orderId, payMethod: dto.payMethod, status: OrderStatus.STOCKING, note: '货到付款' }
+  }
+
+  /// 支付回调成功后的订单推进（必须在支付事务的 tx 上执行，供 PaymentService 调用）：
+  /// 兼容补拆 + payMethod=1 + 订单 10 → 30
+  async completePaidOrder(tx: any, orderId: bigint) {
+    const order = await tx.order.findUnique({ where: { id: orderId } })
+    if (!order || order.status !== OrderStatus.PENDING_CONFIRM) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '订单当前状态不允许支付确认')
+    }
+    const assigned = await tx.orderItem.count({ where: { orderId: order.id, supplierId: { not: null } } })
+    if (assigned === 0) {
+      await this.autoSplit(tx, order.id)
+    }
+    await tx.order.update({
+      where: { id: order.id },
+      data: { payMethod: 1, status: OrderStatus.STOCKING },
+    })
+    return { orderId: Number(orderId), payMethod: 1, status: OrderStatus.STOCKING }
   }
 
   // ────────────────────────────────────────

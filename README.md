@@ -66,6 +66,8 @@ npm run dev:mp-weixin         # 微信开发者工具导入 dist/dev/mp-weixin
 | 4 | **token 内嵌身份，切换重签** | JWT payload 含 `currentRole`；`/auth/switch-role` 重签，旧 token 失效 |
 | 5 | **业务员 = 运营子账号** | 角色码 `business_agent`，权限仅限采购方审核，看不到金额/订单/结算 |
 
+> **支付金额口径（2026-09-11 拍板）**：线上支付（微信支付模拟通道）支付金额 = **下单时刻应付 = `amountOrdered + deliveryFee`**（加急费已含在 `deliveryFee`）；备货缺货导致的差额走售后/结算环节找补（与 COD 口径一致）。订单超时自动关单为已知欠账，未实现。
+
 ## ⚠️ 三条权限铁律（写代码时不能违反）
 
 1. **配送员不碰钱** —— `courier` 模块接口不返回任何金额字段；唯一例外是「收款协助」`GET /courier/task/:id/amount`，仅展示**货到付款订单的应收数字**供核对（非 COD 订单隐藏），且配送员只标记收款、不作核销，不碰资金流

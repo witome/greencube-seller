@@ -290,8 +290,27 @@ const toggleUrgent = async () => {
 // ── 支付 ──
 const pay = async (payMethod) => {
   await flushSave() // 支付前先保存最新改动（防止 debounce 未触发就支付）
-  await buyerApi.payOrder(orderId.value, payMethod)
-  uni.showToast({ title: payMethod === 1 ? '微信支付成功' : '已选货到付款', icon: 'success' })
+  const res = await buyerApi.payOrder(orderId.value, payMethod)
+  if (payMethod === 1) {
+    // 微信支付（模拟通道）：真实环境此处调起 wx.requestPayment（接商户号后替换）
+    const confirmed = await new Promise((resolve) => {
+      uni.showModal({
+        title: '微信支付（模拟通道）',
+        content: `支付金额 ¥${res.amount}，模拟通道将立即回调支付成功`,
+        confirmText: '模拟支付',
+        success: (r) => resolve(r.confirm),
+        fail: () => resolve(false),
+      })
+    })
+    if (!confirmed) {
+      uni.showToast({ title: '已放弃支付，订单保持待确认', icon: 'none' })
+      return
+    }
+    await buyerApi.mockPay(res.payNo)
+    uni.showToast({ title: '微信支付成功', icon: 'success' })
+  } else {
+    uni.showToast({ title: '已选货到付款', icon: 'success' })
+  }
   load()
 }
 

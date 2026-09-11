@@ -79,6 +79,63 @@ async function main() {
   check('下单成功(status=10)', order.code === 0 && order.data.status === 10)
   const orderId = order.data.orderId
 
+  // ── 3.5 微信支付模拟回调（任务卡 2026-09-11：支付抽象层，拍板①②③④=A）──
+  console.log('\n【3.5 微信支付模拟回调】')
+  const crypto = require('crypto')
+  const PAY_SECRET = (require('fs').readFileSync(__dirname + '/.env', 'utf8').match(/PAY_CALLBACK_SECRET=(\S+)/) || [])[1]
+  const paySign = (payNo, amount) => crypto.createHmac('sha256', PAY_SECRET).update(`${payNo}|${Number(amount)}`).digest('hex')
+
+  const order2 = await call('POST', '/order', { deliveryDate: '2026-09-20', timeWindow: 1, items: [{ productId: pid, qty: 3 }] }, bt2)
+  check('支付用例下单(order2 status=10)', order2.code === 0 && order2.data.status === 10)
+  const order2Id = order2.data.orderId
+
+  const payRes = await call('POST', `/order/${order2Id}/pay`, { payMethod: 1 }, bt2)
+  check('创建支付单(返回 payNo/amount)', payRes.code === 0 && !!payRes.data.payNo && Number(payRes.data.amount) > 0)
+  check('创建支付单后订单仍停 10(待支付)', payRes.data.status === 10)
+  const payNo = payRes.data.payNo, payAmount = payRes.data.amount
+
+  // 防伪：错签名回调被拒（拍板③=A）
+  const forged = await call('POST', '/payment/mock/callback', { payNo, signature: 'deadbeef' })
+  check('错签名回调被拒(2001)', forged.code === 2001)
+  // 防伪：无签名被拒
+  const noSig = await call('POST', '/payment/mock/callback', { payNo: payNo })
+  check('无签名回调被拒(1001)', noSig.code === 1001)
+
+  // 正确签名回调 → 订单 10→30（复用拆单）
+  const cb = await call('POST', '/payment/mock/callback', { payNo, signature: paySign(payNo, payAmount) })
+  check('正确签名回调成功', cb.code === 0 && cb.data.status === 1)
+  const o2 = await call('GET', `/order/${order2Id}`, null, bt2)
+  check('回调后订单 10→30 且 payMethod=1', o2.data.status === 30 && o2.data.payMethod === 1)
+
+  // 幂等：同一 payNo 重复回调
+  const cb2 = await call('POST', '/payment/mock/callback', { payNo, signature: paySign(payNo, payAmount) })
+  check('重复回调幂等(alreadyConfirmed)', cb2.code === 0 && cb2.data.alreadyConfirmed === true)
+  const o2b = await call('GET', `/order/${order2Id}`, null, bt2)
+  check('幂等后订单状态不回退(仍 30)', o2b.data.status === 30)
+
+  // 模拟支付端点（采购方 token 自签，等同前端「模拟支付」按钮链路）
+  const order4 = await call('POST', '/order', { deliveryDate: '2026-09-20', timeWindow: 1, items: [{ productId: pid, qty: 2 }] }, bt2)
+  const pay4 = await call('POST', `/order/${order4.data.orderId}/pay`, { payMethod: 1 }, bt2)
+  const mp = await call('POST', '/payment/mock/pay', { payNo: pay4.data.payNo }, bt2)
+  check('模拟支付端点(mock/pay)成功', mp.code === 0 && mp.data.status === 1)
+  const o4 = await call('GET', `/order/${order4.data.orderId}`, null, bt2)
+  check('mock/pay 后订单 10→30 且 payMethod=1', o4.data.status === 30 && o4.data.payMethod === 1)
+
+  // 放弃支付（拍板④ Hermes 补充）：支付单创建后不回调 → 订单停 10、仍可手动取消
+  const order3 = await call('POST', '/order', { deliveryDate: '2026-09-20', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  const order3Id = order3.data.orderId
+  const pay3 = await call('POST', `/order/${order3Id}/pay`, { payMethod: 1 }, bt2)
+  check('放弃支付用例: 支付单已创建', pay3.code === 0 && !!pay3.data.payNo)
+  const o3 = await call('GET', `/order/${order3Id}`, null, bt2)
+  check('放弃支付后订单状态不变(仍 10)', o3.data.status === 10 && o3.data.payMethod === 0)
+  const cancel3 = await call('POST', `/order/${order3Id}/cancel`, null, bt2)
+  check('放弃支付后仍可手动取消', cancel3.code === 0)
+  const o3b = await call('GET', `/order/${order3Id}`, null, bt2)
+  check('取消后订单 91 已取消', o3b.data.status === 91)
+  // 已取消订单的支付单不可再回调推进（服务端按订单状态拒）
+  const cb3 = await call('POST', '/payment/mock/callback', { payNo: pay3.data.payNo, signature: paySign(pay3.data.payNo, pay3.data.amount) })
+  check('已取消订单的回调被拒(3002)', cb3.code === 3002)
+
   // ── 4. 核单拆单（10 待确认 → 30 备货中）──
   // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行
   //   10 待确认 ──支付后自动拆单──> 30 备货中 ──供应商确认备货完成──> 40 待配送 ──派单──> 45 ──取货──> 50

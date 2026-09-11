@@ -39,7 +39,8 @@ export const buyerApi = {
   cancelOrder: (id) => post(`/order/${id}/cancel`),
   receiveOrder: (id, data) => post(`/order/${id}/receive`, data), // 逐项接受/拒收
   updateOrder: (id, data) => post(`/order/${id}/update`, data),   // 编辑待确认订单（覆盖式）
-  payOrder: (id, payMethod) => post(`/order/${id}/pay`, { payMethod }), // 1 微信支付 / 2 货到付款
+  payOrder: (id, payMethod) => post(`/order/${id}/pay`, { payMethod }), // 1 微信支付（返回支付单）/ 2 货到付款
+  mockPay: (payNo) => post('/payment/mock/pay', { payNo }), // 模拟支付通道（WX_MOCK_PAY=1；接商户号后换 wx.requestPayment）
   setUrgent: (id, urgent) => post(`/order/${id}/urgent`, { urgent }), // 加急 1 / 取消加急 0
   aiParse: (text) => post('/ai/parse', { text }),                 // AI 客服下单解析
   // 对账单/售后

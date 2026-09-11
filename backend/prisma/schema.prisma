@@ -329,6 +329,7 @@ model Order {
 
   purchaser Purchaser    @relation(fields: [purchaserId], references: [id])
   items     OrderItem[]
+  payments  PaymentRecord[]
 
   @@index([purchaserId, status])
   @@index([deliveryDate])
@@ -512,4 +513,28 @@ model PlatformConfig {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("platform_config")
+}
+
+/// 支付流水（微信支付抽象层：每笔支付独立记录，对账/退款/接真实通道都靠它）
+model PaymentRecord {
+  id        BigInt    @id @default(autoincrement())
+  orderId   BigInt    @map("order_id")
+  /// 不可枚举随机支付单号（对外暴露、回调凭据）
+  payNo     String    @unique @map("pay_no") @db.VarChar(40)
+  /// 支付通道：mock | wechat（预留）
+  channel   String    @default("mock") @db.VarChar(20)
+  /// 支付金额（口径：下单时刻应付 = amountOrdered + deliveryFee）
+  amount    Decimal   @db.Decimal(12, 2)
+  /// 0 待支付 / 1 成功 / 2 关闭
+  status    Int       @default(0) @db.TinyInt
+  /// 回调原文全量留痕（数组，含被拒回调）
+  callbackPayload Json?    @map("callback_payload")
+  paidAt    DateTime? @map("paid_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@map("payment_record")
 }
