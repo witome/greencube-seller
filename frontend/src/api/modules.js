@@ -45,6 +45,7 @@ export const buyerApi = {
   // 对账单/售后
   getBill: (period) => get(`/buyer/bill/${period}`),
   submitAftersale: (data) => post('/buyer/aftersale', data),
+  getAftersaleList: () => get('/buyer/aftersale'), // 我的售后工单（含处理状态）
 }
 
 /* ── 运营端 ── */

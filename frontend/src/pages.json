@@ -9,6 +9,7 @@
     { "path": "pages/buyer/order-detail", "style": { "navigationBarTitleText": "订单详情" } },
     { "path": "pages/buyer/bill", "style": { "navigationBarTitleText": "月度对账单" } },
     { "path": "pages/buyer/aftersale", "style": { "navigationBarTitleText": "售后申请" } },
+    { "path": "pages/buyer/aftersale-list", "style": { "navigationBarTitleText": "我的售后" } },
     { "path": "pages/buyer/kefu", "style": { "navigationBarTitleText": "AI 客服下单" } },
     { "path": "pages/buyer/ai-confirm", "style": { "navigationBarTitleText": "确认订单" } },
     { "path": "pages/buyer/mine", "style": { "navigationBarTitleText": "我的" } },
