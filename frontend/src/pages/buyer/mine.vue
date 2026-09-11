@@ -52,7 +52,7 @@
 
       <!-- ④ 功能列表 -->
       <view v-if="profile" class="buyer-mine-menu">
-        <view class="buyer-mine-menu-item" @tap="todo('餐馆资料（只读，修改请联系运营）')">
+        <view class="buyer-mine-menu-item" @tap="go('/pages/buyer/profile-edit')">
           <view class="buyer-mine-menu-ico buyer-mine-ico-green">🏪</view>
           <view class="buyer-mine-menu-main">
             <view class="buyer-mine-menu-t">餐馆资料</view>
@@ -60,7 +60,7 @@
           </view>
           <view class="buyer-mine-arrow">›</view>
         </view>
-        <view class="buyer-mine-menu-item" @tap="todo('收货地址 · 功能建设中')">
+        <view class="buyer-mine-menu-item" @tap="go('/pages/buyer/profile-edit')">
           <view class="buyer-mine-menu-ico buyer-mine-ico-blue">📍</view>
           <view class="buyer-mine-menu-main">
             <view class="buyer-mine-menu-t">收货地址</view>
@@ -161,7 +161,6 @@ const roleName = (r) => ({ purchaser: '采购方', supplier: '供应商', courie
 
 const go = (url) => uni.navigateTo({ url })
 const goTab = (url) => uni.switchTab({ url })
-const todo = (msg) => uni.showToast({ title: msg, icon: 'none' })
 
 // ── 切换身份（统一走 store.switchRole：重签 token + 清业务缓存 + 按身份跳转） ──
 const switchRole = async (r) => {

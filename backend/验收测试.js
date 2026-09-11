@@ -79,6 +79,61 @@ async function main() {
   const bt2 = relogin.data.token
   check('重新登录后账号已激活', relogin.data.accountStatus === 2)
 
+  // ── 2.5 采购方自助改资料（任务卡 2026-09-11：大辉拍板 A）──
+  console.log('\n【2.5 采购方自助改资料】')
+  // ① 自助改自己的地址/时段 + 自读回显
+  const selfUpd = await call('PUT', '/buyer/profile', { address: '自助新路 ' + (ts % 1000) + ' 号', deliveryWindows: ['早 05-08', '中 10-13'] }, bt2)
+  check('自助改地址成功', selfUpd.code === 0 && selfUpd.data.updated === true)
+  const selfRead = await call('GET', '/buyer/profile', null, bt2)
+  check('GET /buyer/profile 回显新地址与新时段', selfRead.code === 0 && String(selfRead.data.address).indexOf('自助新路') === 0 && selfRead.data.deliveryWindows.length === 2)
+  const aPurchaserId = selfRead.data.purchaserId
+
+  // ② 只改自己：A 的 token 传 targetId 也改不到 B（服务端按 token userId 取档案）
+  const reg2Phone = '137' + String(ts).slice(-8)
+  const buyer2login = await call('POST', '/auth/wx-login', { code: 'buyer2_' + ts })
+  const reg2 = await call('POST', '/buyer/register', { shopName: '验收B餐馆', contact: '乙方', phone: reg2Phone, address: '乙路 1 号' }, buyer2login.data.token)
+  check('B 账号注册成功', reg2.code === 0 && reg2.data.accountStatus === 1)
+  const found2 = await (async () => {
+    const first = await call('GET', '/admin/buyers/pending?pageSize=50', null, at)
+    const pages = Math.max(1, Math.ceil((first.data?.total || 0) / 50))
+    let hit = (first.data?.list || []).find(p => p.phone === reg2Phone)
+    for (let p = 2; p <= pages && !hit; p++) {
+      const r = await call('GET', `/admin/buyers/pending?pageSize=50&page=${p}`, null, at)
+      hit = (r.data?.list || []).find(x => x.phone === reg2Phone)
+    }
+    return hit
+  })()
+  check('运营队列找到 B', !!found2)
+  if (!found2) abort('B 注册记录未进队列(' + reg2Phone + ')')
+  await call('POST', `/admin/buyers/${found2.purchaserId}/verify`, { methods: [1], result: 1 }, at)
+  const btB = (await call('POST', '/auth/wx-login', { code: 'buyer2_' + ts })).data.token
+  check('B 已激活', (await call('GET', '/buyer/profile', null, btB)).data.accountStatus === 2)
+  const hack = await call('PUT', '/buyer/profile', { shopName: 'HACK-' + ts, targetId: found2.purchaserId }, bt2)
+  check('A 夹带 targetId 不报错', hack.code === 0)
+  const profA = await call('GET', '/buyer/profile', null, bt2)
+  check('改的是 A 自己的店名(targetId 被无视)', profA.data.shopName === 'HACK-' + ts)
+  const detB = await call('GET', `/admin/buyers/${found2.purchaserId}/verify-detail`, null, at)
+  check('B 的店名未被波及', detB.code === 0 && detB.data.shopName === '验收B餐馆')
+
+  // ③ 非法字段被剥离：夹带 businessLicenseNo 后执照号不变（whitelist:true 剥离未声明字段）
+  const detA0 = await call('GET', `/admin/buyers/${aPurchaserId}/verify-detail`, null, at)
+  const lic0 = detA0.data.businessLicenseNo
+  const lic = await call('PUT', '/buyer/profile', { contact: '丙', businessLicenseNo: 'FAKE-911' }, bt2)
+  check('夹带执照号的请求被正常处理(字段被剥离)', lic.code === 0)
+  const detA1 = await call('GET', `/admin/buyers/${aPurchaserId}/verify-detail`, null, at)
+  check('执照号未被自助修改', detA1.data.businessLicenseNo === lic0 && detA1.data.businessLicenseNo !== 'FAKE-911')
+
+  // ④ 字段校验：手机号格式错误被拒(全局异常过滤器包装为 1001，msg 数组)
+  const badPhone = await call('PUT', '/buyer/profile', { phone: '123' }, bt2)
+  check('手机号格式错误被拒(1001)', badPhone.code === 1001 && JSON.stringify(badPhone.msg || '').includes('手机号格式错误'))
+
+  // ⑤ 反向：供应商/配送员 token 调自助改资料 → 2002 FORBIDDEN
+  const revS = await call('PUT', '/buyer/profile', { shopName: 'x' }, st)
+  check('供应商调自助改资料被拒(2002)', revS.code === 2002)
+  const revC = await call('PUT', '/buyer/profile', { shopName: 'x' }, ct)
+  check('配送员调自助改资料被拒(2002)', revC.code === 2002)
+
+
   // ── 3. 浏览 + 加购 + 下单 ──
   console.log('\n【3. 逛 → 买】')
   const goods = await call('GET', '/product/list?pageSize=5', null, bt2)

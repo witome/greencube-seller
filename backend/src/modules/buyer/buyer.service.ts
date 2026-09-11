@@ -1,13 +1,18 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
+import { AuditService } from '../audit/audit.service'
 import { BizException, ErrorCode, AccountStatus, OrderStatus } from '../../common/constants/error-codes'
 import { RegisterDto } from './dto/register.dto'
 import { AppealDto } from './dto/appeal.dto'
 import { AftersaleDto } from './dto/aftersale.dto'
+import { UpdateBuyerProfileDto } from './dto/update-profile.dto'
 
 @Injectable()
 export class BuyerService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   // ────────────────────────────────────────
   // 注册提交 → accountStatus=1 待审核
@@ -60,6 +65,65 @@ export class BuyerService {
       accountStatus: purchaser.accountStatus,
       estimatedHours: 24,
     }
+  }
+
+  // ────────────────────────────────────────
+  // 采购方自助资料（2026-09-11 任务卡 A，大辉拍板）
+  // 只按 token 里的 userId 取自己的 purchaser 记录，绝不接受 targetId
+  // 可自助改：shopName / contact / phone / address / deliveryWindows
+  // 不可自助改：businessLicenseNo / 资质图片 / 账号状态（准入材料，必须运营审核）
+  // 审计：action=BUYER_SELF_UPDATE（与运营侧 UPDATE_BUYER 区分自助/运营改）
+  // ────────────────────────────────────────
+  async getSelfProfile(userId: bigint) {
+    const p = await this.prisma.purchaser.findUnique({ where: { userId } })
+    if (!p) throw new BizException(ErrorCode.NOT_FOUND, '未找到采购方档案')
+    return {
+      purchaserId: Number(p.id),
+      shopName: p.shopName,
+      contact: p.contact,
+      phone: p.phone,
+      address: p.address,
+      deliveryWindows: p.deliveryWindows,
+      businessLicenseNo: p.businessLicenseNo,
+      licenseImg: p.businessLicenseImg,
+      permitImg: p.foodPermitImg,
+      accountStatus: p.accountStatus,
+    }
+  }
+
+  async updateSelfProfile(userId: bigint, dto: UpdateBuyerProfileDto) {
+    const p = await this.prisma.purchaser.findUnique({ where: { userId } })
+    if (!p) throw new BizException(ErrorCode.NOT_FOUND, '未找到采购方档案')
+
+    const data: any = {}
+    if (dto.shopName !== undefined) data.shopName = dto.shopName
+    if (dto.contact !== undefined) data.contact = dto.contact
+    if (dto.phone !== undefined) data.phone = dto.phone
+    if (dto.address !== undefined) data.address = dto.address
+    if (dto.deliveryWindows !== undefined) data.deliveryWindows = dto.deliveryWindows
+    if (Object.keys(data).length === 0) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '没有可更新的字段')
+    }
+
+    // 变更前后值（仅记录实际变更的字段）
+    const before: any = {}
+    for (const k of Object.keys(data)) before[k] = p[k]
+
+    await this.prisma.purchaser.update({ where: { id: p.id }, data })
+    // 手机号与 user 表同步（与运营侧 updateBuyer 同口径）
+    if (dto.phone !== undefined) {
+      await this.prisma.user.update({ where: { id: p.userId }, data: { phone: dto.phone } })
+    }
+
+    await this.audit.log({
+      operatorId: userId,
+      action: 'BUYER_SELF_UPDATE',
+      entity: 'purchaser',
+      entityId: p.id,
+      before,
+      after: data,
+    })
+    return { purchaserId: Number(p.id), updated: true }
   }
 
   // ────────────────────────────────────────

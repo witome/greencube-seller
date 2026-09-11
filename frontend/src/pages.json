@@ -15,7 +15,8 @@
     { "path": "pages/buyer/mine", "style": { "navigationBarTitleText": "我的" } },
     { "path": "pages/buyer/register", "style": { "navigationBarTitleText": "注册" } },
     { "path": "pages/buyer/pending-verify", "style": { "navigationBarTitleText": "账号审核中" } },
-    { "path": "pages/buyer/verify-rejected", "style": { "navigationBarTitleText": "账号未通过" } }
+    { "path": "pages/buyer/verify-rejected", "style": { "navigationBarTitleText": "账号未通过" } },
+    { "path": "pages/buyer/profile-edit", "style": { "navigationBarTitleText": "餐馆资料与收货地址" } }
   ],
   "subPackages": [
     {

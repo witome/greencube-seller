@@ -47,6 +47,10 @@ export const buyerApi = {
   getBill: (period) => get(`/buyer/bill/${period}`),
   submitAftersale: (data) => post('/buyer/aftersale', data),
   getAftersaleList: () => get('/buyer/aftersale'), // 我的售后工单（含处理状态）
+
+  // 自助改资料（2026-09-11 任务卡 A：只改自己，资质字段不可改）
+  getProfile: () => get('/buyer/profile'),
+  updateProfile: (data) => put('/buyer/profile', data),
 }
 
 /* ── 运营端 ── */

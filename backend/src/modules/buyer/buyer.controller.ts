@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common'
+import { Controller, Get, Post, Put, Body, Param } from '@nestjs/common'
 import { BuyerService } from './buyer.service'
 import { RegisterDto } from './dto/register.dto'
 import { AppealDto } from './dto/appeal.dto'
 import { AftersaleDto } from './dto/aftersale.dto'
+import { UpdateBuyerProfileDto } from './dto/update-profile.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -59,5 +60,19 @@ export class BuyerController {
   @Roles(Role.PURCHASER)
   async myAftersales(@CurrentUser('userId') userId: bigint) {
     return this.service.myAftersales(userId)
+  }
+
+  /// 自助资料读取（2026-09-11 任务卡 A：只读自己的档案，含执照号展示）
+  @Get('profile')
+  @Roles(Role.PURCHASER)
+  async myProfile(@CurrentUser('userId') userId: bigint) {
+    return this.service.getSelfProfile(userId)
+  }
+
+  /// 自助改资料（只按 token 的 userId 改自己；资质/执照/状态不可改，见 DTO 注释）
+  @Put('profile')
+  @Roles(Role.PURCHASER)
+  async updateMyProfile(@CurrentUser('userId') userId: bigint, @Body() dto: UpdateBuyerProfileDto) {
+    return this.service.updateSelfProfile(userId, dto)
   }
 }
