@@ -26,6 +26,7 @@ import { AuditModule } from './modules/audit/audit.module'
 import { AdminPricingModule } from './modules/admin-pricing/admin-pricing.module'
 import { AdminReportsModule } from './modules/admin-reports/admin-reports.module'
 import { RegisterModule } from './modules/register/register.module'
+import { AiModule } from './modules/ai/ai.module'
 import { UploadModule } from './modules/upload/upload.module'
 
 @Module({
@@ -57,6 +58,7 @@ import { UploadModule } from './modules/upload/upload.module'
     AdminPricingModule,
     AdminReportsModule,
     RegisterModule,
+    AiModule,
     UploadModule,
   ],
   providers: [

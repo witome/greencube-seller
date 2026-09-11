@@ -41,6 +41,7 @@ export const buyerApi = {
   updateOrder: (id, data) => post(`/order/${id}/update`, data),   // 编辑待确认订单（覆盖式）
   payOrder: (id, payMethod) => post(`/order/${id}/pay`, { payMethod }), // 1 微信支付 / 2 货到付款
   setUrgent: (id, urgent) => post(`/order/${id}/urgent`, { urgent }), // 加急 1 / 取消加急 0
+  aiParse: (text) => post('/ai/parse', { text }),                 // AI 客服下单解析
   // 对账单/售后
   getBill: (period) => get(`/buyer/bill/${period}`),
   submitAftersale: (data) => post('/buyer/aftersale', data),
