@@ -1,0 +1,29 @@
+
+【① 登录 buyer（user 10, purchaser）】
+   落地页内容片段: 登录 🍃 绿立方 鲜货直供 · 次日送达 · 货到付款 🥬 源头直供 🚚 次日送达 💰 货到付款 💚 微信一键登录 还没有账号？注册 › 登录即代表同意《用户协议》和《隐私政策》 🎭 切换角色
+✅ ① 已登录且为 purchaser（user 10）  {"userId":10,"currentRole":"purchaser"}
+   切换前 token 掩码: eyJhbGciOiJI...3WAReuXI (len=235)
+   切换前 payload: {"userId":10,"roles":["purchaser","supplier"],"currentRole":"purchaser"}
+   📸 01-切换前-采购方我的页.png
+
+【② 切换身份 purchaser → supplier】
+✅ ②-1 我的页有「切换身份」入口（canSwitchRole=true，因 user10 现为双身份）
+✅ ②-2 ActionSheet 列出「供应商」
+✅ ②-3 已 reLaunch 到供应商首页  {"url":"http://localhost:5180/#/subpkg-supplier/pages/home"}
+   切换后 token 掩码: eyJhbGciOiJI...mSmd-44c (len=233)
+   切换后 payload: {"userId":10,"roles":["purchaser","supplier"],"currentRole":"supplier"}
+✅ ②-4 token 已重签（字符串不同）  {"same":false}
+✅ ②-5 新 token payload.currentRole = supplier
+✅ ②-6 新 token 仍为同一账号 user 10（未换账号）
+   📸 02-切换后-供应商首页.png
+
+【③ 供应商身份判权生效（页面内真实请求）】
+✅ ③ 新身份 token 调 GET /supplier-goods → 200（行级隔离：自己摊位数据）  {"http":200,"code":0,"n":0,"stall":null}
+
+【④ 反向：switch-role 请求失败 → 不跳转、身份不变】
+✅ ④-1 供应商我的页列出可切换身份「采购方」  {"count":1}
+✅ ④-2 切换失败：未跳转（仍在供应商我的页）  {"url":"http://localhost:5180/#/subpkg-supplier/pages/mine"}
+✅ ④-3 切换失败：token 未被覆盖（保持 supplier 身份）
+   📸 03-反向-切换失败仍停留原页.png
+
+✅ 端到端全部通过

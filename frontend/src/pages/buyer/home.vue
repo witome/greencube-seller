@@ -9,14 +9,14 @@
     <!-- ① 商品搜索入口 → 商品 tab -->
     <view class="buyer-home-search" @tap="goTab('/pages/buyer/goods')">🔍 搜索：白菜 / 五花肉 / 鸡蛋…</view>
 
-    <!-- ② 配送截止时间提示横幅（演示数据：暂无接口） -->
+    <!-- ② 配送说明横幅（原型此块为绿渐变横幅+配送时效说明；时效规则未接口化，先上中性文案，另记待办） -->
     <view class="buyer-home-banner">
-      <text class="buyer-home-banner-b">明日 06:00 前下单，次日送达 🚚</text>
+      <text class="buyer-home-banner-b">下单时选择配送日期，按日送达 🚚</text>
       <text class="buyer-home-banner-s">鲜货直供菜市场 · 缺货自动按偏好处理</text>
     </view>
 
-    <!-- ③ 平台公告（演示数据：暂无接口） -->
-    <view class="buyer-home-notice">📢 平台公告：中秋节前 3 天供货紧张，建议提前 1 天备货下单。</view>
+    <!-- ③ 平台公告（原型此块为黄底公告条；真公告接口化另记待办，无公告时不渲染避免假信息） -->
+    <view v-if="platformNotice" class="buyer-home-notice">{{ platformNotice }}</view>
 
     <!-- ④ 常用功能宫格（8 入口） -->
     <view class="buyer-home-title">常用功能</view>
@@ -33,7 +33,7 @@
       </view>
     </view>
 
-    <!-- ⑤ 今日推荐商品（真实接口：/product/list 前 3 条，空/失败回退演示数据） -->
+    <!-- ⑤ 今日推荐商品（真实接口：/product/list 前 3 条；空/失败显示空态，不用假数据兜底） -->
     <view class="buyer-home-title">
       <text>今日推荐</text>
       <text class="buyer-home-more" @tap="goTab('/pages/buyer/goods')">更多 ›</text>
@@ -45,6 +45,7 @@
           <view class="buyer-home-rec-body"><view class="buyer-home-skeleton-line"></view><view class="buyer-home-skeleton-line buyer-home-skeleton-line--short"></view><view class="buyer-home-skeleton-line buyer-home-skeleton-line--price"></view></view>
         </view>
       </template>
+      <view v-else-if="!recList.length" class="buyer-home-empty buyer-home-rec-empty">暂无推荐，去商品页逛逛 ›</view>
       <template v-else>
         <view v-for="g in recList" :key="g.id" class="buyer-home-rec-card" @tap="goDetail(g.id)">
           <view class="buyer-home-rec-img">{{ emojiOf(g.name) }}</view>
@@ -306,6 +307,7 @@ onShow(async () => {
 
 /* ── 今日推荐卡片（横向三卡） ── */
 .buyer-home-rec { display: flex; gap: 10px; margin: 0 12px; }
+.buyer-home-rec-empty { flex: 1; padding: 30px 0; }
 .buyer-home-rec-card {
   flex: 1; min-width: 0;
   background: #fff; border-radius: 14px; overflow: hidden;

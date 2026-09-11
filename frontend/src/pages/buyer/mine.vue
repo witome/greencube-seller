@@ -98,6 +98,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
+import { useUserStore } from '@/store/user'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
 const profile = ref(null)
@@ -162,13 +163,13 @@ const go = (url) => uni.navigateTo({ url })
 const goTab = (url) => uni.switchTab({ url })
 const todo = (msg) => uni.showToast({ title: msg, icon: 'none' })
 
-// ── 切换身份（复用现有 switchRole 逻辑） ──
+// ── 切换身份（统一走 store.switchRole：重签 token + 清业务缓存 + 按身份跳转） ──
 const switchRole = async (r) => {
-  const data = await authApi.switchRole(r)
-  uni.setStorageSync('token', data.token)
-  uni.setStorageSync('currentRole', data.currentRole)
-  const homeMap = { purchaser: '/pages/buyer/home', supplier: '/subpkg-supplier/pages/home', courier: '/subpkg-courier/pages/home' }
-  uni.reLaunch({ url: homeMap[r] || '/pages/buyer/home' })
+  try {
+    await useUserStore().switchRole(r)
+  } catch (e) {
+    // 失败：request 层已提示；保持原身份与原页面，不跳转
+  }
 }
 
 const onSwitchRole = () => {

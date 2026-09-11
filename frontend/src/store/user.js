@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { authApi } from '@/api/modules'
 
 /**
  * 用户与身份状态
@@ -27,10 +28,21 @@ export const useUserStore = defineStore('user', {
       this.phone = payload.phone
       this.roles = payload.roles || []
     },
-    /** 切换身份：调用后端换取新 token，然后按身份重定向到对应分包首页 */
-    switchRole(role) {
-      // TODO: api.auth.switchRole(role) -> 新 token
-      this.currentRole = role
+    /**
+     * 切换身份（决策 4 完整落实）：
+     * ① 调后端 /auth/switch-role 换新 token（服务端校验身份所有权 + 按 currentRole 重签，守卫按 JWT 判权）
+     * ② 新 token + currentRole 同步写入 store 与本地缓存
+     * ③ 清空业务缓存（跨身份防串数据：AI 会话草稿、注册流程残留）
+     * ④ 按新身份 reLaunch 对应首页
+     * 失败时：抛出异常由调用方提示，本方法在拿到新 token 前不做任何本地变更、不跳转（保持原身份）
+     */
+    async switchRole(role) {
+      const data = await authApi.switchRole(role) // 失败：request 层已 toast 并 reject，直接向上抛
+      this.token = data.token
+      this.currentRole = data.currentRole || role
+      uni.setStorageSync('token', data.token)
+      uni.setStorageSync('currentRole', this.currentRole)
+      clearBusinessCache()
       const home = {
         purchaser: '/pages/buyer/home',
         supplier: '/subpkg-supplier/pages/home',
@@ -44,3 +56,9 @@ export const useUserStore = defineStore('user', {
     },
   },
 })
+
+/** 业务缓存清空清单（决策 4：切身份防串数据）。凭据类（token/currentRole/accountStatus）由切换流程覆写，不在此列 */
+const BUSINESS_CACHE_KEYS = ['aiDraft', 'registeredRole', 'account_status']
+function clearBusinessCache() {
+  BUSINESS_CACHE_KEYS.forEach((k) => uni.removeStorageSync(k))
+}

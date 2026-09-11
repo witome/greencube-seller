@@ -36,6 +36,7 @@
 import { ref, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi } from '@/api/modules'
+import { useUserStore } from '@/store/user'
 import CustomTabBar from '@/components/CustomTabBar.vue'
 
 const profile = ref(null)
@@ -56,11 +57,11 @@ onShow(() => {
 })
 
 const switchRole = async (r) => {
-  const data = await authApi.switchRole(r)
-  uni.setStorageSync('token', data.token)
-  uni.setStorageSync('currentRole', data.currentRole)
-  const homeMap = { purchaser: '/pages/buyer/home', supplier: '/subpkg-supplier/pages/home', courier: '/subpkg-courier/pages/home' }
-  uni.reLaunch({ url: homeMap[r] || '/pages/buyer/home' })
+  try {
+    await useUserStore().switchRole(r)
+  } catch (e) {
+    // 失败：request 层已提示；保持原身份与原页面，不跳转
+  }
 }
 
 const logout = () => {

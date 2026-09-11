@@ -1,0 +1,12 @@
+✅ ① buyer 登录（user 10）  {"roles":["purchaser","supplier"],"currentRole":"purchaser"}
+  旧 token 掩码: eyJhbGciOiJI...RwlcuVNA (len=235)
+  旧 token payload: {"userId":10,"roles":["purchaser","supplier"],"currentRole":"purchaser"}
+✅ ② POST /auth/switch-role {role:supplier} 成功  {"currentRole":"supplier"}
+  新 token 掩码: eyJhbGciOiJI...AwOxb5dA (len=233)
+  新 token payload: {"userId":10,"roles":["purchaser","supplier"],"currentRole":"supplier"}
+✅ ③ token 确实重签（字符串不同 + payload.currentRole 变化）  {"before":"purchaser","after":"supplier","sameToken":false}
+✅ ④ 新 token(supplier) GET /supplier-goods → 200  {"itemCount":0,"stall":"测试摊位-身份切换验证"}
+✅ ⑤ 旧 token(purchaser) GET /supplier-goods → 被拒（FORBIDDEN 2002）  {"code":2002,"http":200}
+✅ ⑥ 切到不具备的身份(courier) → 服务端拒绝  {"code":2002,"msg":"该账号不具备此身份"}
+
+✅ 冒烟全部通过

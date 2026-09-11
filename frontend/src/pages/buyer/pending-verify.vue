@@ -7,33 +7,21 @@
       <view class="pv-sub">{{ cfg.sub }}</view>
     </view>
 
-    <!-- 审核进度步骤条 -->
+    <!-- 审核进度步骤条（真实数据：GET /buyer/pending 的 steps；接口不可用时回退静态三步） -->
     <view class="pv-card">
       <view class="pv-card-title">📝 审核进度</view>
+      <view v-if="rejectInfo" class="pv-reject">⚠️ {{ rejectInfo }}</view>
       <view class="pv-steps">
-        <view class="pv-step done">
-          <view class="pv-dot">✓</view>
-          <view class="pv-step-lbl">
-            <text class="pv-step-name">资料提交</text>
-            <text class="pv-step-time">已提交</text>
+        <template v-for="(s, i) in steps" :key="s.key">
+          <view v-if="i > 0" class="pv-line" :class="{ done: s.status === 'done' || steps[i-1].status === 'done' && s.status === 'done' }"></view>
+          <view class="pv-step" :class="s.status === 'rejected' ? '' : s.status">
+            <view class="pv-dot">{{ s.status === 'done' ? '✓' : s.status === 'active' ? '·' : s.status === 'rejected' ? '✕' : '' }}</view>
+            <view class="pv-step-lbl">
+              <text class="pv-step-name">{{ s.label }}</text>
+              <text class="pv-step-time">{{ stepTime(s) }}</text>
+            </view>
           </view>
-        </view>
-        <view class="pv-line done"></view>
-        <view class="pv-step active">
-          <view class="pv-dot">·</view>
-          <view class="pv-step-lbl">
-            <text class="pv-step-name">运营核实中</text>
-            <text class="pv-step-time">预计 24 小时内</text>
-          </view>
-        </view>
-        <view class="pv-line"></view>
-        <view class="pv-step">
-          <view class="pv-dot"></view>
-          <view class="pv-step-lbl">
-            <text class="pv-step-name">账号激活</text>
-            <text class="pv-step-time">{{ cfg.activeText }}</text>
-          </view>
-        </view>
+        </template>
       </view>
     </view>
 
@@ -53,7 +41,10 @@
     </view>
 
     <!-- 底部：催办 / 客服 -->
-    <view class="pv-footer">
+    <view class="pv-footer" :class="{ 'pv-footer-overdue': overdue }">
+      <template v-if="overdue">
+        <text class="pv-overdue-badge">⏰ 已超过 24 小时</text>
+      </template>
       <text>已超过 24 小时？</text>
       <text class="pv-link" @tap="urge">催办</text>
       <text> · 联系客服 400-XXX-XXXX</text>
@@ -116,6 +107,39 @@ const previewGoods = () => {
     uni.showToast({ title: '审核通过后即可查看', icon: 'none' })
   }
 }
+
+// ── D1：审核进度真实化（GET /buyer/pending：accountStatus/submittedAt/overdue/steps/rejectInfo）──
+// 仅采购方注册流程有此接口；supplier/courier 注册调用会 404，此时保持静态文案兜底
+const steps = ref([
+  { key: 'submit', label: '资料提交', status: 'done', time: null },
+  { key: 'verify', label: '运营核实中', status: 'active', time: null },
+  { key: 'active', label: '账号激活', status: 'todo', time: null },
+])
+const overdue = ref(false)
+const rejectInfo = ref('')
+const fmtTime = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+const stepTime = (s) => {
+  if (s.status === 'done') return s.time ? `${fmtTime(s.time)} 已完成` : '已完成'
+  if (s.status === 'active') return '进行中，预计 24 小时内'
+  if (s.status === 'rejected') return '未通过，见上方说明'
+  return '待前序完成'
+}
+onMounted(async () => {
+  try {
+    const data = await buyerApi.getPending()
+    if (data && Array.isArray(data.steps) && data.steps.length) {
+      steps.value = data.steps
+      overdue.value = !!data.overdue
+      rejectInfo.value = data.rejectInfo || ''
+    }
+  } catch (e) {
+    // 非 purchase 档案 / 接口不可用：保持静态文案兜底
+  }
+})
 </script>
 
 <style lang="scss" scoped>
@@ -268,5 +292,12 @@ const previewGoods = () => {
 .pv-link {
   color: $brand;
   font-weight: 600;
+}
+.pv-footer-overdue .pv-overdue-badge {
+  display: block;
+  margin-bottom: 6px;
+  color: #fa5151;
+  font-weight: 700;
+  font-size: 13px;
 }
 </style>
