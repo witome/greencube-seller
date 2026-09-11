@@ -39,8 +39,12 @@
             </view>
           </view>
         </view>
-        <view v-if="!goodsList.length && !loading" class="empty">暂无商品</view>
         <view v-if="loading" class="empty">加载中…</view>
+        <view v-else-if="loadError" class="empty load-error" @tap="retryLoadGoods">
+          <view>{{ loadError }}</view>
+          <view class="retry-btn">点击重试</view>
+        </view>
+        <view v-else-if="!goodsList.length" class="empty">暂无商品</view>
       </scroll-view>
     </view>
 
@@ -74,6 +78,7 @@ const keyword = ref('')
 const page = ref(1)
 const total = ref(0)
 const loading = ref(false)
+const loadError = ref('')
 
 // 已选商品：productId -> 数量
 const cartMap = reactive({})
@@ -131,21 +136,36 @@ const buyAll = async () => {
 
 // ── 商品加载 ──
 const loadCategories = async () => {
-  categories.value = await buyerApi.getCategories()
+  try {
+    categories.value = await buyerApi.getCategories()
+  } catch (e) {
+    categories.value = [] // 分类拉取失败不阻塞商品列表
+  }
 }
 
 const loadGoods = async (reset = true) => {
   if (reset) { page.value = 1; goodsList.value = [] }
   loading.value = true
-  // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成字符串 "undefined"，导致后端误当搜索词
-  const params = { page: page.value, pageSize: 20 }
-  if (activeCate.value) params.categoryId = activeCate.value
-  if (keyword.value) params.keyword = keyword.value
-  const data = await buyerApi.getGoods(params)
-  goodsList.value = reset ? data.list : [...goodsList.value, ...data.list]
-  total.value = data.total
-  loading.value = false
+  loadError.value = ''
+  try {
+    // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成字符串 "undefined"，导致后端误当搜索词
+    const params = { page: page.value, pageSize: 20 }
+    if (activeCate.value) params.categoryId = activeCate.value
+    if (keyword.value) params.keyword = keyword.value
+    const data = await buyerApi.getGoods(params)
+    goodsList.value = reset ? data.list : [...goodsList.value, ...data.list]
+    total.value = data.total
+  } catch (e) {
+    // ⚠️ 必须在这里兜住：否则 loading 永远为 true，页面永久停在「加载中」，
+    //    且网络恢复后不会自愈、也没有重试入口，只能整页刷新
+    if (goodsList.value.length) uni.showToast({ title: '加载失败，请稍后重试', icon: 'none' })
+    else loadError.value = '商品加载失败，请检查网络后重试'
+  } finally {
+    loading.value = false
+  }
 }
+
+const retryLoadGoods = () => loadGoods()
 
 const loadMore = () => {
   if (goodsList.value.length >= total.value || loading.value) return
@@ -159,6 +179,8 @@ const goDetail = (id) => go(`/pages/buyer/goods-detail?id=${id}`)
 onMounted(() => { loadCategories(); loadGoods() })
 onShow(() => {
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 上次加载失败（如后端不可达）时，回到本页自动补一次，避免一直卡在「加载中」
+  if (loadError.value && !loading.value) loadGoods()
 })
 </script>
 
@@ -184,6 +206,8 @@ onShow(() => {
 .st-btn { width: 24px; height: 24px; border-radius: 50%; background: $color-primary; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; }
 .st-input { width: 40px; height: 26px; text-align: center; background: #f7f8fa; border-radius: 6px; font-size: 14px; }
 .empty { text-align: center; color: $text-placeholder; font-size: 13px; padding: 30px 0; }
+.load-error { color: $text-second; }
+.retry-btn { display: inline-block; margin-top: 12px; padding: 7px 22px; border-radius: 16px; border: 1.5px solid $color-primary; color: $color-primary; font-size: 13px; font-weight: 600; }
 /* 底部结算栏（抬高避开 tabBar） */
 .cart-bar { position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom)); background: #fff; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 -2px 8px rgba(0,0,0,.05); z-index: 10; }
 .cb-left { flex: 1; }
