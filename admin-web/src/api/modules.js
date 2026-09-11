@@ -46,7 +46,6 @@ export const orderAdminApi = {
   split: (id, data) => request.post(`/admin/order/${id}/split`, data),
   autoSplit: (id) => request.post(`/admin/order/${id}/auto-split`),
   reSplitShortage: (id) => request.post(`/admin/order/${id}/re-split-shortage`),
-  weighing: (id, data) => request.post(`/admin/order/${id}/weighing`, data),
 }
 
 export const dispatchAdminApi = {

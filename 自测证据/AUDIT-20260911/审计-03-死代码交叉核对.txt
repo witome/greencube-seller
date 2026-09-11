@@ -1,0 +1,21 @@
+后端路由总数: 113
+
+### admin-web/src/api/modules.js 共 61 条 API 声明
+
+### frontend/src/api/modules.js 共 0 条 API 声明
+
+=== 命中后端路由: 55 ===
+
+=== ★ 疑似死代码（前端声明但后端无此路由）: 6 ===
+  admin-web/src/api/modules.js:21  reviewGoodsApply  POST /admin/goods/pending/:id/review   (宽松匹配到: POST /admin/goods/pending/:applyId/review)
+      reviewGoodsApply: (applyId, data) => request.post(`/admin/goods/pending/${applyId}/review`, data),
+  admin-web/src/api/modules.js:22  reviewGoodsChange  POST /admin/goods/change/:id/review   (宽松匹配到: POST /admin/goods/change/:changeId/review)
+      reviewGoodsChange: (changeId, data) => request.post(`/admin/goods/change/${changeId}/review`, data),
+  admin-web/src/api/modules.js:23  getPriority  GET /admin/goods/:id/priority   (宽松匹配到: GET /admin/goods/:productId/priority)
+      getPriority: (productId) => request.get(`/admin/goods/${productId}/priority`),
+  admin-web/src/api/modules.js:24  setPriority  PUT /admin/goods/:id/priority   (宽松匹配到: PUT /admin/goods/:productId/priority)
+      setPriority: (productId, items) => request.put(`/admin/goods/${productId}/priority`, { items }),
+  admin-web/src/api/modules.js:49  weighing  POST /admin/order/:id/weighing   ← 后端完全无
+      weighing: (id, data) => request.post(`/admin/order/${id}/weighing`, data),
+  admin-web/src/api/modules.js:84  update  PUT /admin/pricing/:id   (宽松匹配到: PUT /admin/pricing/:productId)
+      update: (id, data) => request.put(`/admin/pricing/${id}`, data),

@@ -1,0 +1,144 @@
+=== 端点总计: 113 | 写操作: 68 | 只读GET: 45 ===
+
+=== 写操作按模块统计 ===
+  admin-dispatch: 4
+  admin-finance: 4
+  admin-goods: 6
+  admin-order: 4
+  admin-pricing: 2
+  admin-user: 12
+  ai: 1
+  auth: 2
+  buyer: 4
+  cart: 3
+  courier: 9
+  order: 6
+  payment: 2
+  register: 2
+  supplier-fulfill: 3
+  supplier-goods: 3
+  upload: 1
+
+=== 写操作全明细（按模块） ===
+
+### admin-dispatch
+  PUT    /admin/dispatch/exceptions/:id                     handleException          src/modules/admin-dispatch/admin-dispatch.controller.ts:21  [Role.ADMIN]
+  POST   /admin/dispatch                                    assign                   src/modules/admin-dispatch/admin-dispatch.controller.ts:42  [Role.ADMIN]
+  POST   /admin/dispatch/auto-assign                        autoAssign               src/modules/admin-dispatch/admin-dispatch.controller.ts:49  [Role.ADMIN]
+  PUT    /admin/dispatch/couriers/:id/settings              updateSettings           src/modules/admin-dispatch/admin-dispatch.controller.ts:56  [Role.ADMIN]
+
+### admin-finance
+  PUT    /admin/finance/service-fee                         serviceFeeConfig         src/modules/admin-finance/admin-finance.controller.ts:35  [Role.ADMIN]
+  POST   /admin/finance/generate                            generate                 src/modules/admin-finance/admin-finance.controller.ts:42  [Role.ADMIN]
+  PUT    /admin/finance/delivery-fee                        updateDeliveryFee        src/modules/admin-finance/admin-finance.controller.ts:56  [Role.ADMIN]
+  PUT    /admin/finance/pay-qr                              updatePayQr              src/modules/admin-finance/admin-finance.controller.ts:70  [Role.ADMIN]
+
+### admin-goods
+  POST   /admin/goods                                       createProduct            src/modules/admin-goods/admin-goods.controller.ts:38  [Role.ADMIN]
+  PUT    /admin/goods/:id                                   updateProduct            src/modules/admin-goods/admin-goods.controller.ts:45  [Role.ADMIN]
+  PUT    /admin/goods/:id/status                            updateProductStatus      src/modules/admin-goods/admin-goods.controller.ts:52  [Role.ADMIN]
+  POST   /admin/goods/pending/:applyId/review               reviewApply              src/modules/admin-goods/admin-goods.controller.ts:59  [Role.ADMIN]
+  POST   /admin/goods/change/:changeId/review               reviewChange             src/modules/admin-goods/admin-goods.controller.ts:66  [Role.ADMIN]
+  PUT    /admin/goods/:productId/priority                   setPriority              src/modules/admin-goods/admin-goods.controller.ts:80  [Role.ADMIN]
+
+### admin-order
+  POST   /admin/aftersale/:id/handle                        handle                   src/modules/admin-order/admin-aftersale.controller.ts:27  [Role.ADMIN]
+  POST   /admin/order/:id/split                             split                    src/modules/admin-order/admin-order.controller.ts:27  [Role.ADMIN]
+  POST   /admin/order/:id/auto-split                        autoSplit                src/modules/admin-order/admin-order.controller.ts:34  [Role.ADMIN]
+  POST   /admin/order/:id/re-split-shortage                 reSplitShortage          src/modules/admin-order/admin-order.controller.ts:41  [Role.ADMIN]
+
+### admin-pricing
+  PUT    /admin/pricing/batch                               batch                    src/modules/admin-pricing/admin-pricing.controller.ts:21  [Role.ADMIN]
+  PUT    /admin/pricing/:productId                          update                   src/modules/admin-pricing/admin-pricing.controller.ts:28  [Role.ADMIN]
+
+### admin-user
+  POST   /admin/buyers/:id/verify                           submitVerification       src/modules/admin-user/admin-user.controller.ts:33  [Role.ADMIN,Role.BUSINESS_AGENT]
+  POST   /admin/buyers/:id/appeal-review                    reviewAppeal             src/modules/admin-user/admin-user.controller.ts:44  [Role.ADMIN,Role.BUSINESS_AGENT]
+  POST   /admin/buyers/:id/assign                           assignAgent              src/modules/admin-user/admin-user.controller.ts:55  [Role.ADMIN,Role.BUSINESS_AGENT]
+  POST   /admin/categories                                  createCategory           src/modules/admin-user/admin-user.controller.ts:83  [Role.ADMIN]
+  PUT    /admin/categories/:id                              updateCategory           src/modules/admin-user/admin-user.controller.ts:90  [Role.ADMIN]
+  DELETE /admin/categories/:id                              deleteCategory           src/modules/admin-user/admin-user.controller.ts:97  [Role.ADMIN]
+  PUT    /admin/suppliers/:id/categories                    setSupplierCategories    src/modules/admin-user/admin-user.controller.ts:111  [Role.ADMIN]
+  PUT    /admin/suppliers/:id/status                        updateSupplierStatus     src/modules/admin-user/admin-user.controller.ts:118  [Role.ADMIN]
+  PUT    /admin/couriers/:id/status                         updateCourierStatus      src/modules/admin-user/admin-user.controller.ts:125  [Role.ADMIN]
+  PUT    /admin/buyers/:id                                  updateBuyer              src/modules/admin-user/admin-user.controller.ts:132  [Role.ADMIN]
+  PUT    /admin/suppliers/:id                               updateSupplier           src/modules/admin-user/admin-user.controller.ts:139  [Role.ADMIN]
+  PUT    /admin/couriers/:id                                updateCourier            src/modules/admin-user/admin-user.controller.ts:146  [Role.ADMIN]
+
+### ai
+  POST   /ai/parse                                          parse                    src/modules/ai/ai.controller.ts:12  [Role.PURCHASER,Role.SUPPLIER,Role.COURIER,Role.ADMIN,Role.BUSINESS_AGENT]
+
+### auth
+  POST   /auth/wx-login                                     wxLogin                  src/modules/auth/auth.controller.ts:17  []
+  POST   /auth/switch-role                                  switchRole               src/modules/auth/auth.controller.ts:23  [...ALL_ROLES]
+
+### buyer
+  POST   /buyer/register                                    register                 src/modules/buyer/buyer.controller.ts:16  [Role.PURCHASER,Role.SUPPLIER,Role.COURIER,Role.ADMIN,Role.BUSINESS_AGENT]
+  POST   /buyer/appeal                                      appeal                   src/modules/buyer/buyer.controller.ts:30  [Role.PURCHASER,Role.SUPPLIER,Role.COURIER,Role.ADMIN,Role.BUSINESS_AGENT]
+  POST   /buyer/urge-verify                                 urgeVerify               src/modules/buyer/buyer.controller.ts:37  [Role.PURCHASER,Role.SUPPLIER,Role.COURIER,Role.ADMIN,Role.BUSINESS_AGENT]
+  POST   /buyer/aftersale                                   submitAftersale          src/modules/buyer/buyer.controller.ts:51  [Role.PURCHASER]
+
+### cart
+  POST   /cart                                              add                      src/modules/cart/cart.controller.ts:21  [Role.PURCHASER]
+  PUT    /cart/:id                                          update                   src/modules/cart/cart.controller.ts:28  [Role.PURCHASER]
+  DELETE /cart/:id                                          remove                   src/modules/cart/cart.controller.ts:35  [Role.PURCHASER]
+
+### courier
+  POST   /courier/task/:taskId/pickup                       pickup                   src/modules/courier/courier.controller.ts:29  [Role.COURIER]
+  POST   /courier/order/:orderId/pickup                     pickupOrder              src/modules/courier/courier.controller.ts:36  [Role.COURIER]
+  POST   /courier/task/:taskId/deliver                      deliver                  src/modules/courier/courier.controller.ts:43  [Role.COURIER]
+  POST   /courier/report                                    report                   src/modules/courier/courier.controller.ts:50  [Role.COURIER]
+  POST   /courier/order/:orderId/mark-paid                  markPaid                 src/modules/courier/courier.controller.ts:57  [Role.COURIER]
+  POST   /courier/order/:orderId/pay-proof                  payProof                 src/modules/courier/courier.controller.ts:71  [Role.COURIER]
+  POST   /courier/online                                    setOnline                src/modules/courier/courier.controller.ts:85  [Role.COURIER]
+  POST   /courier/auto-accept                               setAutoAccept            src/modules/courier/courier.controller.ts:92  [Role.COURIER]
+  POST   /courier/depart                                    depart                   src/modules/courier/courier.controller.ts:99  [Role.COURIER]
+
+### order
+  POST   /order                                             create                   src/modules/order/order.controller.ts:17  [Role.PURCHASER]
+  POST   /order/:id/cancel                                  cancel                   src/modules/order/order.controller.ts:38  [Role.PURCHASER]
+  POST   /order/:id/receive                                 receive                  src/modules/order/order.controller.ts:45  [Role.PURCHASER]
+  POST   /order/:id/update                                  update                   src/modules/order/order.controller.ts:52  [Role.PURCHASER]
+  POST   /order/:id/pay                                     pay                      src/modules/order/order.controller.ts:59  [Role.PURCHASER]
+  POST   /order/:id/urgent                                  setUrgent                src/modules/order/order.controller.ts:66  [Role.PURCHASER]
+
+### payment
+  POST   /payment/mock/pay                                  pay                      src/modules/payment/mock-pay.controller.ts:23  [Role.PURCHASER]
+  POST   /payment/mock/callback                             callback                 src/modules/payment/mock-pay.controller.ts:30  []
+
+### register
+  POST   /register/supplier                                 registerSupplier         src/modules/register/register.controller.ts:15  [Role.PURCHASER,Role.SUPPLIER,Role.COURIER]
+  POST   /register/courier                                  registerCourier          src/modules/register/register.controller.ts:22  [Role.PURCHASER,Role.SUPPLIER,Role.COURIER]
+
+### supplier-fulfill
+  POST   /admin/fulfill/auto-declare                        run                      src/modules/supplier-fulfill/admin-auto-declare.controller.ts:19  [Role.ADMIN]
+  POST   /supplier-fulfill/declare                          declare                  src/modules/supplier-fulfill/supplier-fulfill.controller.ts:20  [Role.SUPPLIER]
+  POST   /supplier-fulfill/handover                         handover                 src/modules/supplier-fulfill/supplier-fulfill.controller.ts:27  [Role.SUPPLIER]
+
+### supplier-goods
+  POST   /supplier-goods/apply                              apply                    src/modules/supplier-goods/supplier-goods.controller.ts:29  [Role.SUPPLIER]
+  POST   /supplier-goods/:productId/change                  change                   src/modules/supplier-goods/supplier-goods.controller.ts:36  [Role.SUPPLIER]
+  PUT    /supplier-goods/:productId/stock                   quickStock               src/modules/supplier-goods/supplier-goods.controller.ts:43  [Role.SUPPLIER]
+
+### upload
+  POST   /upload/image                                      uploadImage              src/modules/upload/upload.controller.ts:11  [Role.PURCHASER,Role.SUPPLIER,Role.COURIER,Role.ADMIN,Role.BUSINESS_AGENT]
+
+=== 只读 GET 明细（按模块计） ===
+  admin-dispatch: 3
+  admin-finance: 5
+  admin-goods: 4
+  admin-order: 4
+  admin-payment: 1
+  admin-pricing: 1
+  admin-reports: 2
+  admin-user: 6
+  audit: 1
+  auth: 1
+  buyer: 3
+  cart: 1
+  courier: 4
+  order: 2
+  product: 3
+  supplier-finance: 1
+  supplier-fulfill: 1
+  supplier-goods: 2

@@ -1,0 +1,73 @@
+══════════ 审计留痕实测交叉验证 ══════════
+时间: 2026-09-11T10:10:44.292Z
+运营登录: code=0 userId=undefined role=undefined
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+实测前 audit_log 总行数:
++-----+
+| n   |
++-----+
+| 368 |
++-----+
+mysql: [Warning] Using a password on the command line interface can be insecure.
+实测前最大 audit_log.id = 376
+
+──────── ① 改拆单（RE_SPLIT）────────
+GET  /admin/order/212/split-preview → [{"productId":7,"productName":"白菜001","qtyOrdered":2,"allocations":[{"supplierId":1,"supplierName":"陈记蔬菜档","priority":9,"qty":2,"supplyPrice":2.5}],"shortage":0}]
+POST /admin/order/212/split  body={"items":[{"productId":7,"allocations":[{"supplierId":1,"qty":2}]}]}
+  → {"code":0,"msg":"ok","data":{"orderId":212,"status":30,"supplierCount":1}}
+
+──────── ② 设置供货优先级（SET_SUPPLY_PRIORITY）────────
+PUT  /admin/goods/1/priority  body={"items":[{"supplierId":1,"priority":1},{"supplierId":2,"priority":2}]}
+  → {"code":0,"msg":"ok","data":{"productId":1,"updated":2}}
+
+──────── ③ 服务费配置（UPDATE_SERVICE_FEE）────────
+PUT  /admin/finance/service-fee  body={"rate":0.05}
+  → {"code":0,"msg":"ok","data":{"rate":0.05,"categoryId":null}}
+
+──────── ④ 生成结算单（GENERATE_SETTLEMENT）────────
+POST /admin/finance/generate  body={"period":"2026-09"}
+  → {"code":0,"msg":"ok","data":{"period":"2026-09","generated":1,"globalRate":0.05}}
+
+──────── ⑤ 售后处理（AFTERSALE_HANDLE）────────
+mysql: [Warning] Using a password on the command line interface can be insecure.
+取一张待处理工单 id = 1
+POST /admin/aftersale/1/handle  body={"action":"compensate","compensateAmount":1.38,"compensateMethod":3,...}
+  → {"code":0,"msg":"ok","data":{"aftersaleId":1,"status":2,"statusText":"已解决"}}
+
+──────── ⑥ 【对照·缺口实证】处理异常工单（预期：无审计写入）────────
+  （库内无 status=0 的异常工单，跳过实测，仅代码层判定）
+
+══════════ 真实 SQL 查询结果 ══════════
+SQL> SELECT id, operator_id, action, entity, entity_id, LEFT(IFNULL(after,'-'),58) AS after_snip, created_at FROM audit_log WHERE id > 376 ORDER BY id ASC;
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-----+-------------+---------------------+--------------------+-----------+------------------------------------------------------------+-------------------------+
+| id  | operator_id | action              | entity             | entity_id | after_snip                                                 | created_at              |
++-----+-------------+---------------------+--------------------+-----------+------------------------------------------------------------+-------------------------+
+| 377 |           4 | RE_SPLIT            | order              |       212 | {"orderId": 212, "allocations": [{"productId": 7, "allocat | 2026-09-11 10:10:44.716 |
+| 378 |           4 | SET_SUPPLY_PRIORITY | product            |         1 | {"priorities": [{"priority": 1, "supplierId": 1}, {"priori | 2026-09-11 10:10:44.725 |
+| 379 |           4 | UPDATE_SERVICE_FEE  | service_fee_config |         1 | {"rate": 0.05, "categoryId": null}                         | 2026-09-11 10:10:44.732 |
+| 380 |           4 | GENERATE_SETTLEMENT | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05}  | 2026-09-11 10:10:44.747 |
+| 381 |           4 | AFTERSALE_HANDLE    | aftersale          |         1 | {"action": "compensate", "status": 2, "orderId": 7, "compe | 2026-09-11 10:10:44.961 |
++-----+-------------+---------------------+--------------------+-----------+------------------------------------------------------------+-------------------------+
+
+SQL> SELECT action, COUNT(*) AS cnt FROM audit_log WHERE id > 376 GROUP BY action ORDER BY cnt DESC;
+mysql: [Warning] Using a password on the command line interface can be insecure.
++---------------------+-----+
+| action              | cnt |
++---------------------+-----+
+| RE_SPLIT            |   1 |
+| SET_SUPPLY_PRIORITY |   1 |
+| UPDATE_SERVICE_FEE  |   1 |
+| GENERATE_SETTLEMENT |   1 |
+| AFTERSALE_HANDLE    |   1 |
++---------------------+-----+
+
+SQL> SELECT COUNT(*) AS audit_total_all FROM audit_log;
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-----------------+
+| audit_total_all |
++-----------------+
+|             373 |
++-----------------+
+

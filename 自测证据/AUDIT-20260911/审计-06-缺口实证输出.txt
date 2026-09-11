@@ -1,0 +1,37 @@
+══════════ 缺口实证：handleException 无审计 ══════════
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+目标订单（status=50 配送中）: 96
+mysql: [Warning] Using a password on the command line interface can be insecure.
+步骤0 初始 max(audit_log.id) = 381
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+① POST /courier/report（配送员上报异常）→ {"code":0,"msg":"ok","data":{"reported":true,"exceptionId":13,"affectedOrders":1}}
+   max(audit_log.id): 381 → 382   ★ +1 条（courier_report：已留痕）
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+② 新生成的异常工单 id = 13
+mysql: [Warning] Using a password on the command line interface can be insecure.
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+③ PUT /admin/dispatch/exceptions/13（运营处理异常）→ {"code":0,"msg":"ok","data":{"exceptionId":13,"status":1,"resumed":true}}
+   max(audit_log.id): 382 → 382   ★ 无新增记录 = 缺口实证（应留痕而未留痕）
+
+══════════ 真实 SQL 支持 ══════════
+SQL> SELECT id, action, entity, entity_id, created_at FROM audit_log WHERE id > 381 ORDER BY id;
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-----+----------------+---------------+-----------+-------------------------+
+| id  | action         | entity        | entity_id | created_at              |
++-----+----------------+---------------+-----------+-------------------------+
+| 382 | courier_report | delivery_task |        96 | 2026-09-11 10:11:05.973 |
++-----+----------------+---------------+-----------+-------------------------+
+
+SQL> SELECT id, order_id, status, handled_by, handled_at FROM delivery_exception WHERE id = 13;
+mysql: [Warning] Using a password on the command line interface can be insecure.
++----+----------+--------+------------+-------------------------+
+| id | order_id | status | handled_by | handled_at              |
++----+----------+--------+------------+-------------------------+
+| 13 |       96 |      1 |          4 | 2026-09-11 10:11:06.535 |
++----+----------+--------+------------+-------------------------+
+
+★ 结论：delivery_exception 已被运营处理（status=1, handled_by 有值），但 audit_log 中无对应记录。

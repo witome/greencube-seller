@@ -1,0 +1,29 @@
+后端路由数: 113
+
+=== frontend/src/api/modules.js 疑似死代码: 12 ===
+  :47  GET /buyer/bill/:id  (宽松匹配到: GET /buyer/bill/:period)
+      getBill: (period) => get(`/buyer/bill/${period}`),
+  :62  GET /admin/dashboard  ← 后端完全无
+      getDashboard: () => get('/admin/dashboard'),
+  :65  GET /admin/goods/:id/priority  (宽松匹配到: GET /admin/goods/:productId/priority)
+      getGoodsPriority: (productId) => get(`/admin/goods/${productId}/priority`),
+  :74  POST /supplier-goods/:id/change  (宽松匹配到: POST /supplier-goods/:productId/change)
+      applyChange: (productId, data) => post(`/supplier-goods/${productId}/change`, data),
+  :75  PUT /supplier-goods/:id/stock  (宽松匹配到: PUT /supplier-goods/:productId/stock)
+      quickStock: (productId, dailySupply) => put(`/supplier-goods/${productId}/stock`, { dailySupply }), // 免审即时生效
+  :81  GET /supplier-finance/settlement/:id  (宽松匹配到: GET /supplier-finance/settlement/:period)
+      getSettlement: (period) => get(`/supplier-finance/settlement/${period}`),
+  :87  GET /courier/task/:id/amount  (宽松匹配到: GET /courier/task/:taskId/amount)
+      getTaskAmount: (taskId) => get(`/courier/task/${taskId}/amount`), // 任务订单总金额（交付核对）
+  :88  POST /courier/task/:id/pickup  (宽松匹配到: POST /courier/task/:taskId/pickup)
+      pickupScan: (taskId) => post(`/courier/task/${taskId}/pickup`),
+  :89  POST /courier/order/:id/pickup  (宽松匹配到: POST /courier/order/:orderId/pickup)
+      pickupOrder: (orderId) => post(`/courier/order/${orderId}/pickup`), // 订单级取货
+  :90  POST /courier/task/:id/deliver  (宽松匹配到: POST /courier/task/:taskId/deliver)
+      deliverConfirm: (taskId, data) => post(`/courier/task/${taskId}/deliver`, data), // 拍照+签名
+  :92  POST /courier/order/:id/mark-paid  (宽松匹配到: POST /courier/order/:orderId/mark-paid)
+      markPaid: (orderId) => post(`/courier/order/${orderId}/mark-paid`), // 仅标记不作核销
+  :94  POST /courier/order/:id/pay-proof  (宽松匹配到: POST /courier/order/:orderId/pay-proof)
+      submitPayProof: (orderId, photos) => post(`/courier/order/${orderId}/pay-proof`, { photos }), // 上传付款凭证
+
+=== frontend/src/api/request.js 疑似死代码: 0 ===

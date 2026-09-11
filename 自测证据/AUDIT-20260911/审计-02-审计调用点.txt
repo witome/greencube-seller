@@ -1,0 +1,86 @@
+=== 审计调用点总计: 35 ===
+  src/modules/admin-dispatch/admin-dispatch.service.ts:108  [assign]  action=ASSIGN_DISPATCH  entity=delivery_task  途径=this.audit.log(标准)
+  src/modules/admin-dispatch/admin-dispatch.service.ts:174  [autoAssign]  action=AUTO_ASSIGN_DISPATCH  entity=delivery_task  途径=this.audit.log(标准)
+  src/modules/admin-dispatch/admin-dispatch.service.ts:200  [updateSettings]  action=UPDATE_COURIER_SETTINGS  entity=courier  途径=this.audit.log(标准)
+  src/modules/admin-finance/admin-finance.service.ts:100  [serviceFeeConfig]  action=UPDATE_SERVICE_FEE  entity=service_fee_config  途径=this.audit.log(标准)
+  src/modules/admin-finance/admin-finance.service.ts:197  [generate]  action=GENERATE_SETTLEMENT  entity=settlement  途径=this.audit.log(标准)
+  src/modules/admin-finance/admin-finance.service.ts:232  [updateDeliveryFeeConfig]  action=UPDATE_DELIVERY_FEE  entity=platform_config  途径=this.audit.log(标准)
+  src/modules/admin-finance/admin-finance.service.ts:258  [updatePayQr]  action=UPDATE_PAY_QR  entity=platform_config  途径=this.audit.log(标准)
+  src/modules/admin-goods/admin-goods.service.ts:97  [reviewApply]  action=REVIEW_GOODS_APPLY  entity=product_application  途径=this.audit.log(标准)
+  src/modules/admin-goods/admin-goods.service.ts:114  [reviewApply]  action=REVIEW_GOODS_APPLY  entity=product_application  途径=this.audit.log(标准)
+  src/modules/admin-goods/admin-goods.service.ts:180  [reviewChange]  action=REVIEW_GOODS_CHANGE  entity=product_application  途径=this.audit.log(标准)
+  src/modules/admin-goods/admin-goods.service.ts:196  [reviewChange]  action=REVIEW_GOODS_CHANGE  entity=product_application  途径=this.audit.log(标准)
+  src/modules/admin-goods/admin-goods.service.ts:262  [setPriority]  action=SET_SUPPLY_PRIORITY  entity=product  途径=this.audit.log(标准)
+  src/modules/admin-goods/admin-goods.service.ts:336  [updateProductStatus]  action=status === 1 ? 'PRODUCT_ON_SHELF' : 'PRODUCT_OFF_SHELF'  entity=product  途径=this.audit.log(标准)
+  src/modules/admin-goods/admin-goods.service.ts:386  [createProduct]  action=PRODUCT_CREATE  entity=product  途径=this.audit.log(标准)
+  src/modules/admin-goods/admin-goods.service.ts:441  [updateProduct]  action=PRODUCT_UPDATE  entity=product  途径=this.audit.log(标准)
+  src/modules/admin-order/admin-aftersale.service.ts:126  [handle]  action=AFTERSALE_HANDLE  entity=aftersale  途径=this.audit.log(标准)
+  src/modules/admin-order/admin-order.service.ts:196  [split]  action=order.status === OrderStatus.STOCKING ? 'RE_SPLIT' : 'SPLIT'  entity=order  途径=this.audit.log(标准)
+  src/modules/admin-order/admin-order.service.ts:328  [reSplitShortage]  action=RE_SPLIT_SHORTAGE  entity=order  途径=this.audit.log(标准)
+  src/modules/admin-pricing/admin-pricing.service.ts:81  [updatePricing]  action=UPDATE_PRICING  entity=product  途径=this.audit.log(标准)
+  src/modules/admin-pricing/admin-pricing.service.ts:116  [batchMarkup]  action=BATCH_MARKUP  entity=product  途径=this.audit.log(标准)
+  src/modules/admin-user/admin-user.service.ts:157  [submitVerification]  action=REVIEW_BUYER  entity=buyer  途径=this.audit.log(标准)
+  src/modules/admin-user/admin-user.service.ts:183  [reviewAppeal]  action=REVIEW_BUYER_APPEAL  entity=buyer  途径=this.audit.log(标准)
+  src/modules/admin-user/admin-user.service.ts:325  [updateSupplierStatus]  action=REVIEW_SUPPLIER  entity=supplier  途径=this.audit.log(标准)
+  src/modules/admin-user/admin-user.service.ts:346  [updateCourierStatus]  action=REVIEW_COURIER  entity=courier  途径=this.audit.log(标准)
+  src/modules/admin-user/admin-user.service.ts:376  [updateBuyer]  action=UPDATE_BUYER  entity=purchaser  途径=this.audit.log(标准)
+  src/modules/admin-user/admin-user.service.ts:406  [updateSupplier]  action=UPDATE_SUPPLIER  entity=supplier  途径=this.audit.log(标准)
+  src/modules/admin-user/admin-user.service.ts:438  [updateCourier]  action=UPDATE_COURIER  entity=courier  途径=this.audit.log(标准)
+  src/modules/audit/audit.service.ts:47  [log]  action=data.action  entity=data.entity  途径=prisma.auditLog.create(直写)
+  src/modules/courier/courier.service.ts:172  [report]  action=courier_report  entity=delivery_task  途径=prisma.auditLog.create(直写)
+  src/modules/courier/courier.service.ts:269  [payProof]  action=COD_PAY_PROOF  entity=order  途径=prisma.auditLog.create(直写)
+  src/modules/register/register.service.ts:44  [registerSupplier]  action=REGISTER_SUPPLIER  entity=supplier  途径=this.audit.log(标准)
+  src/modules/register/register.service.ts:86  [registerCourier]  action=REGISTER_COURIER  entity=courier  途径=this.audit.log(标准)
+  src/modules/supplier-fulfill/auto-declare.service.ts:101  [runAutoDeclare]  action=AUTO_DECLARE_FALLBACK  entity=order  途径=this.audit.log(标准)
+  src/modules/supplier-fulfill/supplier-fulfill.service.ts:106  [declare]  action=SUPPLIER_DECLARE  entity=order  途径=this.audit.log(标准)
+  src/modules/supplier-fulfill/supplier-fulfill.service.ts:188  [handover]  action=SUPPLIER_HANDOVER  entity=order  途径=this.audit.log(标准)
+
+=== 按文件计数 ===
+  src/modules/admin-dispatch/admin-dispatch.service.ts: 3
+  src/modules/admin-finance/admin-finance.service.ts: 4
+  src/modules/admin-goods/admin-goods.service.ts: 8
+  src/modules/admin-order/admin-aftersale.service.ts: 1
+  src/modules/admin-order/admin-order.service.ts: 2
+  src/modules/admin-pricing/admin-pricing.service.ts: 2
+  src/modules/admin-user/admin-user.service.ts: 7
+  src/modules/audit/audit.service.ts: 1
+  src/modules/courier/courier.service.ts: 2
+  src/modules/register/register.service.ts: 2
+  src/modules/supplier-fulfill/auto-declare.service.ts: 1
+  src/modules/supplier-fulfill/supplier-fulfill.service.ts: 2
+
+=== 唯一 action 常量清单 ===
+  AFTERSALE_HANDLE
+  ASSIGN_DISPATCH
+  AUTO_ASSIGN_DISPATCH
+  AUTO_DECLARE_FALLBACK
+  BATCH_MARKUP
+  COD_PAY_PROOF
+  GENERATE_SETTLEMENT
+  PRODUCT_CREATE
+  PRODUCT_UPDATE
+  REGISTER_COURIER
+  REGISTER_SUPPLIER
+  REVIEW_BUYER
+  REVIEW_BUYER_APPEAL
+  REVIEW_COURIER
+  REVIEW_GOODS_APPLY
+  REVIEW_GOODS_CHANGE
+  REVIEW_SUPPLIER
+  RE_SPLIT_SHORTAGE
+  SET_SUPPLY_PRIORITY
+  SUPPLIER_DECLARE
+  SUPPLIER_HANDOVER
+  UPDATE_BUYER
+  UPDATE_COURIER
+  UPDATE_COURIER_SETTINGS
+  UPDATE_DELIVERY_FEE
+  UPDATE_PAY_QR
+  UPDATE_PRICING
+  UPDATE_SERVICE_FEE
+  UPDATE_SUPPLIER
+  courier_report
+  data.action
+  order.status === OrderStatus.STOCKING ? 'RE_SPLIT' : 'SPLIT'
+  status === 1 ? 'PRODUCT_ON_SHELF' : 'PRODUCT_OFF_SHELF'
+  合计唯一 action: 33
