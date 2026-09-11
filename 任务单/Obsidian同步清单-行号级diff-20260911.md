@@ -27,7 +27,7 @@
 | 3 | `绿立方卖菜平台workbuddy版.md`（主计划） | 8 | 🔴 高 |
 | 4 | `代码工程索引.md` | 13 | 🟠 中（**新发现**，剩余清单未覆盖） |
 | 5 | `开发配套-数据模型与接口草案.md` | 3 | 🟠 中（含 1 条**新发现**） |
-| 6 | `开发配套-API接口字段契约.md` | 24 | 🟠 中（§7️⃣：全文逐段复核新增；原 317 行一条已由大辉侧落地） |
+| 6 | `开发配套-API接口字段契约.md` | 23（另 1 条误报已撤销） | 🟠 中（§7️⃣：全文逐段复核新增，23 条已由大辉侧落盘；原 317 行一条已由大辉侧落地） |
 
 ---
 
@@ -190,7 +190,7 @@
 
 > **核对范围**：该文件全部 **586 行**、**35 个接口小节**（`grep '^### '` 计数）+ §0 通用约定 3 小节 + §10 前端示例 + 「待补」节，**无空白段落**。
 > **核对方法**：每个小节的路径 / 请求字段 / 返回字段 / 状态码 / 示例 payload，逐项与后端 controller + service 实际返回对照（`backend/src/modules/**`，基线 commit cd06411）。
-> **结果**：**24 条对不上**（下表）；其余段落「已核对无误」明细见章末。
+> **结果**：初判 **24 条对不上**（下表）；经大辉复核与自查，**23 条有效**（大辉侧已全部落盘）、**1 条误报已撤销**（L520 split-preview，见 7.9+ 自查）；其余段落「已核对无误」明细见章末。
 > **判定依据**：每条引用《剩余清单》第 4 节规则 —— 默认规则①（代码+一键验收为准）；无一处触发规则④（本轮未发现代码与原型冲突）、规则⑤（无金额/权限/schema 分歧需停下）。
 > **⚠️ 行号基准**：以 **2026-09-11 晚当前文件状态**为准（含第 317 行已落的新措辞）。
 
@@ -274,8 +274,20 @@
 | 483 | `"registerIp": "60.12.45.88",` | 删除，或加注 `（当前实现不采集 registerIp；风控预检为手机号/地址重复两项）` | 规则①：`admin-user.service.ts:77-88` riskHints 仅手机号注册数 + 地址重复；返回无 registerIp |
 | 504 | `{ "purchaserId": 601, "accountStatus": 2, "verificationId": 91 }` | 加注：`（当前实现 verificationId 恒为 0）` | 规则①：`admin-user.service.ts:166` 硬编码 `verificationId: 0` |
 | 517 | `{ "orderId": 100234, "status": 20, "supplierCount": 2 }` | `"status": 20` → **`"status": 30`**（拆完直接进入「备货中」；20=已拆单状态机里不落） | 规则①：`admin-order.service.ts:189-201` 事务内置 `STOCKING(30)` 并原样返回；`error-codes.ts` OrderStatus.STOCKING=30 |
-| 520 | `前端可先调用 \`GET /admin/order/{id}/split-preview\` ...` | 删除该行，或改注：`（后端无 split-preview 路由；自动分配建议由前端按优先级本地试算，或运营直接用 POST /admin/order/{id}/auto-split）` | 规则①：`admin-order.controller.ts` 仅 `split` / `auto-split` / `re-split-shortage` 三个写路由，无 GET split-preview |
-| 522-529 | `### POST /admin/order/{id}/weighing — 验收称重` **整节**（含示例 payload） | **整节标注「已废弃」**：`（该接口已从代码移除；状态机注释明示「供应商确认备货后直接进入待配送，不再单独验收称重」；验收数量改由 POST /order/{id}/receive 逐项确认承载 qtyAccepted）` | 规则①：全仓无 `/admin/order/:id/weighing` 路由（admin-order.controller 仅 3 个写路由）；`error-codes.ts` `WAIT_DELIVERY: 40` 注释原文 |
+| 520 | `前端可先调用 \`GET /admin/order/{id}/split-preview\` ...` | ~~删除该行~~ → **❌ 误报，已撤销（2026-09-11 晚复核，大辉指出）**：该路由**实际存在**——`admin-order.controller.ts:20` 即 `@Get(':id/split-preview')`（`splitPreview()`，按优先级自动分配建议）。**文档原行正确，保持原样，不要删改**。 | ~~规则①：仅 split / auto-split / re-split-shortage 三个写路由~~ ← **判定依据本身错误**：枚举路由时只点算了 POST/PUT 写路由，**漏了 GET**；复核时按全量路由（含 GET）重查即发现 |
+| 522-529 | `### POST /admin/order/{id}/weighing — 验收称重` **整节**（含示例 payload） | **整节标注「已废弃」**：`（该接口已从代码移除；状态机注释明示「供应商确认备货后直接进入待配送，不再单独验收称重」；验收数量改由 POST /order/{id}/receive 逐项确认承载 qtyAccepted）` | 规则①：全仓 grep（backend/frontend/admin-web 三处 src，2026-09-11 晚复核含 GET 在内全量路由）`weighing` **零命中**，结论成立；⚠️ 原依据中「admin-order.controller 仅 3 个写路由」为**不完整表述**（写路由口径，与 L520 误报同源），已更正为全量路由口径，但本条主证据本就是全仓 grep，不受影响 |
+
+### 7.9+ 「仅枚举写路由」口径自查 【2026-09-11 晚·应大辉要求补做】
+
+> 起因：L520 误报的判定依据是「controller **仅** N 个**写**路由」——枚举时漏了 GET。对 §7 全部 24 条逐条复查该口径：
+
+| 结论 | 条目 | 说明 |
+|---|---|---|
+| **同口径、已撤销** | L520（split-preview） | 唯一由「仅写路由」口径直接得出结论的条目，且结论错误，已改标撤销 |
+| **带该表述但结论独立成立** | L522-529（weighing） | 原依据附带「仅 3 个写路由」，但主证据是**全仓 grep 零命中**（已按全量路由复核：backend/frontend/admin-web 三处 src `weighing` 零命中），结论不变，证据表述已更正 |
+| **不受影响（其余 22 条）** | 7.1~7.8、7.10 全部条目 | 判定依据均为 ①service 返回结构逐字段对照 或 ②全仓 grep（如 Idempotency/refreshToken）或 ③指向具体 controller 行号（含 GET 路由，如 courier `GET /task/:id/amount`），不依赖写路由枚举 |
+
+**方法论教训（已记入本卡）**：判定「后端有无某路由」必须枚举**全量**路由（GET/POST/PUT/PATCH/DELETE），不能只点算写路由。
 
 ### 7.10 「待补」节（2 条）
 
