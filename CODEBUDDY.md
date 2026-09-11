@@ -25,6 +25,30 @@
 | 小程序端 | `cd frontend && npm run dev:h5` / `dev:mp-weixin` | http://localhost:5180 |
 | 运营后台 | `cd admin-web && npm run dev` | http://localhost:5190 |
 
+### 🔁 改完后端**必须**重启（规范动作）
+
+> **后端实例不会自己加载新代码。改完 `backend/src/**` 一定要重启，否则页面表现还是旧逻辑——"改了不生效"十有八九是这里。**
+
+三种方式，按场景选一个：
+
+| 方式 | 命令 | 特点 |
+|---|---|---|
+| **① 推荐 · Git Bash** | `bash 重启后端.sh` | 按端口杀旧实例 → `npm run build` 兜底 → 以 `nest start --watch` 后台启动 → 轮询端口确认就绪。**源码改动自动重编译，改完不用再重启** |
+| ② 双击 · Windows | `backend/run-backend.bat` | 杀端口 → 构建 → `node dist/main.js` 常驻，进程挂掉自动 3s 拉起。**注意：改了源码要重跑一次才会重新构建** |
+| ③ 一键起多服务 | `start-all.bat` | 同时拉起 后端(3001) + 运营后台(5190)，各开一个窗口 |
+
+需要临时实例（不占用 3001）：`PORT=3011 bash 重启后端.sh`。
+日志：`%TEMP%\lvlifang-backend-3001.log`。
+
+**验证真的生效了**（重启后必做一次）：
+
+```bash
+cd backend && node -e "fetch('http://127.0.0.1:3001/api/v1/auth/wx-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'admin'})}).then(r=>r.json()).then(d=>console.log(d.code===0?'后端在线':'异常'))"
+```
+
+⚠️ 只重启后端**不用**重启前端：H5 / 运营后台是 Vite dev server，自带 HMR，改完即生效。
+⚠️ 小程序端要单独重编译：`cd frontend && npm run build:mp-weixin`，再在开发者工具里「编译」加载新包。
+
 - 数据库：MySQL84（`net start MySQL84`）
 - 一键验收：`cd backend && node 验收测试.js`（预期 **30/30**，2026-09-11 已把脚本对齐现行状态机）
 - 登录：`POST /api/v1/auth/wx-login`，body `{"code":"xxx"}`；dev mock 下 code 直接映射 openid
@@ -65,6 +89,23 @@
 4. **派生金额（运费/合计）必须在所有金额变动入口重算** —— 不能只在改配送日期时算。
 5. **页面生命周期 `onShow` 从 `@dcloudio/uni-app` import**，不是从 `vue`。
 6. **调试前先确认端口归属** —— 本机 5173/5174 被其他同名前缀项目占用过，别把别人的服务当自己的验证。
+7. **改了后端不重启 = 改了不生效** —— 后端是长驻进程，`backend/src/**` 的改动不会自动加载。
+   表现极具迷惑性：接口返回正常、页面不报错，但字段/逻辑就是旧的，容易误判成"前端没写对"或"数据没落库"。
+   一律走 `bash 重启后端.sh`（见上文「改完后端必须重启」）。
+8. **小程序端改了 H5 只算改一半** —— `dev:h5` 的 HMR 不影响小程序包；真机/开发者工具看到的是
+   `frontend/dist/build/mp-weixin`，必须 `npm run build:mp-weixin` 重编译，再在开发者工具里「编译」。
+   外部命令改动了 dist 后，开发者工具要手动「编译」或重开项目才会加载新代码；真机需重新扫码。
+9. **列表页 `loading` 必须用 try/catch/finally 兜底** —— 请求一旦抛错而 `loading` 没复位，
+   页面会**永久停在「加载中」，网络恢复也不自愈**（2026-09-11 商品列表实测复现过：
+   后端重启窗口内点进页面就中招）。规范写法：
+   ```js
+   loading.value = true
+   try { /* 请求 + 赋值 */ }
+   catch (e) { loadError.value = '加载失败，请检查网络后重试' }   // 给出可见反馈
+   finally { loading.value = false }                             // ⭐ 必须复位
+   ```
+   另外：**列表页要在 `onShow` 里补一次**（`if (loadError.value && !loading.value) load()`），
+   否则用户切走再切回来仍是失败态。只靠 `onMounted` 的页面最容易踩。
 
 ## 进度在哪看
 
