@@ -9,6 +9,16 @@ function check(name, cond, extra) {
   else { failed++; console.log('  ❌ ' + name + (extra ? ' → ' + JSON.stringify(extra) : '')) }
 }
 
+// 前置条件不满足时中止（报 ❌ 明细而不是抛 TypeError），避免后续用例连锁误报
+function abort(msg) {
+  failed++
+  console.log('  ❌ ' + msg)
+  console.log('\n' + '='.repeat(50))
+  console.log(`验收中止：✅ 通过 ${passed} 项 / ❌ 失败 ${failed} 项（未跑完）`)
+  console.log('='.repeat(50))
+  process.exit(1)
+}
+
 async function call(method, path, body, token) {
   const res = await fetch(BASE + path, {
     method,
@@ -37,8 +47,10 @@ async function main() {
 
   // ── 2. 采购方注册 + 未激活拦截 ──
   console.log('\n【2. 注册与账号激活】')
+  // 手机号含 ts，全局唯一；用它匹配待审核记录，避免历史同名店铺干扰（店名固定会导致匹配到旧记录）
+  const regPhone = '139' + String(ts).slice(-8)
   const reg = await call('POST', '/buyer/register', {
-    shopName: '验收测试餐馆', contact: '测试员', phone: '139' + String(ts).slice(-8),
+    shopName: '验收测试餐馆', contact: '测试员', phone: regPhone,
     address: '验收路 ' + (ts % 100) + ' 号',
   }, bt)
   check('采购方注册成功', reg.code === 0 && reg.data.accountStatus === 1)
@@ -47,8 +59,9 @@ async function main() {
 
   // 运营审核通过
   const pendingList = await call('GET', '/admin/buyers/pending?pageSize=50', null, at)
-  const target = pendingList.data?.list?.find(p => p.shopName === '验收测试餐馆')
+  const target = pendingList.data?.list?.find(p => p.phone === regPhone)
   check('运营看到待审核队列', !!target)
+  if (!target) abort('待审核队列未找到本次注册记录(' + regPhone + ')，后续用例无法继续')
   const verify = await call('POST', `/admin/buyers/${target.purchaserId}/verify`, { methods: [1], result: 1 }, at)
   check('运营审核通过→激活', verify.data.accountStatus === 2)
   const relogin = await call('POST', '/auth/wx-login', { code: 'buyer_' + ts })
@@ -66,42 +79,70 @@ async function main() {
   check('下单成功(status=10)', order.code === 0 && order.data.status === 10)
   const orderId = order.data.orderId
 
-  // ── 4. 拆单 ──
+  // ── 4. 核单拆单（10 待确认 → 30 备货中）──
+  // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行
+  //   10 待确认 ──支付后自动拆单──> 30 备货中 ──供应商确认备货完成──> 40 待配送 ──派单──> 45 ──取货──> 50
+  //   20「已拆单」为废弃态；无独立验收称重环节（30→40 由供应商确认备货完成触发）
   console.log('\n【4. 核单拆单】')
   const preview = await call('GET', `/admin/order/${orderId}/split-preview`, null, at)
   check('拆单建议生成', preview.code === 0 && preview.data.length > 0)
+  // 拆单按「商品维度」（SplitDto: productId + allocations），与 split-preview 返回字段一致
   const split = await call('POST', `/admin/order/${orderId}/split`, {
-    items: preview.data.map(p => ({ orderItemId: p.orderItemId, allocations: p.allocations.map(a => ({ supplierId: a.supplierId, qty: a.qty })) })),
+    items: preview.data.map(p => ({ productId: p.productId, allocations: p.allocations.map(a => ({ supplierId: a.supplierId, qty: a.qty })) })),
   }, at)
-  check('拆单(status=20)', split.data?.status === 20)
+  check('拆单→30 备货中', split.code === 0 && split.data?.status === 30)
 
-  // ── 5. 供应商备货申报（20→30）──
+  // ── 5. 供应商备货申报（决策 2：拆单即默认满额，只有缺货才走「异常申报」）──
   console.log('\n【5. 供应商备货申报】')
   const stockList = await call('GET', '/supplier-fulfill/stock-list', null, st)
   const myItems = stockList.data?.find(o => o.orderId === orderId)?.items || []
   check('供应商看到备货单', myItems.length > 0)
-  const declare = await call('POST', '/supplier-fulfill/declare', {
+  if (!myItems.length) abort('本供应商备货单中未找到订单 ' + orderId + '，后续用例无法继续')
+  // 有货直接备货：拆单时已按订购量默认满额申报（qtyDeclared = qtyOrdered）
+  check('明细已默认满额申报', myItems.every(i => Number(i.qtyDeclared) === Number(i.qtyOrdered)))
+  // 反向用例：不缺货时不允许「异常申报」
+  const fullDeclare = await call('POST', '/supplier-fulfill/declare', {
     orderId, items: myItems.map(i => ({ orderItemId: i.orderItemId, qtyDeclared: i.qtyOrdered })),
   }, st)
-  check('申报成功(订单→30备货中)', declare.code === 0)
+  check('满额申报被拒(不缺货无需异常申报)', fullDeclare.code !== 0)
+  // 缺货异常申报：少交必须填原因
+  const shortQty = Number(myItems[0].qtyOrdered) - 1
+  const noReason = await call('POST', '/supplier-fulfill/declare', {
+    orderId, items: [{ orderItemId: myItems[0].orderItemId, qtyDeclared: shortQty }],
+  }, st)
+  check('缺货未填原因被拒', noReason.code !== 0)
+  const declare = await call('POST', '/supplier-fulfill/declare', {
+    orderId, items: [{ orderItemId: myItems[0].orderItemId, qtyDeclared: shortQty, shortageReason: '到货不足' }],
+  }, st)
+  check('缺货异常申报成功(停留30)', declare.code === 0)
 
-  // ── 6. 验收称重（30→40）──
-  console.log('\n【6. 验收称重】')
-  const orderDetail = await call('GET', `/order/${orderId}`, null, bt2)
-  const itemId = orderDetail.data.items[0].orderItemId
-  const weigh = await call('POST', `/admin/order/${orderId}/weighing`, { items: [{ orderItemId: itemId, qtyAccepted: 9.5 }] }, at)
-  check('称重(status=40, 金额重算)', weigh.data?.status === 40 && weigh.data?.amountFinal < order.data.amountOrdered)
+  // ── 6. 供应商确认备货完成（30 → 40 待配送）──
+  console.log('\n【6. 确认备货完成】')
+  const handover = await call('POST', '/supplier-fulfill/handover', { orderId }, st)
+  check('确认备货完成→40 待配送', handover.code === 0 && handover.data?.status === 40)
+  const od6 = await call('GET', `/order/${orderId}`, null, bt2)
+  // 交付金额 = 验收量×销售价 + 运费；无独立称重，qtyAccepted = qtyDeclared
+  check('最终金额重算(含运费)', od6.data?.amountFinal > 0 && od6.data.amountFinal > od6.data.amountOrdered)
 
-  // ── 7. 派送 + 交付 ──
+  // ── 7. 派送调度 + 配送交付 ──
   console.log('\n【7. 派送调度 + 配送交付】')
-  // 称重已把订单推到 40，现在派单
-  const dispatch = await call('POST', '/admin/dispatch', { courierId: 1, orderIds: [orderId] }, at)
-  check('派单创建任务', dispatch.code === 0 && dispatch.data.taskId)
-  const taskId = dispatch.data.taskId
+  const od7 = await call('GET', `/order/${orderId}`, null, bt2)
+  if (od7.data.status !== 45) {
+    // 备货完成时会尝试自动派单；若无「在线+空闲」配送员则停留 40，由运营手动派单
+    const dispatch = await call('POST', '/admin/dispatch', { courierId: 1, orderIds: [orderId] }, at)
+    check('派单创建任务', dispatch.code === 0 && !!dispatch.data.taskId)
+  } else {
+    check('派单创建任务', true)
+  }
   const tasks = await call('GET', '/courier/today-tasks', null, ct)
-  check('配送员看到今日任务', tasks.data?.some(t => t.taskId === taskId))
+  const taskId = tasks.data?.find(t => (t.stationList || []).some(s => s.orderId === orderId))?.taskId
+  check('配送员看到今日任务', !!taskId)
+  if (!taskId) abort('配送员今日任务中未找到订单 ' + orderId + ' 的派送任务，后续用例无法继续')
   const pickup = await call('POST', `/courier/task/${taskId}/pickup`, {}, ct)
   check('扫码取货(订单→50)', pickup.code === 0)
+  // 出发：任务 1 配送中 → 2 已出发（deliver 要求任务状态为「已出发」，全路线批量操作）
+  const depart = await call('POST', '/courier/depart', {}, ct)
+  check('出发(任务→已出发)', depart.code === 0)
   const deliver = await call('POST', `/courier/task/${taskId}/deliver`, { photos: ['a.jpg'], signature: 's.png' }, ct)
   check('交付确认(订单→60已送达)', deliver.code === 0)
   const markPaid = await call('POST', `/courier/order/${orderId}/mark-paid`, {}, ct)
