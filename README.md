@@ -51,7 +51,9 @@ C:\Users\Administrator\Documents\Obsidian Vault\绿立方卖菜平台workbuddy�
 
 > **AI 客服 2 页的状态要写准**（别写成「已完成」）：`pages/buyer/kefu.vue` + `pages/buyer/ai-confirm.vue` **页面已实现**，后端 `POST /ai/parse` 为**规则/关键词解析版**；**LLM 与企微「微信客服」链路未接**（属阶段 2 待办，依赖企微主体认证）。接口结构已预留替换大模型。
 
-> **数量模型现状**：`order_item` 的数量字段设计为「五数量」，实际业务**只跑通 4 个**——订购 `qty_ordered` / 申报 `qty_declared` / 验收 `qty_accepted`（= 申报量）/ 接受；**分拣 `qty_sorted` 全仓零引用**（仅 schema 预留字段，业务未启用）。是否启用或文档降级属**待拍板项**（涉及对账基数口径）。
+> **数量模型现状（⚠️ 这不是遗漏，是预留）**：数量字段按「五数量」设计，目前实际跑通 **四数量** —— 订购 `qty_ordered` / 申报 `qty_declared` / 验收 `qty_accepted`（= 申报量）/ 接受；**分拣字段预留**（`qty_sorted`，全仓零引用，业务未启用）。
+>
+> 口径已于 **2026-09-11 拍板：按「文档降级」处理** —— 承认现状，全部统一写成「五数量目前跑通 **四数量**（订购 / 申报 / 验收 / 接受）+ **分拣字段预留**（`qty_sorted`，全仓零引用，业务未启用）」。**不排期补分拣环节**（该环节会影响对账基数，大辉已决定不做）。**以后不要再把它当成缺陷或遗漏来报。**
 
 ### ⚙️ 运营后台页面清单（`admin-web/src/views/`）
 
@@ -87,7 +89,7 @@ C:\Users\Administrator\Documents\Obsidian Vault\绿立方卖菜平台workbuddy�
 ```bash
 cd backend
 npm install
-cp .env.example .env          # 然后改 DATABASE_URL 等
+cp .env.example .env          # 然后改 DATABASE_URL 等（⚠️ 微信登录：WX_MOCK_LOGIN 保持 =1，见下文「环境红线」）
 npx prisma migrate dev --name init
 npm run dev                   # http://localhost:3001/api/v1（.env PORT=3001，本机 3000 被占用）
 ```
@@ -113,13 +115,19 @@ npm run dev:mp-weixin         # 微信开发者工具导入 dist/dev/mp-weixin
 | 4 | **token 内嵌身份，切换重签** | JWT payload 含 `currentRole`；`/auth/switch-role` 重签，旧 token 失效 |
 | 5 | **业务员 = 运营子账号** | 角色码 `business_agent`，权限仅限采购方审核，看不到金额/订单/结算 |
 
-> **支付金额口径（2026-09-11 拍板）**：线上支付（微信支付模拟通道）支付金额 = **下单时刻应付 = `amountOrdered + deliveryFee`**（加急费已含在 `deliveryFee`）；备货缺货导致的差额走售后/结算环节找补（与 COD 口径一致）。订单超时自动关单为已知欠账，未实现。
+> **支付金额口径（2026-09-11 拍板）**：线上支付（微信支付模拟通道）支付金额 = **下单时刻应付 = `amountOrdered + deliveryFee`**（加急费已含在 `deliveryFee`）；备货缺货导致的差额走售后/结算环节找补（与 COD 口径一致）。**订单超时自动关单为已知欠账**（放弃支付会留下 `status=0` 的悬挂支付单，全项目无订单超时自动关单）—— 2026-09-11 拍板**先不做**，待接入真实微信支付时一并处理，详见《项目真实状态与剩余清单》欠账表。
 
 ## ⚠️ 三条权限铁律（写代码时不能违反）
 
 1. **配送员不碰钱** —— `courier` 模块接口不返回任何金额字段；唯一例外是「收款协助」`GET /courier/task/:id/amount`，仅展示**货到付款订单的应收数字**供核对（非 COD 订单隐藏），且配送员只标记收款、不作核销，不碰资金流
 2. **供应商不见销售价** —— `product` 模块对 `supplier` 角色**不返回 `salePrice`**
 3. **运营看得全、改得慎** —— 金额相关操作二次确认 + 全量写 `audit_log`
+
+## 🔒 环境红线 · 微信凭证（⚠️ 勿手滑，2026-09-11 大辉确认）
+
+- **已确认：`WX_APPID` / `WX_SECRET` 为占位值**（不是真实凭证）。
+- **当前 `WX_MOCK_LOGIN` 必须保持 `=1`；真实凭证到位前不要切成 `0`，否则登录会直接失败。**
+- 凡本文档别处写「代码已就绪、只差换值 + 切开关」的地方，都以此红线为准：**换真实凭证**与**切开关**必须同时具备，且只有拿到真实凭证之后才能做，缺一即登录失败。
 
 ## 📅 开发顺序（见《开发配套①》第四节）
 
