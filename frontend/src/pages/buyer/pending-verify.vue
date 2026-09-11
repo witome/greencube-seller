@@ -34,9 +34,8 @@
       </view>
     </view>
 
-    <!-- 操作按钮 -->
+    <!-- 操作按钮（2026-09-11 拍板 A：移除「📎 补充资料」假按钮，驳回走申诉通道；主按钮占全宽） -->
     <view class="pv-btns">
-      <view class="pv-btn ghost" @tap="uploadMore">📎 补充资料</view>
       <view class="pv-btn primary" @tap="previewGoods">{{ cfg.previewLabel }}</view>
     </view>
 
@@ -61,7 +60,7 @@ const roleConfig = {
     icon: '🏪',
     title: '餐馆账号审核中',
     sub: '运营将在 24 小时内通过电话或上门方式核实您的餐馆真实情况，请保持手机畅通',
-    canDo: '完善餐馆资料（营业执照等可随时补传）、查看菜品分类和价格',
+    canDo: '完善餐馆资料（我的 → 餐馆资料可改店名/地址等）、查看菜品分类和价格',
     cannotDo: '下单、加入购物车、付款',
     activeText: '通过后即可下单',
     previewLabel: '🥬 商品预览',
@@ -79,7 +78,7 @@ const roleConfig = {
     icon: '🚚',
     title: '配送员账号审核中',
     sub: '运营将在 24 小时内核实您的配送资质，请保持手机畅通',
-    canDo: '完善配送资料（健康证等可随时补传）',
+    canDo: '完善配送资料（证件变更请联系运营补录）',
     cannotDo: '接单配送',
     activeText: '通过后即可接单配送',
     previewLabel: '🗺️ 线路预览',
@@ -99,7 +98,6 @@ const urge = () => {
     fail: () => uni.showToast({ title: '已催办', icon: 'none' }),
   })
 }
-const uploadMore = () => uni.showToast({ title: '资料补充功能即将开放', icon: 'none' })
 const previewGoods = () => {
   if (cfg.value.previewLabel.includes('商品')) {
     uni.switchTab({ url: '/pages/buyer/goods' })
@@ -273,11 +271,6 @@ onMounted(async () => {
   border-radius: 22px;
   font-size: 14px;
   font-weight: 600;
-}
-.pv-btn.ghost {
-  background: #fff;
-  color: $text-title;
-  border: 1px solid #e5e7eb;
 }
 .pv-btn.primary {
   background: $brand;
