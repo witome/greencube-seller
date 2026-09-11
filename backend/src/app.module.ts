@@ -21,6 +21,7 @@ import { AdminGoodsModule } from './modules/admin-goods/admin-goods.module'
 import { AdminOrderModule } from './modules/admin-order/admin-order.module'
 import { AdminDispatchModule } from './modules/admin-dispatch/admin-dispatch.module'
 import { AdminFinanceModule } from './modules/admin-finance/admin-finance.module'
+import { AdminPaymentModule } from './modules/admin-payment/admin-payment.module'
 import { AdminUserModule } from './modules/admin-user/admin-user.module'
 import { AuditModule } from './modules/audit/audit.module'
 import { AdminPricingModule } from './modules/admin-pricing/admin-pricing.module'
@@ -54,6 +55,7 @@ import { PaymentModule } from './modules/payment/payment.module'
     AdminOrderModule,
     AdminDispatchModule,
     AdminFinanceModule,
+    AdminPaymentModule,
     AdminUserModule,
     AuditModule,
     AdminPricingModule,

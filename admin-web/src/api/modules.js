@@ -74,6 +74,11 @@ export const financeAdminApi = {
   uploadImage: (base64) => request.post('/upload/image', { base64 }),
 }
 
+/* ── 支付流水（2026-09-11 新增：只读，仅线上支付） ── */
+export const paymentAdminApi = {
+  getList: (params) => request.get('/admin/payments', { params }),
+}
+
 /* ── 价格与加价 ── */
 export const pricingAdminApi = {
   getList: () => request.get('/admin/pricing'),

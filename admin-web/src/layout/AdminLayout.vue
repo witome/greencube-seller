@@ -45,6 +45,9 @@
         <el-menu-item index="/finance">
           <el-icon><Wallet /></el-icon><span>资金结算</span>
         </el-menu-item>
+        <el-menu-item index="/payments">
+          <el-icon><Money /></el-icon><span>支付流水</span>
+        </el-menu-item>
         <el-menu-item index="/audit">
           <el-icon><Document /></el-icon><span>审计日志</span>
         </el-menu-item>

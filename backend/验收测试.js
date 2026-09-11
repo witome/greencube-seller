@@ -58,8 +58,19 @@ async function main() {
   check('未激活下单被拦截(3001)', deny.code === 3001)
 
   // 运营审核通过
-  const pendingList = await call('GET', '/admin/buyers/pending?pageSize=50', null, at)
-  const target = pendingList.data?.list?.find(p => p.phone === regPhone)
+  // 队列按 registeredAt 升序、pageSize 上限 50；测试数据按拍板保留不清理，
+  // 库里采购方会不断累积，本次新注册的记录会落到最后一页 → 逐页找（不能只看第 1 页）
+  const found = await (async () => {
+    const first = await call('GET', '/admin/buyers/pending?pageSize=50', null, at)
+    const pages = Math.max(1, Math.ceil((first.data?.total || 0) / 50))
+    let hit = (first.data?.list || []).find(p => p.phone === regPhone)
+    for (let p = 2; p <= pages && !hit; p++) {
+      const r = await call('GET', `/admin/buyers/pending?pageSize=50&page=${p}`, null, at)
+      hit = (r.data?.list || []).find(x => x.phone === regPhone)
+    }
+    return hit
+  })()
+  const target = found
   check('运营看到待审核队列', !!target)
   if (!target) abort('待审核队列未找到本次注册记录(' + regPhone + ')，后续用例无法继续')
   const verify = await call('POST', `/admin/buyers/${target.purchaserId}/verify`, { methods: [1], result: 1 }, at)
@@ -135,6 +146,73 @@ async function main() {
   // 已取消订单的支付单不可再回调推进（服务端按订单状态拒）
   const cb3 = await call('POST', '/payment/mock/callback', { payNo: pay3.data.payNo, signature: paySign(pay3.data.payNo, pay3.data.amount) })
   check('已取消订单的回调被拒(3002)', cb3.code === 3002)
+
+  // ── 3.6 运营支付流水查询（任务卡 2026-09-11：只读接口 + 权限铁律 3）──
+  console.log('\n【3.6 运营支付流水查询（只读）】')
+  const PAY_API = '/admin/payments'
+
+  const p0 = await call('GET', PAY_API + '?pageSize=1', null, at)
+  check('运营可查支付流水', p0.code === 0 && Array.isArray(p0.data.list) && p0.data.total > 0)
+  const firstRow = p0.data.list[0] || {}
+  check(
+    '字段完整(单号/订单号/渠道/金额/状态/创建时间/支付时间字段)',
+    !!firstRow.payNo && !!firstRow.orderId && !!firstRow.channel &&
+      typeof firstRow.amount === 'string' && /^\d+\.\d{2}$/.test(firstRow.amount) &&
+      firstRow.status !== undefined && !!firstRow.statusText && !!firstRow.createdAt && 'paidAt' in firstRow,
+  )
+  check('列表含餐馆(shopName)', !!firstRow.shopName)
+  check('状态文案映射正确', ['待支付', '成功', '关闭'].includes(firstRow.statusText))
+
+  const p5 = await call('GET', PAY_API + '?pageSize=5', null, at)
+  const times = p5.data.list.map((x) => new Date(x.createdAt).getTime())
+  check('默认按创建时间倒序(最新在前)', times.length > 1 && times.every((t, i) => i === 0 || times[i - 1] >= t))
+
+  const onlySucc = await call('GET', PAY_API + '?status=1&pageSize=100', null, at)
+  check('状态筛选=成功 只返回成功', onlySucc.code === 0 && onlySucc.data.list.length > 0 && onlySucc.data.list.every((x) => x.status === 1))
+  const onlyPend = await call('GET', PAY_API + '?status=0&pageSize=100', null, at)
+  check('状态筛选=待支付 只返回待支付', onlyPend.code === 0 && onlyPend.data.list.every((x) => x.status === 0))
+
+  // 金额口径（已拍板）：线上支付金额 = 下单时刻应付额(amountOrdered + deliveryFee)
+  const succRow = onlySucc.data.list.find((x) => x.orderId === order2Id)
+  check('本用例订单的成功流水可见(用于口径核对)', !!succRow)
+  const o2c = await call('GET', `/order/${order2Id}`, null, bt2)
+  check(
+    '金额口径=amountOrdered+deliveryFee',
+    !!succRow && Number(succRow.amount) === Number(o2c.data.amountOrdered) + Number(o2c.data.deliveryFee),
+    succRow ? { 流水金额: succRow.amount, amountOrdered: o2c.data.amountOrdered, deliveryFee: o2c.data.deliveryFee } : null,
+  )
+
+  const byPayNo = await call('GET', PAY_API + '?keyword=' + encodeURIComponent(succRow.payNo.slice(0, 8)), null, at)
+  check('按单号搜索命中', byPayNo.code === 0 && byPayNo.data.list.some((x) => x.payNo === succRow.payNo))
+  const byOrderId = await call('GET', PAY_API + '?keyword=' + order2Id, null, at)
+  check('按订单号搜索命中', byOrderId.code === 0 && byOrderId.data.list.some((x) => x.orderId === order2Id))
+  const byMiss = await call('GET', PAY_API + '?keyword=999999999999', null, at)
+  check('按不存在的号搜索返回空', byMiss.code === 0 && byMiss.data.total === 0)
+
+  const big = await call('GET', PAY_API + '?pageSize=200', null, at)
+  check('pageSize 上限 100 生效', big.code === 0 && big.data.pageSize === 100 && big.data.list.length <= 100)
+
+  // 纯只读：查询前后总量不变（查询不写库、不写流水、不写审计）
+  const beforeTotal = (await call('GET', PAY_API + '?pageSize=1', null, at)).data.total
+  await call('GET', PAY_API + '?status=1&pageSize=20', null, at)
+  await call('GET', PAY_API + '?keyword=mock', null, at)
+  const afterTotal = (await call('GET', PAY_API + '?pageSize=1', null, at)).data.total
+  check('查询接口不写库(前后 total 一致)', beforeTotal === afterTotal)
+
+  // 权限（铁律 3）：配送员不碰钱、供应商不见销售价、业务员仅限采购方审核
+  check('配送员被拒(2002)', (await call('GET', PAY_API, null, ct)).code === 2002)
+  check('供应商被拒(2002)', (await call('GET', PAY_API, null, st)).code === 2002)
+  check('采购方被拒(2002)', (await call('GET', PAY_API, null, bt2)).code === 2002)
+  check('无 token 被拒(2001)', (await call('GET', PAY_API)).code === 2001)
+  // 业务员：项目无 business_agent 演示账号，用同密钥签一个「业务员身份」token 仅验证守卫口径（不写库、不建账号）
+  const jwtSecret = (require('fs').readFileSync(__dirname + '/.env', 'utf8').match(/JWT_SECRET=(\S+)/) || [])[1]
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  const agentToken = (() => {
+    const h = b64({ alg: 'HS256', typ: 'JWT' })
+    const p = b64({ sub: 1, userId: 1, roles: ['business_agent'], currentRole: 'business_agent' })
+    return `${h}.${p}.${crypto.createHmac('sha256', jwtSecret).update(`${h}.${p}`).digest('base64url')}`
+  })()
+  check('业务员被拒(2002，仅限采购方审核)', (await call('GET', PAY_API, null, agentToken)).code === 2002)
 
   // ── 4. 核单拆单（10 待确认 → 30 备货中）──
   // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行
