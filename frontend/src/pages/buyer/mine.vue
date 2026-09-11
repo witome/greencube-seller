@@ -44,8 +44,8 @@
           <view class="buyer-mine-stat-num buyer-mine-num-blue">{{ stats.monthOrders ?? '暂无' }}</view>
           <view class="buyer-mine-stat-lbl">本月订单</view>
         </view>
-        <view class="buyer-mine-stat" @tap="go('/pages/buyer/aftersale')">
-          <view class="buyer-mine-stat-num buyer-mine-num-red">暂无</view>
+        <view class="buyer-mine-stat" @tap="go('/pages/buyer/aftersale-list?filter=ing')">
+          <view class="buyer-mine-stat-num buyer-mine-num-red">{{ stats.aftersale ?? '暂无' }}</view>
           <view class="buyer-mine-stat-lbl">售后中</view>
         </view>
       </view>
@@ -65,14 +65,6 @@
           <view class="buyer-mine-menu-main">
             <view class="buyer-mine-menu-t">收货地址</view>
             <view class="buyer-mine-menu-d">配送时段 07:00-09:00</view>
-          </view>
-          <view class="buyer-mine-arrow">›</view>
-        </view>
-        <view class="buyer-mine-menu-item" @tap="todo('身份申请 · 功能建设中')">
-          <view class="buyer-mine-menu-ico buyer-mine-ico-purple">🪪</view>
-          <view class="buyer-mine-menu-main">
-            <view class="buyer-mine-menu-t">身份申请</view>
-            <view class="buyer-mine-menu-d">申请成为供应商 / 配送人员</view>
           </view>
           <view class="buyer-mine-arrow">›</view>
         </view>
@@ -112,7 +104,7 @@ const profile = ref(null)
 const profileLoading = ref(true)
 const profileError = ref(false)
 // 数据概览：未付账款 + 本月订单（来自月度对账单）；售后中暂无接口
-const stats = ref({ unpaid: null, monthOrders: null })
+const stats = ref({ unpaid: null, monthOrders: null, aftersale: null })
 
 const accountStatus = computed(() => profile.value?.purchaser?.accountStatus ?? null)
 const shopName = computed(() => profile.value?.purchaser?.shopName || '未注册餐馆')
@@ -221,15 +213,28 @@ const loadProfile = async () => {
 const loadStats = async () => {
   try {
     const bill = await buyerApi.getBill(currentPeriod())
-    stats.value = { unpaid: bill.unpaidAmount ?? 0, monthOrders: bill.orderCount ?? 0 }
+    stats.value = { ...stats.value, unpaid: bill.unpaidAmount ?? 0, monthOrders: bill.orderCount ?? 0 }
   } catch (e) {
-    stats.value = { unpaid: null, monthOrders: null }
+    stats.value = { ...stats.value, unpaid: null, monthOrders: null }
+  }
+}
+
+// 售后中：未完结的售后工单数（0 待处理 / 1 处理中）
+const loadAftersaleCount = async () => {
+  try {
+    const list = await buyerApi.getAftersaleList()
+    stats.value = { ...stats.value, aftersale: (list || []).filter((a) => a.status === 0 || a.status === 1).length }
+  } catch (e) {
+    stats.value = { ...stats.value, aftersale: null }
   }
 }
 
 onMounted(async () => {
   await loadProfile()
-  if (accountStatus.value === 2) loadStats()
+  if (accountStatus.value === 2) {
+    loadStats()
+    loadAftersaleCount()
+  }
 })
 
 onShow(() => {
@@ -310,7 +315,6 @@ onShow(() => {
 }
 .buyer-mine-ico-green { background: #E6F9F0; }
 .buyer-mine-ico-blue { background: #E8F1FF; }
-.buyer-mine-ico-purple { background: #F3EDFF; }
 .buyer-mine-ico-orange { background: #FFF3E6; }
 .buyer-mine-ico-teal { background: #E3F7F5; }
 .buyer-mine-menu-main { flex: 1; min-width: 0; }
