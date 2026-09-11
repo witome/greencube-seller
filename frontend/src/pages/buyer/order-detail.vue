@@ -12,6 +12,19 @@
       </view>
     </view>
 
+    <!-- 订单时间：下单 / 交付确认 -->
+    <view class="card">
+      <view class="row">
+        <text class="k">下单时间</text>
+        <text class="v">{{ fmtTime(order.createdAt) || '—' }}</text>
+      </view>
+      <view class="row">
+        <text class="k">交付确认时间</text>
+        <text v-if="order.deliveredAt" class="v">{{ fmtTime(order.deliveredAt) }}</text>
+        <text v-else class="v" style="color:#c0c6cd;">待交付</text>
+      </view>
+    </view>
+
     <!-- 配送信息（待确认未支付：日期/时间段直接点选修改，无需进入编辑态） -->
     <view class="card">
       <view class="row">
@@ -152,6 +165,14 @@ const _tomorrow = new Date(_now.getTime() + 86400000)
 const tomorrowStr = `${_tomorrow.getFullYear()}-${String(_tomorrow.getMonth() + 1).padStart(2, '0')}-${String(_tomorrow.getDate()).padStart(2, '0')}`
 
 const payMethodText = computed(() => ({ 1: '微信支付', 2: '货到付款' }[order.value?.payMethod] || ''))
+
+// 后端返回 ISO 时间 → 本地 YYYY-MM-DD HH:mm
+const fmtTime = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 const editTotal = computed(() => (order.value?.items || []).reduce((s, i) => s + i.qtyOrdered * i.salePrice, 0).toFixed(2))
 // 可编辑（配送日期/时间段/商品明细）：仅待确认(10)且未支付(0)
 const canEdit = computed(() => order.value?.status === 10 && order.value?.payMethod === 0)

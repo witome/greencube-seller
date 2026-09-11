@@ -190,11 +190,24 @@ export class OrderService {
     const urgentFee = Number(feeValue.urgentFee ?? 0)
     const urgentFreeThreshold = Number(feeValue.urgentFreeThreshold ?? 0)
 
+    // 交付确认时间：取本单配送任务的完成时间（配送员「交付确认」时落 completedAt）
+    // 任务与订单通过 stationList（JSON 数组）里的 orderId 关联，故用 JSON 包含查询
+    const deliveredTask = await this.prisma.deliveryTask.findFirst({
+      where: {
+        completedAt: { not: null },
+        stationList: { array_contains: { orderId: Number(orderId) } },
+      },
+      orderBy: { completedAt: 'desc' },
+      select: { completedAt: true },
+    })
+
     return {
       orderId: Number(order.id),
       status: order.status,
       statusText: this.statusText(order.status),
       timeline: this.timeline(order.status),
+      createdAt: order.createdAt.toISOString(),          // 下单时间
+      deliveredAt: deliveredTask?.completedAt ? deliveredTask.completedAt.toISOString() : null, // 交付确认时间
       deliveryDate: order.deliveryDate.toISOString().slice(0, 10),
       timeWindow: order.timeWindow,
       remark: order.remark,
