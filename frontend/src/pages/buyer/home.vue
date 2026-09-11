@@ -9,13 +9,13 @@
     <!-- ① 商品搜索入口 → 商品 tab -->
     <view class="buyer-home-search" @tap="goTab('/pages/buyer/goods')">🔍 搜索：白菜 / 五花肉 / 鸡蛋…</view>
 
-    <!-- ② 配送说明横幅（原型此块为绿渐变横幅+配送时效说明；时效规则未接口化，先上中性文案，另记待办） -->
-    <view class="buyer-home-banner">
-      <text class="buyer-home-banner-b">下单时选择配送日期，按日送达 🚚</text>
-      <text class="buyer-home-banner-s">鲜货直供菜市场 · 缺货自动按偏好处理</text>
+    <!-- ② 配送说明横幅（接口化：GET /buyer/home-content → home_delivery_note KV；未配置走后端中性默认；加载失败不渲染空横幅） -->
+    <view v-if="banner.title" class="buyer-home-banner">
+      <text class="buyer-home-banner-b">{{ banner.title }} 🚚</text>
+      <text class="buyer-home-banner-s">{{ banner.subtitle }}</text>
     </view>
 
-    <!-- ③ 平台公告（原型此块为黄底公告条；真公告接口化另记待办，无公告时不渲染避免假信息） -->
+    <!-- ③ 平台公告（接口化：home_notice KV，enabled=false 或空 → null 不渲染） -->
     <view v-if="platformNotice" class="buyer-home-notice">{{ platformNotice }}</view>
 
 
@@ -34,7 +34,7 @@
       </view>
     </view>
 
-    <!-- ⑤ 今日推荐商品（真实接口：/product/list 前 3 条；空/失败显示空态，不用假数据兜底） -->
+    <!-- ⑤ 今日推荐商品（接口化：home_recommendations KV 商品 id 有序数组，后端按序返回在售商品；空 → 空态，绝无假数据兜底） -->
     <view class="buyer-home-title">
       <text>今日推荐</text>
       <text class="buyer-home-more" @tap="goTab('/pages/buyer/goods')">更多 ›</text>
@@ -106,8 +106,9 @@ const todo = (name) => uni.showToast({ title: `${name} · 功能建设中`, icon
 
 const needRegister = ref(false)
 
-// 平台公告：暂无公告接口，先置空（接口化后由此 ref 赋值，见剩余清单待办）；为空不渲染
-const platformNotice = ref('')
+// ── 首页内容（GET /buyer/home-content 一次取全：横幅/公告/今日推荐位）──
+const banner = ref({ title: '', subtitle: '' })
+const platformNotice = ref('') // null/空 → 不渲染（运营停用或未配置公告时）
 
 // ── 今日推荐 ──
 const recsLoading = ref(true)
@@ -162,12 +163,16 @@ const loadProfile = async () => {
   }
 }
 
-const loadRecs = async () => {
+const loadHomeContent = async () => {
   recsLoading.value = true
   try {
-    const data = await buyerApi.getGoods({ page: 1, pageSize: 3 })
-    recs.value = data.list || []
+    const data = await buyerApi.getHomeContent()
+    banner.value = data.deliveryNote || { title: '', subtitle: '' }
+    platformNotice.value = data.notice || ''
+    recs.value = data.recommendations || [] // 空数组 → 空态，不用假数据兜底
   } catch (e) {
+    banner.value = { title: '', subtitle: '' }
+    platformNotice.value = ''
     recs.value = [] // 失败显示空态，不用假数据兜底
   } finally {
     recsLoading.value = false
@@ -193,7 +198,7 @@ onShow(async () => {
   // H5 原生 tabBar 不支持 emoji，统一用自绘 BuyerTabBar 底栏，隐藏原生 tabBar
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
   await loadProfile()
-  loadRecs()
+  loadHomeContent()
   if (!needRegister.value) loadOrders()
   else { ordersLoading.value = false; activeOrders.value = [] }
 })

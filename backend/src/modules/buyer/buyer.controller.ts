@@ -75,4 +75,11 @@ export class BuyerController {
   async updateMyProfile(@CurrentUser('userId') userId: bigint, @Body() dto: UpdateBuyerProfileDto) {
     return this.service.updateSelfProfile(userId, dto)
   }
+
+  /// 首页内容一次取全（横幅/公告/今日推荐位，2026-09-11 首页接口化卡）
+  @Get('home-content')
+  @Roles(Role.PURCHASER)
+  async homeContent() {
+    return this.service.getHomeContent()
+  }
 }

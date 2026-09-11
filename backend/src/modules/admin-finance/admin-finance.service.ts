@@ -4,6 +4,7 @@ import { BizException, ErrorCode } from '../../common/constants/error-codes'
 import { AuditService } from '../audit/audit.service'
 import { ServiceFeeConfigDto, GenerateSettlementDto } from './dto/finance.dto'
 import { DeliveryFeeConfigDto, PayQrDto } from './dto/delivery-fee.dto'
+import { HomeContentDto } from './dto/home-content.dto'
 
 @Injectable()
 export class AdminFinanceService {
@@ -263,5 +264,66 @@ export class AdminFinanceService {
       after: value,
     })
     return value
+  }
+
+  // ────────────────────────────────────────
+  // 首页内容（2026-09-11 任务卡：首页三处接口化）
+  // 复用 platform_config KV 表，三个 key：
+  //   home_delivery_note   { title, subtitle }
+  //   home_notice          { enabled, text }
+  //   home_recommendations number[]（商品 id 有序数组）
+  // schema 零改动（PlatformConfig 即通用 KV 表）
+  // ────────────────────────────────────────
+  async getHomeContent() {
+    const keys = await this.prisma.platformConfig.findMany({
+      where: { key: { in: ['home_delivery_note', 'home_notice', 'home_recommendations'] } },
+    })
+    const map = new Map(keys.map((k) => [k.key, k.value as any]))
+    const note = map.get('home_delivery_note') || {}
+    const notice = map.get('home_notice') || {}
+    const recs = map.get('home_recommendations')
+    return {
+      deliveryNote: {
+        title: typeof note.title === 'string' ? note.title : '',
+        subtitle: typeof note.subtitle === 'string' ? note.subtitle : '',
+      },
+      notice: {
+        enabled: !!notice.enabled,
+        text: typeof notice.text === 'string' ? notice.text : '',
+      },
+      recommendationIds: Array.isArray(recs) ? recs.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [],
+    }
+  }
+
+  async updateHomeContent(userId: bigint, dto: HomeContentDto) {
+    const noteValue = { title: dto.deliveryNote.title, subtitle: dto.deliveryNote.subtitle || '' }
+    const noticeValue = { enabled: !!dto.notice.enabled, text: dto.notice.text || '' }
+    const recValue = dto.recommendationIds
+    await this.prisma.$transaction([
+      this.prisma.platformConfig.upsert({
+        where: { key: 'home_delivery_note' },
+        update: { value: noteValue },
+        create: { key: 'home_delivery_note', value: noteValue },
+      }),
+      this.prisma.platformConfig.upsert({
+        where: { key: 'home_notice' },
+        update: { value: noticeValue },
+        create: { key: 'home_notice', value: noticeValue },
+      }),
+      this.prisma.platformConfig.upsert({
+        where: { key: 'home_recommendations' },
+        update: { value: recValue },
+        create: { key: 'home_recommendations', value: recValue },
+      }),
+    ])
+    // 铁律 3：配置变更留痕（一次保存记一条，after 记三项合并值）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'UPDATE_HOME_CONTENT',
+      entity: 'platform_config',
+      entityId: 0,
+      after: { ...noteValue, ...noticeValue, recommendationIds: recValue },
+    })
+    return this.getHomeContent()
   }
 }

@@ -51,6 +51,8 @@ export const buyerApi = {
   // 自助改资料（2026-09-11 任务卡 A：只改自己，资质字段不可改）
   getProfile: () => get('/buyer/profile'),
   updateProfile: (data) => put('/buyer/profile', data),
+  // 首页内容一次取全（横幅/公告/今日推荐位，2026-09-11 首页接口化卡）
+  getHomeContent: () => get('/buyer/home-content'),
 }
 
 /* ── 运营端 ── */

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Body, Query } from '@nestjs/common'
 import { AdminFinanceService } from './admin-finance.service'
 import { ServiceFeeConfigDto, GenerateSettlementDto } from './dto/finance.dto'
 import { DeliveryFeeConfigDto, PayQrDto } from './dto/delivery-fee.dto'
+import { HomeContentDto } from './dto/home-content.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -71,5 +72,19 @@ export class AdminFinanceController {
   @Roles(Role.ADMIN)
   async updatePayQr(@CurrentUser('userId') userId: bigint, @Body() dto: PayQrDto) {
     return this.service.updatePayQr(userId, dto)
+  }
+
+  /// 读取首页内容（横幅 / 公告 / 今日推荐位，platform_config KV）
+  @Get('home-content')
+  @Roles(Role.ADMIN)
+  async getHomeContent() {
+    return this.service.getHomeContent()
+  }
+
+  /// 保存首页内容（一次保存三个 KV key，审计 UPDATE_HOME_CONTENT）
+  @Put('home-content')
+  @Roles(Role.ADMIN)
+  async updateHomeContent(@CurrentUser('userId') userId: bigint, @Body() dto: HomeContentDto) {
+    return this.service.updateHomeContent(userId, dto)
   }
 }

@@ -76,6 +76,55 @@
       </div>
     </el-card>
 
+    <!-- 首页内容（真实接口：platform_config KV，采购方小程序首页三处数据驱动） -->
+    <el-card shadow="never" class="admin-settings-card">
+      <template #header>🏠 首页内容（采购方小程序首页）</template>
+      <div v-loading="homeLoading">
+        <el-divider content-position="left">配送说明横幅</el-divider>
+        <div class="admin-settings-row">
+          <span class="admin-settings-k">主文案</span>
+          <el-input v-model="homeForm.deliveryNote.title" maxlength="30" show-word-limit size="small" style="width:320px" placeholder="如：下单时选择配送日期，按日送达" />
+        </div>
+        <div class="admin-settings-row" style="margin-top:10px;">
+          <span class="admin-settings-k">副文案</span>
+          <el-input v-model="homeForm.deliveryNote.subtitle" maxlength="60" show-word-limit size="small" style="width:320px" placeholder="可空" />
+        </div>
+
+        <el-divider content-position="left">平台公告（停用或清空 → 首页不显示）</el-divider>
+        <div class="admin-settings-row">
+          <span class="admin-settings-k">启用公告</span>
+          <el-switch v-model="homeForm.notice.enabled" />
+          <el-input v-model="homeForm.notice.text" maxlength="100" show-word-limit size="small" style="width:320px;margin-left:12px" placeholder="公告内容（最长 100 字）" :disabled="!homeForm.notice.enabled" />
+        </div>
+
+        <el-divider content-position="left">今日推荐位（按顺序展示，最多 10 个；清空 → 首页显示空态）</el-divider>
+        <div class="admin-settings-row">
+          <el-select v-model="pendingProductId" placeholder="选择在售商品" size="small" style="width:280px" filterable @change="addRecommend">
+            <el-option v-for="p in onSaleProducts" :key="p.id" :label="`${p.name}（¥${p.salePrice}/${p.unit}）`" :value="p.id" :disabled="homeForm.recommendationIds.includes(p.id)" />
+          </el-select>
+          <span class="admin-settings-unit">已选 {{ homeForm.recommendationIds.length }} 个（下方可排序）</span>
+        </div>
+        <el-table :data="recommendRows" size="small" style="margin-top:10px;" empty-text="尚未配置推荐商品">
+          <el-table-column type="index" label="顺序" width="70" />
+          <el-table-column prop="name" label="商品" />
+          <el-table-column label="售价" width="120">
+            <template #default="{ row }">¥{{ row.salePrice }}/{{ row.unit }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="170">
+            <template #default="{ row, $index }">
+              <el-button size="small" :disabled="$index === 0" @click="moveRecommend($index, -1)">上移</el-button>
+              <el-button size="small" :disabled="$index === recommendRows.length - 1" @click="moveRecommend($index, 1)">下移</el-button>
+              <el-button type="danger" link @click="removeRecommend($index)">移除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div style="margin-top:16px;">
+          <el-button type="primary" size="small" :loading="savingHome" @click="saveHome">保存首页内容</el-button>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 货到付款收款码 -->
     <el-card shadow="never" class="admin-settings-card">
       <template #header>💰 货到付款收款码（配送员端展示，客户扫码付款）</template>
@@ -132,6 +181,75 @@ const qrLoading = ref(false)
 const savingQr = ref(false)
 const pendingQrBase64 = ref('')
 const qrFileInput = ref(null)
+
+// ── 首页内容（横幅/公告/今日推荐位） ──
+const homeLoading = ref(false)
+const savingHome = ref(false)
+const homeForm = reactive({
+  deliveryNote: { title: '', subtitle: '' },
+  notice: { enabled: false, text: '' },
+  recommendationIds: [],
+})
+const onSaleProducts = ref([])
+const pendingProductId = ref(null)
+
+// 已选商品按 recommendationIds 顺序展示（上移/下移即调数组序）
+const recommendRows = computed(() =>
+  homeForm.recommendationIds
+    .map((id) => onSaleProducts.value.find((p) => p.id === id))
+    .filter(Boolean)
+)
+
+function addRecommend(id) {
+  if (id && !homeForm.recommendationIds.includes(id) && homeForm.recommendationIds.length < 10) {
+    homeForm.recommendationIds.push(id)
+  }
+  pendingProductId.value = null
+}
+function moveRecommend(index, delta) {
+  const arr = homeForm.recommendationIds
+  const target = index + delta
+  if (target < 0 || target >= arr.length) return
+  ;[arr[index], arr[target]] = [arr[target], arr[index]]
+}
+function removeRecommend(index) {
+  homeForm.recommendationIds.splice(index, 1)
+}
+
+async function loadHome() {
+  homeLoading.value = true
+  try {
+    const [cfg, goods] = await Promise.all([
+      financeAdminApi.getHomeContent(),
+      goodsAdminApi.listProducts({ page: 1, pageSize: 50 }),
+    ])
+    homeForm.deliveryNote.title = cfg.deliveryNote?.title || ''
+    homeForm.deliveryNote.subtitle = cfg.deliveryNote?.subtitle || ''
+    homeForm.notice.enabled = !!cfg.notice?.enabled
+    homeForm.notice.text = cfg.notice?.text || ''
+    const ids = cfg.recommendationIds || []
+    // 仅保留在售商品（下架的不回填，避免保存时把下架商品带回去）；admin 列表字段为 productId
+    const onSale = (goods.list || []).filter((p) => p.status === 1).map((p) => ({ ...p, id: p.productId }))
+    onSaleProducts.value = onSale
+    homeForm.recommendationIds = ids.filter((id) => onSale.some((p) => p.id === id))
+  } catch (e) { /* 已提示 */ } finally {
+    homeLoading.value = false
+  }
+}
+
+async function saveHome() {
+  savingHome.value = true
+  try {
+    await financeAdminApi.updateHomeContent({
+      deliveryNote: { title: homeForm.deliveryNote.title, subtitle: homeForm.deliveryNote.subtitle },
+      notice: { enabled: homeForm.notice.enabled, text: homeForm.notice.text },
+      recommendationIds: homeForm.recommendationIds,
+    })
+    ElMessage.success('首页内容已保存')
+  } catch (e) { /* 已提示 */ } finally {
+    savingHome.value = false
+  }
+}
 
 // 可选分类 = 一级分类里排除已配置覆盖的
 const availableCategories = computed(() => {
@@ -258,6 +376,7 @@ onMounted(() => {
   load()
   loadFee()
   loadQr()
+  loadHome()
 })
 </script>
 

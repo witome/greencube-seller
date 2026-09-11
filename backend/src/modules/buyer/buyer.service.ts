@@ -253,6 +253,54 @@ export class BuyerService {
   }
 
   // ────────────────────────────────────────
+  // 首页内容（2026-09-11 任务卡：首页三处接口化，一次请求返回三项）
+  // 数据源 = platform_config 三个 key（运营侧 admin/finance/home-content 维护）
+  //   横幅：未配置 → 中性默认文案；公告：enabled=false 或空 → null（前台不渲染）
+  //   推荐位：id 有序数组 → 按顺序取在售商品，缺失/下架/非法 id 一律跳过；空 → 前台空态
+  // ────────────────────────────────────────
+  async getHomeContent() {
+    const keys = await this.prisma.platformConfig.findMany({
+      where: { key: { in: ['home_delivery_note', 'home_notice', 'home_recommendations'] } },
+    })
+    const map = new Map(keys.map((k) => [k.key, k.value as any]))
+
+    const note = map.get('home_delivery_note') || {}
+    const deliveryNote = {
+      title: typeof note.title === 'string' && note.title ? note.title : '下单时选择配送日期，按日送达',
+      subtitle: typeof note.subtitle === 'string' && note.subtitle ? note.subtitle : '鲜货直供菜市场 · 缺货自动按偏好处理',
+    }
+
+    const noticeCfg = map.get('home_notice') || {}
+    const notice = noticeCfg.enabled && typeof noticeCfg.text === 'string' && noticeCfg.text.trim() ? noticeCfg.text.trim() : null
+
+    const rawIds = map.get('home_recommendations')
+    const ids = (Array.isArray(rawIds) ? rawIds : [])
+      .map((v) => Number(v))
+      .filter((n) => Number.isInteger(n) && n > 0)
+    // 保持运营配置的展示顺序；非法/已下架 id 直接跳过，绝不返回假数据
+    const products = ids.length
+      ? await this.prisma.product.findMany({ where: { id: { in: ids.map((n) => BigInt(n)) }, status: 1 } })
+      : []
+    const byId = new Map(products.map((p) => [Number(p.id), p]))
+    const recommendations = ids
+      .filter((n) => byId.has(n))
+      .map((n) => {
+        const p = byId.get(n)
+        return {
+          id: Number(p.id),
+          name: p.name,
+          cover: p.cover,
+          unit: p.unit,
+          weighType: p.weighType,
+          specText: p.specText,
+          salePrice: Number(p.salePrice),
+        }
+      })
+
+    return { deliveryNote, notice, recommendations }
+  }
+
+  // ────────────────────────────────────────
   // 售后申请（创建工单，决策3）
   // ────────────────────────────────────────
   async submitAftersale(userId: bigint, dto: AftersaleDto) {

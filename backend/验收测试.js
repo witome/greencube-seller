@@ -303,6 +303,53 @@ async function main() {
   // (c) 反向用例零副作用：上面用的不存在 id，运营查它仍是 4001（未因反向用例被创建/写入）
   check('反向用例未写库(不存在id经运营查仍4001)', (await call('GET', `/admin/buyers/${NA}/verify-detail`, null, at)).code === 4001)
 
+  // ── 3.8 首页内容接口化（platform_config KV：横幅/公告/今日推荐位，2026-09-11 任务卡） ──
+  console.log('\n【3.8 首页内容接口化】')
+  const prodList = await call('GET', '/product/list?page=1&pageSize=10', null, bt)
+  const saleIds = (prodList.data?.list || []).map(p => p.id).slice(0, 2)
+  check('取到在售商品id(≥2个)', saleIds.length >= 2, { saleIds })
+  // ① 运营保存三项（推荐位发倒序，验证顺序保留）
+  const hcSave = await call('PUT', '/admin/finance/home-content', {
+    deliveryNote: { title: '验收横幅：次日达', subtitle: '验收副文案' },
+    notice: { enabled: true, text: '验收公告：每周日 20:00 截单' },
+    recommendationIds: [...saleIds].reverse(),
+  }, at)
+  check('运营保存首页内容', hcSave.code === 0)
+  const hcRead = await call('GET', '/buyer/home-content', null, bt)
+  check('采购方读取·横幅为配置值', hcRead.code === 0 && hcRead.data.deliveryNote.title === '验收横幅：次日达')
+  check('采购方读取·公告透出', hcRead.data.notice === '验收公告：每周日 20:00 截单')
+  check('采购方读取·推荐位顺序=配置顺序', JSON.stringify(hcRead.data.recommendations.map(p => p.id)) === JSON.stringify([...saleIds].reverse()), { got: hcRead.data.recommendations.map(p => p.id) })
+  check('推荐位只含在售字段(无供货价)', hcRead.data.recommendations.every(p => p.supplyPrice === undefined))
+  // ② 公告停用 → 前台返回 null（不渲染）
+  await call('PUT', '/admin/finance/home-content', {
+    deliveryNote: { title: '验收横幅：次日达', subtitle: '' },
+    notice: { enabled: false, text: '验收公告：每周日 20:00 截单' },
+    recommendationIds: saleIds,
+  }, at)
+  check('公告停用→buyer 侧 notice=null', (await call('GET', '/buyer/home-content', null, bt)).data.notice === null)
+  // ③ 推荐位混入不存在 id → 跳过不报错
+  await call('PUT', '/admin/finance/home-content', {
+    deliveryNote: { title: '验收横幅：次日达', subtitle: '' },
+    notice: { enabled: false, text: '' },
+    recommendationIds: [saleIds[0], 99999999],
+  }, at)
+  const hcSkip = await call('GET', '/buyer/home-content', null, bt)
+  check('推荐位混入不存在id被跳过', hcSkip.data.recommendations.length === 1 && hcSkip.data.recommendations[0].id === saleIds[0])
+  // ④ 非法 id（字符串）→ DTO 校验拒绝
+  const hcBad = await call('PUT', '/admin/finance/home-content', {
+    deliveryNote: { title: 'x' }, notice: { enabled: false }, recommendationIds: ['abc'],
+  }, at)
+  check('推荐位非法id被拒(1001)', hcBad.code === 1001)
+  // ⑤ 反向：供应商/配送员无权读采购方首页内容
+  check('供应商被拒·GET /buyer/home-content', (await call('GET', '/buyer/home-content', null, st)).code === 2002)
+  check('配送员被拒·GET /buyer/home-content', (await call('GET', '/buyer/home-content', null, ct)).code === 2002)
+  // ⑥ 复位：公告停用 + 推荐位清空（空数组 → 前台空态），不给后续用例留脏数据
+  await call('PUT', '/admin/finance/home-content', {
+    deliveryNote: { title: '', subtitle: '' }, notice: { enabled: false, text: '' }, recommendationIds: [],
+  }, at)
+  const hcReset = await call('GET', '/buyer/home-content', null, bt)
+  check('复位后·推荐位空数组(前台空态)', hcReset.data.recommendations.length === 0 && hcReset.data.notice === null)
+
   // ── 4. 核单拆单（10 待确认 → 30 备货中）──
   // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行
   //   10 待确认 ──支付后自动拆单──> 30 备货中 ──供应商确认备货完成──> 40 待配送 ──派单──> 45 ──取货──> 50
