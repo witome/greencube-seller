@@ -1,4 +1,11 @@
-import { IsNumber, IsBoolean, Min } from 'class-validator'
+import { IsNumber, IsBoolean, IsString, IsNotEmpty, Min } from 'class-validator'
+
+/// 收款二维码（货到付款，运营后台上传）
+export class PayQrDto {
+  @IsNotEmpty({ message: '收款二维码地址不能为空' })
+  @IsString()
+  url: string
+}
 
 /// 运费规则：满额免运费 / 次日达免运费 / 加急运费
 export class DeliveryFeeConfigDto {

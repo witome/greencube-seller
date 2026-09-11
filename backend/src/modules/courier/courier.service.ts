@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
-import { DeliverDto, ReportDto } from './dto/courier.dto'
+import { DeliverDto, ReportDto, PayProofDto } from './dto/courier.dto'
 
 /// 配送任务状态：0 待取货 / 1 已取货待出发 / 2 已出发配送中 / 3 已完成 / 4 异常
 const TaskStatus = { PENDING_PICKUP: 0, DELIVERING: 1, DEPARTED: 2, DONE: 3, EXCEPTION: 4 } as const
@@ -69,13 +69,22 @@ export class CourierService {
       : []
     const abnormalSet = new Set(abnormalOrders.map((o) => Number(o.id)))
 
+    // 查订单支付方式：货到付款(2)订单在今日任务里显示「货到付款」按钮
+    const orderPayments = orderIds.length
+      ? await this.prisma.order.findMany({
+          where: { id: { in: orderIds.map((id) => BigInt(id)) } },
+          select: { id: true, payMethod: true },
+        })
+      : []
+    const payMap = new Map(orderPayments.map((o) => [Number(o.id), o.payMethod]))
+
     return tasks.map((t) => ({
       taskId: Number(t.id),
       routeNo: t.routeNo,
       status: t.status,
       stationList: (Array.isArray(t.stationList) ? t.stationList : []).map((s: any) => {
         if (s.type === 'deliver' && s.orderId) {
-          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)) }
+          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)), payMethod: payMap.get(Number(s.orderId)) ?? null }
         }
         return s
       }),
@@ -224,9 +233,50 @@ export class CourierService {
 
     return {
       orderId,
-      payQrUrl: 'oss://pay/qr/demo.png', // 平台统一收款码（占位）
+      payQrUrl: await this.payQrUrl(),
       note: '客户称已支付，实际以服务端支付回调为准，配送员不作核销',
     }
+  }
+
+  // ────────────────────────────────────────
+  // 收款二维码：运营后台上传，配送员端读取展示（客户扫码付款）
+  // ────────────────────────────────────────
+  async payQr() {
+    return { url: await this.payQrUrl() }
+  }
+
+  private async payQrUrl(): Promise<string | null> {
+    const cfg = await this.prisma.platformConfig.findUnique({ where: { key: 'pay_qr' } })
+    const value = (cfg?.value as any) || {}
+    return value.url || null
+  }
+
+  // ────────────────────────────────────────
+  // 货到付款收款凭证：配送员上传客户付款拍照，记录到订单，运营后台可查
+  // ────────────────────────────────────────
+  async payProof(userId: bigint, orderId: number, dto: PayProofDto) {
+    const courier = await this.getCourier(userId)
+    const order = await this.prisma.order.findUnique({ where: { id: BigInt(orderId) } })
+    if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+    if (order.payMethod !== 2) throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '非货到付款订单')
+
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: {
+        payProof: { photos: dto.photos, courierId: Number(courier.id), paidAt: new Date().toISOString() },
+      },
+    })
+    await this.prisma.auditLog.create({
+      data: {
+        operatorId: userId,
+        action: 'COD_PAY_PROOF',
+        entity: 'order',
+        entityId: orderId,
+        after: { photos: dto.photos },
+      },
+    })
+
+    return { orderId, recorded: true }
   }
 
   // ────────────────────────────────────────

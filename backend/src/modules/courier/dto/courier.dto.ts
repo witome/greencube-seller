@@ -35,3 +35,9 @@ export class ReportDto {
   @IsArray()
   photos?: string[]
 }
+
+/// 货到付款收款凭证（配送员上传客户付款拍照）
+export class PayProofDto {
+  @IsArray()
+  photos: string[]
+}

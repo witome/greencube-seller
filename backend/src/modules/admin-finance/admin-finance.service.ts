@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode } from '../../common/constants/error-codes'
 import { AuditService } from '../audit/audit.service'
 import { ServiceFeeConfigDto, GenerateSettlementDto } from './dto/finance.dto'
-import { DeliveryFeeConfigDto } from './dto/delivery-fee.dto'
+import { DeliveryFeeConfigDto, PayQrDto } from './dto/delivery-fee.dto'
 
 @Injectable()
 export class AdminFinanceService {
@@ -232,6 +232,32 @@ export class AdminFinanceService {
     await this.audit.log({
       operatorId: userId,
       action: 'UPDATE_DELIVERY_FEE',
+      entity: 'platform_config',
+      entityId: 0,
+      after: value,
+    })
+    return value
+  }
+
+  // ────────────────────────────────────────
+  // 收款二维码（货到付款）：运营后台上传，配送员端展示供客户扫码付款
+  // ────────────────────────────────────────
+  async getPayQr() {
+    const cfg = await this.prisma.platformConfig.findUnique({ where: { key: 'pay_qr' } })
+    const value = (cfg?.value as any) || {}
+    return { url: value.url || null }
+  }
+
+  async updatePayQr(userId: bigint, dto: PayQrDto) {
+    const value = { url: dto.url }
+    await this.prisma.platformConfig.upsert({
+      where: { key: 'pay_qr' },
+      update: { value },
+      create: { key: 'pay_qr', value },
+    })
+    await this.audit.log({
+      operatorId: userId,
+      action: 'UPDATE_PAY_QR',
       entity: 'platform_config',
       entityId: 0,
       after: value,

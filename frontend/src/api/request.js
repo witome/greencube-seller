@@ -5,7 +5,14 @@
  * - 401/2001 跳登录
  */
 // 后端地址：开发/测试默认连本机 3001；生产部署时通过 VITE_API_BASE 环境变量覆盖
-const BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api/v1'
+// 真机调试：用局域网 IP（手机与电脑同 WiFi）；H5 本机预览也可用 127.0.0.1/localhost
+const BASE_URL = import.meta.env.VITE_API_BASE || 'http://192.168.1.78:3001/api/v1'
+
+// 图片/静态资源服务器地址（去掉 /api/v1 前缀），上传图片返回的相对路径拼此前缀
+export const BASE_HOST = BASE_URL.replace(/\/api\/v1$/, '')
+
+// 把上传返回的相对路径（/uploads/xxx）拼成完整可访问 URL
+export const fullUrl = (path) => (path ? (path.startsWith('http') ? path : BASE_HOST + path) : '')
 
 function request({ url, method = 'GET', data, header = {} }) {
   return new Promise((resolve, reject) => {

@@ -320,6 +320,8 @@ model Order {
   payMethod  Int      @default(0) @map("pay_method") @db.TinyInt
   /// 是否加急：0 普通 / 1 加急（加急收取加急运费）
   urgent     Int      @default(0) @db.TinyInt
+  /// 货到付款收款凭证：配送员上传的客户付款拍照 + 记录（photos/courierId/paidAt）
+  payProof   Json?    @map("pay_proof")
   /// 1 小程序自选 / 2 AI 客服代下单（阶段 2）
   source      Int      @default(1) @db.TinyInt
   createdAt   DateTime @default(now()) @map("created_at")

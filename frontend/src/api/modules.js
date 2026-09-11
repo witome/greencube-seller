@@ -87,6 +87,9 @@ export const courierApi = {
   deliverConfirm: (taskId, data) => post(`/courier/task/${taskId}/deliver`, data), // 拍照+签名
   report: (data) => post('/courier/report', data),
   markPaid: (orderId) => post(`/courier/order/${orderId}/mark-paid`), // 仅标记不作核销
+  getPayQr: () => get('/courier/pay-qr'), // 收款二维码（货到付款）
+  submitPayProof: (orderId, photos) => post(`/courier/order/${orderId}/pay-proof`, { photos }), // 上传付款凭证
+  uploadImage: (base64) => post('/upload/image', { base64 }), // 通用图片上传（交付照片/付款凭证）
   // 接单状态
   getStatus: () => get('/courier/status'),
   setOnline: (online) => post('/courier/online', { online }),

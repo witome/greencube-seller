@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common'
 import { CourierService } from './courier.service'
-import { DeliverDto, ReportDto } from './dto/courier.dto'
+import { DeliverDto, ReportDto, PayProofDto } from './dto/courier.dto'
 import { SetOnlineDto, SetAutoAcceptDto } from './dto/courier-setting.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
@@ -58,6 +58,20 @@ export class CourierController {
   @Roles(Role.COURIER)
   async markPaid(@CurrentUser('userId') userId: bigint, @Param('orderId') orderId: string) {
     return this.service.markPaid(userId, Number(orderId))
+  }
+
+  /// 收款二维码（运营后台上传，配送员端展示）
+  @Get('pay-qr')
+  @Roles(Role.COURIER)
+  async payQr() {
+    return this.service.payQr()
+  }
+
+  /// 货到付款收款凭证（上传客户付款拍照）
+  @Post('order/:orderId/pay-proof')
+  @Roles(Role.COURIER)
+  async payProof(@CurrentUser('userId') userId: bigint, @Param('orderId') orderId: string, @Body() dto: PayProofDto) {
+    return this.service.payProof(userId, Number(orderId), dto)
   }
 
   /// 接单状态查询（上下线 / 接单模式 / 配送中 / 任务数）

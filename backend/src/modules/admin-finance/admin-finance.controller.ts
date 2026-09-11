@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Body, Query } from '@nestjs/common'
 import { AdminFinanceService } from './admin-finance.service'
 import { ServiceFeeConfigDto, GenerateSettlementDto } from './dto/finance.dto'
-import { DeliveryFeeConfigDto } from './dto/delivery-fee.dto'
+import { DeliveryFeeConfigDto, PayQrDto } from './dto/delivery-fee.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -57,5 +57,19 @@ export class AdminFinanceController {
   @Roles(Role.ADMIN)
   async updateDeliveryFee(@CurrentUser('userId') userId: bigint, @Body() dto: DeliveryFeeConfigDto) {
     return this.service.updateDeliveryFeeConfig(userId, dto)
+  }
+
+  /// 收款二维码（货到付款）
+  @Get('pay-qr')
+  @Roles(Role.ADMIN)
+  async getPayQr() {
+    return this.service.getPayQr()
+  }
+
+  /// 上传收款二维码（货到付款）
+  @Put('pay-qr')
+  @Roles(Role.ADMIN)
+  async updatePayQr(@CurrentUser('userId') userId: bigint, @Body() dto: PayQrDto) {
+    return this.service.updatePayQr(userId, dto)
   }
 }

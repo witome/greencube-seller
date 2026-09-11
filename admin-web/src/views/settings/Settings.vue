@@ -76,6 +76,26 @@
       </div>
     </el-card>
 
+    <!-- 货到付款收款码 -->
+    <el-card shadow="never" class="admin-settings-card">
+      <template #header>💰 货到付款收款码（配送员端展示，客户扫码付款）</template>
+      <div v-loading="qrLoading">
+        <div class="admin-settings-qr">
+          <div v-if="payQrUrl" class="qr-box">
+            <el-image :src="payQrUrl" fit="cover" class="qr-img" />
+            <div class="qr-hint">当前收款码</div>
+          </div>
+          <div v-else class="qr-box qr-empty">尚未上传收款二维码</div>
+          <div class="qr-upload">
+            <input type="file" accept="image/*" style="display:none" ref="qrFileInput" @change="onQrFile" />
+            <el-button type="primary" size="small" @click="qrFileInput.click()">选择图片</el-button>
+            <el-button type="success" size="small" :loading="savingQr" :disabled="!pendingQrBase64" @click="saveQr">上传收款码</el-button>
+            <div class="qr-upload-tip">上传后配送员「货到付款」页面会展示该收款码，客户扫码付款。</div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 其他配置（暂未接入） -->
     <el-card shadow="never" class="admin-settings-card">
       <template #header>⚙️ 其他配置</template>
@@ -105,6 +125,13 @@ const newRate = ref(5)
 const feeForm = reactive({ fee: 5, freeThreshold: 100, freeNextDay: true, urgentFee: 0, urgentFreeThreshold: 0 })
 const feeLoading = ref(false)
 const savingFee = ref(false)
+
+// 货到付款收款码
+const payQrUrl = ref('')
+const qrLoading = ref(false)
+const savingQr = ref(false)
+const pendingQrBase64 = ref('')
+const qrFileInput = ref(null)
 
 // 可选分类 = 一级分类里排除已配置覆盖的
 const availableCategories = computed(() => {
@@ -194,9 +221,43 @@ async function saveFee() {
   }
 }
 
+// ── 收款码 ──
+async function loadQr() {
+  qrLoading.value = true
+  try {
+    const r = await financeAdminApi.getPayQr()
+    payQrUrl.value = r.url || ''
+  } catch (e) { /* 已提示 */ } finally {
+    qrLoading.value = false
+  }
+}
+
+function onQrFile(e) {
+  const file = e.target.files && e.target.files[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => { pendingQrBase64.value = reader.result }
+  reader.readAsDataURL(file)
+}
+
+async function saveQr() {
+  if (!pendingQrBase64.value) return
+  savingQr.value = true
+  try {
+    const { url } = await financeAdminApi.uploadImage(pendingQrBase64.value)
+    await financeAdminApi.updatePayQr({ url })
+    ElMessage.success('收款码已上传')
+    pendingQrBase64.value = ''
+    loadQr()
+  } catch (e) { /* 已提示 */ } finally {
+    savingQr.value = false
+  }
+}
+
 onMounted(() => {
   load()
   loadFee()
+  loadQr()
 })
 </script>
 
@@ -238,5 +299,45 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.8;
   padding: 32px 16px;
+}
+.admin-settings-qr {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.qr-box {
+  width: 160px;
+  height: 160px;
+  border: 1px dashed #d0d5db;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.qr-img {
+  width: 100%;
+  height: 138px;
+}
+.qr-hint {
+  font-size: 12px;
+  color: #8a9099;
+}
+.qr-empty {
+  color: #b8bec6;
+  font-size: 13px;
+}
+.qr-upload {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.qr-upload-tip {
+  font-size: 12px;
+  color: #8a9099;
+  line-height: 1.6;
 }
 </style>

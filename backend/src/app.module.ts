@@ -26,6 +26,7 @@ import { AuditModule } from './modules/audit/audit.module'
 import { AdminPricingModule } from './modules/admin-pricing/admin-pricing.module'
 import { AdminReportsModule } from './modules/admin-reports/admin-reports.module'
 import { RegisterModule } from './modules/register/register.module'
+import { UploadModule } from './modules/upload/upload.module'
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { RegisterModule } from './modules/register/register.module'
     AdminPricingModule,
     AdminReportsModule,
     RegisterModule,
+    UploadModule,
   ],
   providers: [
     // 全局统一响应包装

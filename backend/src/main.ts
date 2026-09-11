@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core'
+import { NestExpressApplication } from '@nestjs/platform-express'
 import { ValidationPipe, VersioningType } from '@nestjs/common'
 import { JwtModule } from '@nestjs/jwt'
+import { join } from 'path'
 import { AppModule } from './app.module'
 
 /// 启动前校验关键密钥：缺失或仍用可猜默认值直接拒绝启动，防止生产事故
@@ -14,7 +16,10 @@ function assertSecureSecrets() {
 async function bootstrap() {
   assertSecureSecrets()
 
-  const app = await NestFactory.create(AppModule)
+  const app = await NestFactory.create<NestExpressApplication>(AppModule)
+
+  // 静态资源：上传的图片（交付照片 / 收款码 / 付款凭证）
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads/' })
 
   // JWT 全局注册（RolesGuard 需要注入 JwtService）
   JwtModule.register({

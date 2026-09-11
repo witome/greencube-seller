@@ -6,7 +6,16 @@
       <view class="card-title">交付确认</view>
       <view class="form-row"><view class="fr-l">任务号</view><view class="fr-r">{{ taskId || '暂无进行中任务' }}</view></view>
       <view v-if="showAmount" class="form-row"><view class="fr-l">订单总金额（货到付款）</view><view class="fr-r amount">{{ amount }}</view></view>
-      <view class="form-row"><view class="fr-l">现场照片</view><view class="fr-r" @tap="t('拍照上传（真实场景接 uni.chooseImage）')">📷 ＋ 拍照</view></view>
+      <view class="form-row">
+        <view class="fr-l">现场照片</view>
+        <view class="fr-r" @tap="takePhoto">📷 ＋ 拍照</view>
+      </view>
+      <view v-if="photos.length" class="photo-grid">
+        <view v-for="(p, i) in photos" :key="i" class="photo-item">
+          <image :src="fullUrl(p)" mode="aspectFill" class="photo-img" />
+          <view class="photo-del" @tap="removePhoto(i)">✕</view>
+        </view>
+      </view>
       <view class="form-row"><view class="fr-l">备注</view><view class="fr-r"><input class="ipt" v-model="remark" placeholder="选填" /></view></view>
     </view>
 
@@ -22,13 +31,52 @@
 import { ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { courierApi } from '@/api/modules'
+import { fullUrl } from '@/api/request'
 import CustomTabBar from '@/components/CustomTabBar.vue'
 
 const taskId = ref('')
 const remark = ref('')
 const amount = ref('-')
 const showAmount = ref(false)
+const photos = ref([])
 const t = (msg) => uni.showToast({ title: msg, icon: 'none' })
+
+// 拍照 → 转 base64 → 上传，拿到 url 加入列表
+const takePhoto = () => {
+  uni.chooseImage({
+    count: 1,
+    sourceType: ['camera'],
+    success: async (res) => {
+      try {
+        const path = res.tempFilePaths[0]
+        const base64 = await fileToBase64(path)
+        const { url } = await courierApi.uploadImage(base64)
+        photos.value.push(url)
+      } catch (e) {
+        uni.showToast({ title: '照片上传失败', icon: 'none' })
+      }
+    },
+  })
+}
+
+const removePhoto = (i) => photos.value.splice(i, 1)
+
+// 本地文件转 base64（小程序端 readFile；H5 端 chooseImage 已返回 base64）
+const fileToBase64 = (path) => {
+  return new Promise((resolve, reject) => {
+    // #ifdef MP-WEIXIN
+    uni.getFileSystemManager().readFile({
+      filePath: path,
+      encoding: 'base64',
+      success: (r) => resolve(`data:image/jpeg;base64,${r.data}`),
+      fail: reject,
+    })
+    // #endif
+    // #ifndef MP-WEIXIN
+    resolve(path)
+    // #endif
+  })
+}
 
 // 查任务订单总金额（仅货到付款订单显示，供配送员与采购方核对交付金额）
 const loadAmount = async () => {
@@ -55,7 +103,7 @@ onShow(() => {
 
 const confirm = async () => {
   if (!taskId.value) { uni.showToast({ title: '暂无进行中任务', icon: 'none' }); return }
-  await courierApi.deliverConfirm(Number(taskId.value), { photos: [], remark: remark.value })
+  await courierApi.deliverConfirm(Number(taskId.value), { photos: photos.value, remark: remark.value })
   uni.showToast({ title: '交付完成', icon: 'success' })
   setTimeout(() => uni.reLaunch({ url: '/subpkg-courier/pages/home' }), 600)
 }
@@ -82,4 +130,8 @@ onLoad(async (opts) => {
 .ipt { text-align: right; min-height: 40px; height: 40px; line-height: 40px; }
 .row-btns { padding: 12px; }
 .disabled { opacity: 0.5; }
+.photo-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+.photo-item { position: relative; width: 72px; height: 72px; }
+.photo-img { width: 72px; height: 72px; border-radius: 8px; }
+.photo-del { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; background: #fa5151; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
 </style>

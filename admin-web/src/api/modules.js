@@ -69,6 +69,9 @@ export const financeAdminApi = {
   generateSettlement: (data) => request.post('/admin/finance/generate', data),
   getDeliveryFee: () => request.get('/admin/finance/delivery-fee'),
   updateDeliveryFee: (data) => request.put('/admin/finance/delivery-fee', data),
+  getPayQr: () => request.get('/admin/finance/pay-qr'),
+  updatePayQr: (data) => request.put('/admin/finance/pay-qr', data),
+  uploadImage: (base64) => request.post('/upload/image', { base64 }),
 }
 
 /* ── 价格与加价 ── */

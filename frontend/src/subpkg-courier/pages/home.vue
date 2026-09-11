@@ -50,6 +50,7 @@
           <text v-else-if="s.picked" class="cargo-picked">✓ 已取</text>
           <view v-else class="cargo-btn pickup" @tap="doPickup(s.orderId)">取货</view>
           <view v-if="!s.abnormal" class="cargo-btn report" @tap="doReport(t, s)">异常上报</view>
+          <view v-if="!s.abnormal && s.payMethod === 2" class="cargo-btn cod" @tap="goCodPay(s)">货到付款</view>
         </view>
       </view>
       <!-- 底部操作：取货 → 出发 → 交付确认；异常任务可「完成」 -->
@@ -142,6 +143,10 @@ const doReport = (t, s) => {
   uni.navigateTo({ url: `/subpkg-courier/pages/report?taskId=${t.taskId}&orderId=${s.orderId}` })
 }
 
+const goCodPay = (s) => {
+  uni.navigateTo({ url: `/subpkg-courier/pages/cod-pay?orderId=${s.orderId}&shopName=${encodeURIComponent(s.shopName || '')}` })
+}
+
 const goDeliver = (t) => {
   // 已出发(2)或异常(4)任务均可交付/完成
   if (t.status !== 2 && t.status !== 4) {
@@ -222,6 +227,7 @@ onShow(() => {
 .cargo-btn { padding: 5px 14px; border-radius: 14px; font-size: 12px; }
 .cargo-btn.pickup { background: $color-primary; color: #fff; }
 .cargo-btn.report { background: #fff4e6; color: #e6a23c; }
+.cargo-btn.cod { background: #fff0e6; color: #ff8f1f; }
 .cargo-actions { display: flex; gap: 8px; margin-top: 10px; }
 .cargo-deliver { flex: 1; background: $color-primary; color: #fff; text-align: center; padding: 9px; border-radius: 20px; font-size: 14px; font-weight: 600; }
 .cargo-deliver.disabled { background: #c0c6cd; }
