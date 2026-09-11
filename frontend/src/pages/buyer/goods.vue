@@ -25,7 +25,7 @@
           <view class="gc-cover">{{ g.name.slice(0, 1) }}</view>
           <view class="gc-main">
             <view class="gc-name">{{ g.name }}</view>
-            <view class="gc-spec">{{ g.specText || (g.weighType === 1 ? '称重商品·多退少补' : '固定规格') }}</view>
+            <view class="gc-spec">{{ g.specText || (g.weighType === 1 ? '称重' : '固定规格') }}</view>
             <view class="gc-bottom">
               <text class="gc-price">¥{{ g.salePrice }}</text>
               <text class="gc-unit">/{{ g.unit }}</text>
@@ -170,15 +170,15 @@ onShow(() => {
 .cate-side { width: 88px; background: #f7f8fa; height: 100%; flex-shrink: 0; }
 .cate-item { padding: 14px 8px; font-size: 13px; color: $text-second; text-align: center; }
 .cate-item.on { background: #fff; color: $color-primary; font-weight: 700; }
-.goods-list { flex: 1; height: 100%; padding: 8px 12px; box-sizing: border-box; }
+.goods-list { flex: 1; min-width: 0; height: 100%; padding: 8px 6px; box-sizing: border-box; }
 .goods-card { display: flex; gap: 10px; padding: 10px; background: #fff; border-radius: 8px; margin-bottom: 10px; }
 .gc-cover { width: 64px; height: 64px; border-radius: 8px; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
-.gc-main { flex: 1; }
+.gc-main { flex: 1; min-width: 0; }
 .gc-name { font-size: 15px; font-weight: 600; color: $text-title; }
 .gc-spec { font-size: 11px; color: $text-second; margin: 4px 0 8px; }
-.gc-bottom { display: flex; align-items: center; gap: 4px; }
-.gc-price { color: #fa5151; font-size: 16px; font-weight: 700; }
-.gc-unit { font-size: 11px; color: $text-second; flex: 1; }
+.gc-bottom { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.gc-price { color: #fa5151; font-size: 16px; font-weight: 700; flex-shrink: 0; }
+.gc-unit { font-size: 11px; color: $text-second; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
 .gc-add { width: 26px; height: 26px; border-radius: 50%; background: $color-primary; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
 .stepper { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .st-btn { width: 24px; height: 24px; border-radius: 50%; background: $color-primary; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; }
