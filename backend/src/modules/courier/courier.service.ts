@@ -394,6 +394,12 @@ export class CourierService {
     })
     if (!task) throw new BizException(ErrorCode.NOT_FOUND, '未找到该订单的配送任务')
 
+    // 审计前置：只读记录取货前订单状态（不参与任何业务判定，仅用于留痕 before）
+    const orderBefore = await this.prisma.order.findUnique({
+      where: { id: BigInt(orderId) },
+      select: { status: true },
+    })
+
     const stations = (Array.isArray(task.stationList) ? task.stationList : []).map((s: any) => {
       if (s.type === 'deliver' && Number(s.orderId) === orderId) return { ...s, picked: true }
       return s
@@ -411,6 +417,23 @@ export class CourierService {
         data: { status: OrderStatus.DELIVERING },
       }),
     ])
+
+    // 铁律 3：订单级取货与任务级 pickup 同语义 → 沿用 COURIER_PICKUP；以 entity='order'+entityId=orderId 区分入口
+    // （2026-09-11 补，闭合多入口排查 S1；after 的订单状态按 updateMany 的实际条件镜像，不改状态流转本身）
+    const orderPickable = orderBefore != null && (orderBefore.status === OrderStatus.ASSIGNED || orderBefore.status === OrderStatus.WAIT_DELIVERY)
+    await this.audit.log({
+      operatorId: courier.userId,
+      action: 'COURIER_PICKUP',
+      entity: 'order',
+      entityId: orderId,
+      before: { orderStatus: orderBefore?.status ?? null, taskStatus: task.status },
+      after: {
+        orderStatus: orderPickable ? OrderStatus.DELIVERING : (orderBefore?.status ?? null),
+        taskStatus: allPicked ? TaskStatus.DELIVERING : TaskStatus.PENDING_PICKUP,
+        taskId: Number(task.id),
+        allPicked,
+      },
+    })
 
     return { orderId, picked: true, taskId: Number(task.id), allPicked }
   }

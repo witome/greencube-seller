@@ -1,0 +1,46 @@
+admin 登录原始返回(掩码): {"http":201,"code":0,"msg":"ok","data":{"token":"eyJhbG***","userId":4,"roles":["admin"],"currentRole":"admin","accountStatus":null,"needRegister":false}}
+✅ admin 登录  {"userId":4,"currentRole":"admin"}
+courier 登录原始返回(掩码): {"http":201,"code":0,"msg":"ok","data":{"token":"eyJhbG***","userId":6,"roles":["courier"],"currentRole":"courier","accountStatus":null,"needRegister":false}}
+✅ courier 登录  {"userId":6,"currentRole":"courier"}
+mysql: [Warning] Using a password on the command line interface can be insecure.
+audit_log 基线 max(id) = 509
+
+──────── 入口A：POST /courier/task/:taskId/pickup（任务级）────────
+mysql: [Warning] Using a password on the command line interface can be insecure.
+订单 216 派单前 status = 40
+POST /admin/dispatch {courierId:1, orderIds:[216]} → {"http":201,"code":0,"msg":"ok","data":{"taskId":107,"routeNo":"R20260911-1","orderCount":1}}
+✅ 入口A 派单成功（拿到 taskId）  {"taskIdA":107}
+mysql: [Warning] Using a password on the command line interface can be insecure.
+mysql: [Warning] Using a password on the command line interface can be insecure.
+POST /courier/task/107/pickup → {"http":201,"code":0,"msg":"ok","data":{"taskId":107,"status":1}}   audit max(id): 510 → 511
+✅ 入口A 接口成功  {"code":0,"msg":"ok"}
+mysql: [Warning] Using a password on the command line interface can be insecure.
+✅ 入口A 落审计 COURIER_PICKUP(entity=delivery_task)  {"rowsA":"511:COURIER_PICKUP:delivery_task:107"}
+
+──────── 入口B：POST /courier/order/:orderId/pickup（订单级，本卡补）────────
+mysql: [Warning] Using a password on the command line interface can be insecure.
+订单 218 派单前 status = 40
+POST /admin/dispatch {courierId:1, orderIds:[218]} → {"http":201,"code":0,"msg":"ok","data":{"taskId":108,"routeNo":"R20260911-1","orderCount":1}}
+✅ 入口B 派单成功（拿到 taskId）  {"taskIdB":108}
+mysql: [Warning] Using a password on the command line interface can be insecure.
+mysql: [Warning] Using a password on the command line interface can be insecure.
+POST /courier/order/218/pickup → {"http":201,"code":0,"msg":"ok","data":{"orderId":218,"picked":true,"taskId":108,"allPicked":true}}   audit max(id): 512 → 513
+✅ 入口B 接口成功  {"code":0,"msg":"ok"}
+✅ 入口B 落审计（max(id) 增长）  {"m3":512,"m4":513}
+mysql: [Warning] Using a password on the command line interface can be insecure.
+✅ 入口B action = COURIER_PICKUP（沿用同名）
+mysql: [Warning] Using a password on the command line interface can be insecure.
+✅ 入口B entity = order（与任务级区分入口）
+
+══════════ 两入口审计行明细（本卡新增）══════════
+SQL> SELECT id, operator_id, action, entity, entity_id,`before`,`after` FROM audit_log WHERE id > 509 AND action='COURIER_PICKUP' ORDER BY id;
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-----+-------------+----------------+---------------+-----------+--------------------------------------+------------------------------------------------------------------------+
+| id  | operator_id | action         | entity        | entity_id | before                               | after                                                                  |
++-----+-------------+----------------+---------------+-----------+--------------------------------------+------------------------------------------------------------------------+
+| 511 |           6 | COURIER_PICKUP | delivery_task |       107 | {"taskStatus": 0}                    | {"orderIds": [216], "taskStatus": 1}                                   |
+| 513 |           6 | COURIER_PICKUP | order         |       218 | {"taskStatus": 0, "orderStatus": 45} | {"taskId": 108, "allPicked": true, "taskStatus": 1, "orderStatus": 50} |
++-----+-------------+----------------+---------------+-----------+--------------------------------------+------------------------------------------------------------------------+
+
+
+全部通过 ✅

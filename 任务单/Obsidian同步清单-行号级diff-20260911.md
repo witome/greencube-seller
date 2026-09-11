@@ -27,7 +27,7 @@
 | 3 | `绿立方卖菜平台workbuddy版.md`（主计划） | 8 | 🔴 高 |
 | 4 | `代码工程索引.md` | 13 | 🟠 中（**新发现**，剩余清单未覆盖） |
 | 5 | `开发配套-数据模型与接口草案.md` | 3 | 🟠 中（含 1 条**新发现**） |
-| 6 | `开发配套-API接口字段契约.md` | 1 | 🟠 中（**新发现**：五数量措辞与代码不符） |
+| 6 | `开发配套-API接口字段契约.md` | 24 | 🟠 中（§7️⃣：全文逐段复核新增；原 317 行一条已由大辉侧落地） |
 
 ---
 
@@ -182,6 +182,121 @@
 | 317 | `> ⚠️ 五数量分别返回、互不覆盖；\`qtySorted\`(④) 仅运营端可见。` | `> ⚠️ 数量字段分别返回、互不覆盖；**当前实际启用四数量（订购 / 申报 / 验收 / 接受）**；\`qtySorted\`(④) 为**预留字段、业务未启用**（后端全仓零引用；订单明细接口为显式字段映射，未包含该字段）。` | 🆕 **新发现**：原文把 `qtySorted` 当作已启用且接口会返回的字段；实际全仓零引用（2026-09-11 拍板「文档降级」） |
 
 > 该文件**除第 317 行外**本次未发现其他与代码冲突处；含称重接口示例的段落仍建议后续单独复核一次。
+> **✅ 2026-09-11 晚已全文逐段复核**（覆盖全部 586 行 / 35 个接口小节），新发现 24 条 → **见下方 §7️⃣**；第 317 行修改建议大辉侧已落，当前文件状态核对无误。
+
+---
+
+## 7️⃣ `开发配套-API接口字段契约.md` 全文逐段复核 【2026-09-11 晚·本卡新增】
+
+> **核对范围**：该文件全部 **586 行**、**35 个接口小节**（`grep '^### '` 计数）+ §0 通用约定 3 小节 + §10 前端示例 + 「待补」节，**无空白段落**。
+> **核对方法**：每个小节的路径 / 请求字段 / 返回字段 / 状态码 / 示例 payload，逐项与后端 controller + service 实际返回对照（`backend/src/modules/**`，基线 commit cd06411）。
+> **结果**：**24 条对不上**（下表）；其余段落「已核对无误」明细见章末。
+> **判定依据**：每条引用《剩余清单》第 4 节规则 —— 默认规则①（代码+一键验收为准）；无一处触发规则④（本轮未发现代码与原型冲突）、规则⑤（无金额/权限/schema 分歧需停下）。
+> **⚠️ 行号基准**：以 **2026-09-11 晚当前文件状态**为准（含第 317 行已落的新措辞）。
+
+### 7.1 §0 通用约定（2 条）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 51 | `- 所有写操作请求头带 \`Idempotency-Key\`（UUID），服务端去重。` | 加注：`（⚠️ 规划项：当前后端全仓未实现 Idempotency-Key 去重，MVP 依赖前端防重复提交；实现后再移回正文）` | 规则①：`grep -r Idempotency` 全仓零命中，代码无此机制 |
+| 67 | `"refreshToken": "...",` | 删除该行，或加注 `（预留，当前实现不返回）` | 规则①：`auth.service.ts:54-61` wx-login 仅返回 token/userId/roles/currentRole/accountStatus/needRegister；`refreshToken` 全仓零实现（实测登录返回可证） |
+
+### 7.2 §1 auth（1 条）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 99 | `"phone": "138****6621",` | 示例值改为未脱敏（如 `"13800000000"`）或加注 `（当前实现直接返回原文，未脱敏）` | 规则①：`auth.service.ts:99` `phone: user.phone` 原文返回，无掩码处理 |
+
+### 7.3 §2 buyer（1 条）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 160 | `{ "appealId": 88, "accountStatus": 1 }` | 加注：`（当前实现 appealId 恒为 0，未回填真实申诉单 id）` | 规则①：`buyer.service.ts:132` 硬编码 `appealId: 0` |
+
+### 7.4 §4 cart（1 条·结构性）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 234-242 | `GET /cart` 返回 `groups`（按供应商分组）+ `shortagePolicy` | 改为平铺结构：`{ "list": [ { cartItemId, productId, name, unit, weighType, qty, salePrice, subtotal, onSale } ], "totalAmount": ... }`（无 groups / shortagePolicy / unit 之外字段照代码）；若「按供应商分组」是原型硬需求 → **触发规则④，停下来问** | 规则①：`cart.service.ts:52` 返回 `{ list, totalAmount }`，无分组、无 shortagePolicy；item 多 `weighType`/`onSale` |
+
+### 7.5 §5 order（4 条）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 269-270 | POST `/order` Request 无 `urgent` | 补列可选字段 `"urgent": 0`（0 普通 / 1 加急，加收运费） | 规则①：`CreateOrderDto` + `order.service.ts:51` `dto.urgent ?? 0` |
+| 274 | Response `{ "orderId": ..., "status": 10, "amountOrdered": ... }` | 补 `"deliveryFee"` 字段；加注 `（返回的 status=10 为下单快照；落库后事务内已即时自动拆单进入 30 备货中）` | 规则①：`order.service.ts:107` 返回四字段；`:83` 事务内 autoSplit |
+| 299 | `"address": "...",` | 删除，或加注 `（订单详情当前不返回 address）` | 规则①：`order.service.ts:224-250` detail 返回无 address 字段 |
+| 313 | `"courier": { "name": "小李", "phone": "138****0000" }` | 删除，或加注 `（预留：当前详情接口不返回配送员信息）` | 规则①：detail 返回无 courier 字段 |
+
+**附带（不改字段名，只改示例值）**：
+
+| 行号 | 问题 | 建议 | 判定依据 |
+|---|---|---|---|
+| 309 | `"subtotal": 36.48` 示例值口径误导（36.48 = 28.5×1.28 是按 qtyAccepted 算） | 示例值改为 `38.4`（= qtyOrdered 30 × salePrice 1.28），并加注 `subtotal = qtyOrdered × salePrice` | 规则①：`order.service.ts:242` `qtyOrdered * salePrice` |
+
+### 7.6 §6 supplier-goods（2 条）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 341 | `status`: `all \| on_sale \| changing \| pending \| rejected` | 补 `off_shelf`（已下架） | 规则①：`supplier-goods.service.ts:63-64` 第三分支 `status='off_shelf'` |
+| 350 | `"changeInfo": { "from": 1.85, "to": 1.70, "field": "supplyPrice" }` | 改为数组结构：`"changeInfo": [ { "field": "supplyPrice", "fieldText": "供货价", "oldValue": 1.85, "newValue": 1.70 } ]` | 规则①：`supplier-goods.service.ts:80` `changeInfo: pendingChange.diffs`（diffs 数组，与 §9 change-pending 同构） |
+
+### 7.7 §7 supplier-fulfill（1 条）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 414 | `{ "declared": 2 }` | `{ "orderId": 100234, "shortageDeclared": 2 }`（shortageDeclared = 本次**缺货**申报明细条数；有货默认满额无需申报） | 规则①：`supplier-fulfill.service.ts:115` `return { orderId, shortageDeclared: declaredCount.length }`；且仅缺货分支计数 |
+
+### 7.8 §8 courier（3 条 + 1 缺口清单）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 424-431 | `GET /courier/today-tasks` 返回单对象 `{ routeNo, stations: [...] }` | 改为**任务数组**：`[ { "taskId": 107, "routeNo": "...", "status": 0, "stationList": [ { type: "pickup"/"deliver", orderId, shopName, address, picked, items: [{name,qty,unit}], abnormal, payMethod } ] } ]`（station 无 `seq`/`status` 字段） | 规则①：`courier.service.ts:82-92` `tasks.map(...)` 返回数组，字段为 `taskId/routeNo/status/stationList` |
+| 440 | `{ "taskId": 9001, "status": "done" }` | `{ "taskId": 9001, "status": 3, "deliveredOrders": 2, "resumed": true }`（status 为数字：3=已完成；resumed=全部任务完成恢复接单） | 规则①：`courier.service.ts:185` `return { taskId, status: TaskStatus.DONE, deliveredOrders, resumed }` |
+| 445-450 | mark-paid 仅示例 `payQrUrl`/`note` | 补 `"orderId"` 返回字段；补注 `payQrUrl` 来自平台配置（可能为 null） | 规则①：`courier.service.ts:265-269` |
+
+**缺接口（文档未列，代码已实现，建议补节或注明「见《数据模型与接口草案》」）**：
+
+| 缺失接口 | 对应实现 |
+|---|---|
+| `POST /courier/task/{taskId}/pickup`（任务级一键取货，任务 0→1、订单 45/40→50） | `courier.controller.ts:29` |
+| `POST /courier/order/{orderId}/pickup`（订单级扫码取货） | `courier.controller.ts:36` |
+| `POST /courier/depart`（出发，校验未取货订单） | `courier.controller.ts:99` |
+| `POST /courier/report`（异常上报，orderId/taskId 双粒度） | `courier.controller.ts:50` |
+| `POST /courier/order/{orderId}/pay-proof`（COD 收款凭证上传） | `courier.controller.ts:71` |
+| `GET /courier/task/{taskId}/amount`（COD 金额核对，仅 payMethod=2 返回金额） | `courier.controller.ts:22` |
+| `GET /courier/status` / `POST /courier/online` / `POST /courier/auto-accept`（接单状态三件套） | `courier.controller.ts:78-96` |
+
+### 7.9 §9 admin（5 条）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 483 | `"registerIp": "60.12.45.88",` | 删除，或加注 `（当前实现不采集 registerIp；风控预检为手机号/地址重复两项）` | 规则①：`admin-user.service.ts:77-88` riskHints 仅手机号注册数 + 地址重复；返回无 registerIp |
+| 504 | `{ "purchaserId": 601, "accountStatus": 2, "verificationId": 91 }` | 加注：`（当前实现 verificationId 恒为 0）` | 规则①：`admin-user.service.ts:166` 硬编码 `verificationId: 0` |
+| 517 | `{ "orderId": 100234, "status": 20, "supplierCount": 2 }` | `"status": 20` → **`"status": 30`**（拆完直接进入「备货中」；20=已拆单状态机里不落） | 规则①：`admin-order.service.ts:189-201` 事务内置 `STOCKING(30)` 并原样返回；`error-codes.ts` OrderStatus.STOCKING=30 |
+| 520 | `前端可先调用 \`GET /admin/order/{id}/split-preview\` ...` | 删除该行，或改注：`（后端无 split-preview 路由；自动分配建议由前端按优先级本地试算，或运营直接用 POST /admin/order/{id}/auto-split）` | 规则①：`admin-order.controller.ts` 仅 `split` / `auto-split` / `re-split-shortage` 三个写路由，无 GET split-preview |
+| 522-529 | `### POST /admin/order/{id}/weighing — 验收称重` **整节**（含示例 payload） | **整节标注「已废弃」**：`（该接口已从代码移除；状态机注释明示「供应商确认备货后直接进入待配送，不再单独验收称重」；验收数量改由 POST /order/{id}/receive 逐项确认承载 qtyAccepted）` | 规则①：全仓无 `/admin/order/:id/weighing` 路由（admin-order.controller 仅 3 个写路由）；`error-codes.ts` `WAIT_DELIVERY: 40` 注释原文 |
+
+### 7.10 「待补」节（2 条）
+
+| 行号 | 原文 | 改为 | 判定依据 |
+|---|---|---|---|
+| 584 | `- \`/payment/*\` 线上支付与回调` | 加注：`（mock 支付已实现：POST /payment/mock/pay + POST /payment/mock/callback；真实微信支付待商户凭证到位，WX_MOCK_LOGIN=1 期间走 mock）` | 规则①：`payment/mock-pay.controller.ts` 两路由已存在 |
+| 585 | `- \`/admin/courier/apply\` 配送员申请审核` | 改注：`（实际实现：申请走 POST /register/courier；运营审核走 PUT /admin/user/couriers/:id/status（REVIEW_COURIER））` | 规则①：`register.controller.ts:22` + `admin-user.controller.ts:129` |
+
+### 7.11 已核对无误的段落（无需改）
+
+- **§0**：响应信封 ✅（`{code,msg,data}` 与全局过滤器一致）；错误码分段与常用码表 1001~4001 ✅（`error-codes.ts` 逐项对）；金额/分页/时间约定 ✅；JWT payload（userId/roles/currentRole）✅
+- **§1**：switch-role（决策 4 重签 token）✅；profile 结构 ✅（purchaser/supplier 子对象实际返回更多字段，文档列子集不算冲突）
+- **§2**：register 返回 `{purchaserId, accountStatus, estimatedHours}` ✅；pending 返回 `{accountStatus, submittedAt, overdue, steps, rejectInfo}` ✅；urge-verify ✅
+- **§3**：categories / list / {id} 三个接口字段逐项一致 ✅（`supplierCount`、`weighNote`、`supplyPrice: null` 均在）
+- **§4**：POST /cart、PUT qty=0 视为删除、DELETE ✅
+- **§5**：订单列表（statusText/amountFinal）✅；receive 请求/返回（status 70 / aftersaleIds / 决策 3）✅；**第 317 行四数量注**（上一卡落定）✅
+- **§6**：apply（applyId/pending）✅；stock（免审即时生效 + effectiveImmediately）✅；change（changeId/changing + 3004/3008 校验）✅
+- **§7**：stock-list（orderId/deliveryDate/declareDeadline/items 四字段）✅
+- **§8**：mark-paid 主体语义（铁律：不返回金额、不作核销）✅
+- **§9**：buyers/pending（agentName/methods/status/statusText/overdue）✅；verify 请求结构 ✅；change-pending ✅；change review（newSalePrice 涉价重算）✅；service-fee preview（affectedSuppliers/sample 三值/不追溯注）✅
+- **§10**：`res.code === 0` 信封判断 ✅
 
 ---
 

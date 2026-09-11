@@ -1,0 +1,633 @@
+══════════════════════════════════════════════════════════
+ 审计闭合验证 ③：覆盖率重算 + 真跑证据汇总
+ 时间: 2026-09-11T12:48:46.908Z
+══════════════════════════════════════════════════════════
+
+【静态扫描】
+  写端点（POST/PUT/PATCH/DELETE）合计: 68
+  审计调用点合计: 52  | 唯一 action 常量: 48
+
+【一、运营侧覆盖率（铁律 3 直接适用）】
+  期望接口数: 33
+  命中 action: 33
+  覆盖率: 33/33 = 100.0%
+  本卡新补 6 条：HANDLE_DELIVERY_EXCEPTION, ASSIGN_BUYER_AGENT, CATEGORY_CREATE, CATEGORY_UPDATE, CATEGORY_DELETE, SET_SUPPLIER_CATEGORIES
+
+【二、非运营侧覆盖率（35 个写接口）】
+  15/35 = 42.9%（上一卡基线 6/35 = 17.1%）
+  本卡新补 9 条:
+     ✅ POST /courier/task/:taskId/pickup  — 本卡补 COURIER_PICKUP
+     ✅ POST /courier/task/:taskId/deliver  — 本卡补 COURIER_DELIVER
+     ✅ POST /courier/order/:orderId/mark-paid  — 本卡补 COD_MARK_PAID
+     ✅ POST /order  — 本卡补 ORDER_CREATE
+     ✅ POST /order/:id/cancel  — 本卡补 ORDER_CANCEL
+     ✅ POST /order/:id/receive  — 本卡补 ORDER_RECEIVE
+     ✅ POST /order/:id/update  — 本卡补 ORDER_UPDATE
+     ✅ POST /order/:id/pay  — 本卡补 ORDER_PAY
+     ✅ PUT /supplier-goods/:productId/stock  — 本卡补 QUICK_UPDATE_DAILY_SUPPLY
+  仍未补（本卡范围外 / 待拍板）:
+     ⬜ POST /ai/parse  — 解析不落库
+     ⬜ POST /auth/wx-login  — 认证类
+     ⬜ POST /auth/switch-role  — 认证类
+     ⬜ POST /buyer/register  — 注册（register 模块另有留痕）
+     ⬜ POST /buyer/appeal  — 申诉提交（本次未在清单）
+     ⬜ POST /buyer/urge-verify  — 催办
+     ⬜ POST /buyer/aftersale  — 建售后单（本次未在清单）
+     ⬜ POST /cart  — 购物车
+     ⬜ PUT /cart/:id  — 购物车
+     ⬜ DELETE /cart/:id  — 购物车
+     ⬜ POST /courier/order/:orderId/pickup  — 订单级取货（未单列，见卡内待拍板）
+     ⬜ POST /courier/online  — 配送员自身状态
+     ⬜ POST /courier/auto-accept  — 配送员自身状态
+     ⬜ POST /courier/depart  — 配送员自身状态
+     ⬜ POST /order/:id/urgent  — 加急（本次未在清单）
+     ⬜ POST /payment/mock/pay  — 模拟通道
+     ⬜ POST /payment/mock/callback  — 模拟通道
+     ⬜ POST /supplier-goods/apply  — 进审核流（运营 decide 已留痕）
+     ⬜ POST /supplier-goods/:productId/change  — 进审核流（运营 decide 已留痕）
+     ⬜ POST /upload/image  — 附件上传
+
+【三、总覆盖率】
+  写接口总数 68：已留痕 48 = 70.6%
+
+【四、全批次真跑证据（audit_log 实测行）】
+SQL> SELECT action, COUNT(*) AS cnt, MIN(id) AS min_id, MAX(id) AS max_id FROM audit_log WHERE id > 0 GROUP BY action ORDER BY min_id;
+mysql: [Warning] Using a password on the command line interface can be insecure.
++---------------------------+-----+--------+--------+
+| action                    | cnt | min_id | max_id |
++---------------------------+-----+--------+--------+
+| UPDATE_PRICING            |   2 |      1 |      5 |
+| UPDATE_SERVICE_FEE        |   5 |      2 |    379 |
+| RE_SPLIT                  |   6 |      4 |    377 |
+| UPDATE_DELIVERY_FEE       |  13 |      6 |     91 |
+| BATCH_MARKUP              |   2 |      7 |      8 |
+| courier_report            |  20 |      9 |    466 |
+| SPLIT                     |  58 |     10 |    499 |
+| SET_SUPPLY_PRIORITY       |   7 |     29 |    378 |
+| SUPPLIER_HANDOVER         | 129 |     35 |    501 |
+| AUTO_ASSIGN_DISPATCH      |   4 |     42 |     78 |
+| RE_SPLIT_SHORTAGE         |   4 |     68 |    362 |
+| SUPPLIER_DECLARE          |  37 |     95 |    500 |
+| REGISTER_COURIER          |   5 |    104 |    114 |
+| REGISTER_SUPPLIER         |   3 |    105 |    111 |
+| UPDATE_BUYER              |   1 |    108 |    108 |
+| UPDATE_SUPPLIER           |   1 |    109 |    109 |
+| UPDATE_COURIER            |   1 |    110 |    110 |
+| REVIEW_COURIER            |   2 |    115 |    116 |
+| ASSIGN_DISPATCH           |  41 |    123 |    512 |
+| GENERATE_SETTLEMENT       |  39 |    124 |    506 |
+| AUTO_DECLARE_FALLBACK     |   3 |    125 |    127 |
+| AFTERSALE_HANDLE          |   3 |    128 |    381 |
+| REVIEW_BUYER_APPEAL       |   2 |    130 |    132 |
+| REVIEW_BUYER              |  60 |    131 |    490 |
+| UPDATE_PAY_QR             |   1 |    135 |    135 |
+| COD_PAY_PROOF             |   1 |    136 |    136 |
+| ORDER_CREATE              |  15 |    439 |    507 |
+| ORDER_PAY                 |  11 |    441 |    509 |
+| ORDER_CANCEL              |   4 |    446 |    498 |
+| COURIER_PICKUP            |   5 |    450 |    513 |
+| COURIER_DELIVER           |   3 |    451 |    503 |
+| COD_MARK_PAID             |   3 |    452 |    504 |
+| ORDER_RECEIVE             |   3 |    453 |    505 |
+| QUICK_UPDATE_DAILY_SUPPLY |   2 |    456 |    460 |
+| HANDLE_DELIVERY_EXCEPTION |   2 |    458 |    467 |
+| ORDER_UPDATE              |   2 |    462 |    508 |
+| SET_SUPPLIER_CATEGORIES   |   1 |    468 |    468 |
+| ASSIGN_BUYER_AGENT        |   1 |    469 |    469 |
+| CATEGORY_CREATE           |   1 |    470 |    470 |
+| CATEGORY_UPDATE           |   1 |    471 |    471 |
+| CATEGORY_DELETE           |   1 |    472 |    472 |
++---------------------------+-----+--------+--------+
+
+SQL> SELECT id, operator_id, action, entity, entity_id, LEFT(CAST(IFNULL(after,'-') AS CHAR),56) AS after_snip FROM audit_log WHERE id > 0 ORDER BY id;
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-----+-------------+---------------------------+--------------------+-----------+------------------------------------------------------------------------------------------------+
+| id  | operator_id | action                    | entity             | entity_id | after_snip                                                                                     |
++-----+-------------+---------------------------+--------------------+-----------+------------------------------------------------------------------------------------------------+
+|   1 |           4 | UPDATE_PRICING            | product            |         1 | {"salePrice": 1.26, "markupRate": 0.4}                                                         |
+|   2 |           4 | UPDATE_SERVICE_FEE        | service_fee_config |         1 | {"rate": 0.06, "categoryId": null}                                                             |
+|   3 |           4 | UPDATE_SERVICE_FEE        | service_fee_config |         2 | {"rate": 0.08, "categoryId": 1}                                                                |
+|   4 |           4 | RE_SPLIT                  | order              |        28 | {"orderId": 28, "allocations": [{"productId": 1, "alloca                                       |
+|   5 |           4 | UPDATE_PRICING            | product            |         1 | {"salePrice": 0.99, "markupRate": 0.1}                                                         |
+|   6 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 8, "freeNextDay": true, "freeThreshold": 50}                                           |
+|   7 |           4 | BATCH_MARKUP              | product            |         0 | {"updated": 6, "categoryId": 1, "markupRate": 0.5}                                             |
+|   8 |           4 | BATCH_MARKUP              | product            |         0 | {"updated": 6, "categoryId": 1, "markupRate": 0.1}                                             |
+|   9 |           6 | courier_report            | delivery_task      |        24 | {"reason": "缺货：不够", "taskId": 24, "orderId": 18}                                          |
+|  10 |           4 | SPLIT                     | order              |        30 | {"orderId": 30, "allocations": [{"productId": 1, "alloca                                       |
+|  11 |           4 | SPLIT                     | order              |        31 | {"orderId": 31, "allocations": [{"productId": 1, "alloca                                       |
+|  12 |           4 | SPLIT                     | order              |        32 | {"orderId": 32, "allocations": [{"productId": 1, "alloca                                       |
+|  13 |           4 | SPLIT                     | order              |        33 | {"orderId": 33, "allocations": [{"productId": 1, "alloca                                       |
+|  14 |           6 | courier_report            | delivery_task      |        25 | {"reason": "缺货：", "taskId": 25, "orderId": 27}                                              |
+|  15 |           6 | courier_report            | delivery_task      |        25 | {"reason": "缺货：", "taskId": 25, "orderId": 27}                                              |
+|  16 |           6 | courier_report            | delivery_task      |        27 | {"reason": "缺货：客户要求补货", "taskId": null, "orderId": 27}                                |
+|  17 |           6 | courier_report            | delivery_task      |        25 | {"reason": "缺货：", "taskId": 25, "orderId": 27}                                              |
+|  18 |           6 | courier_report            | delivery_task      |        23 | {"reason": "客户不在：联系不上", "taskId": 23, "orderId": null}                                |
+|  19 |           6 | courier_report            | delivery_task      |        25 | {"reason": "拒收：客户拒收", "taskId": 25, "orderId": null}                                    |
+|  20 |           6 | courier_report            | delivery_task      |        26 | {"reason": "拒收：", "taskId": 26, "orderId": null}                                            |
+|  21 |           6 | courier_report            | delivery_task      |        29 | {"reason": "缺货：", "taskId": 29, "orderId": null}                                            |
+|  22 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "freeNextDay": true, "freeThreshold": 100}                                          |
+|  23 |           6 | courier_report            | delivery_task      |        26 | {"reason": "客户拒收", "taskId": 26, "orderId": null}                                          |
+|  24 |           6 | courier_report            | delivery_task      |        26 | {"reason": "客户不在：", "taskId": 26, "orderId": 28}                                          |
+|  29 |           4 | SET_SUPPLY_PRIORITY       | product            |         1 | {"priorities": [{"priority": 2, "supplierId": 1}, {"prio                                       |
+|  30 |           4 | SET_SUPPLY_PRIORITY       | product            |         1 | {"priorities": [{"priority": 1, "supplierId": 1}, {"prio                                       |
+|  35 |           1 | SUPPLIER_HANDOVER         | order              |        35 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  36 |           1 | SUPPLIER_HANDOVER         | order              |        36 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  37 |           1 | SUPPLIER_HANDOVER         | order              |        37 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  38 |           1 | SUPPLIER_HANDOVER         | order              |        38 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  39 |           1 | SUPPLIER_HANDOVER         | order              |        42 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  40 |           1 | SUPPLIER_HANDOVER         | order              |        43 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  41 |           1 | SUPPLIER_HANDOVER         | order              |        34 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  42 |           4 | AUTO_ASSIGN_DISPATCH      | delivery_task      |         0 | {"skipped": [], "assigned": 7}                                                                 |
+|  43 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "freeNextDay": true, "freeThreshold": 80}                                           |
+|  44 |           6 | courier_report            | delivery_task      |        29 | {"reason": "缺货：", "taskId": 29, "orderId": 32}                                              |
+|  45 |           6 | courier_report            | delivery_task      |        25 | {"reason": "缺货：", "taskId": 25, "orderId": 27}                                              |
+|  46 |           6 | courier_report            | delivery_task      |        25 | {"reason": "缺货：", "taskId": 25, "orderId": 27}                                              |
+|  47 |           4 | SPLIT                     | order              |        45 | {"orderId": 45, "allocations": [{"productId": 4, "alloca                                       |
+|  48 |           4 | SPLIT                     | order              |        39 | {"orderId": 39, "allocations": [{"productId": 5, "alloca                                       |
+|  49 |           4 | SPLIT                     | order              |        40 | {"orderId": 40, "allocations": [{"productId": 5, "alloca                                       |
+|  50 |           4 | SPLIT                     | order              |        41 | {"orderId": 41, "allocations": [{"productId": 4, "alloca                                       |
+|  51 |           4 | SPLIT                     | order              |        44 | {"orderId": 44, "allocations": [{"productId": 7, "alloca                                       |
+|  52 |           4 | SPLIT                     | order              |        46 | {"orderId": 46, "allocations": [{"productId": 5, "alloca                                       |
+|  53 |           4 | SPLIT                     | order              |        47 | {"orderId": 47, "allocations": [{"productId": 5, "alloca                                       |
+|  54 |           4 | SPLIT                     | order              |        48 | {"orderId": 48, "allocations": [{"productId": 7, "alloca                                       |
+|  55 |           4 | SPLIT                     | order              |        50 | {"orderId": 50, "allocations": [{"productId": 5, "alloca                                       |
+|  56 |           1 | SUPPLIER_HANDOVER         | order              |        39 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  57 |           1 | SUPPLIER_HANDOVER         | order              |        40 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  58 |           1 | SUPPLIER_HANDOVER         | order              |        41 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  59 |           1 | SUPPLIER_HANDOVER         | order              |        44 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  60 |           1 | SUPPLIER_HANDOVER         | order              |        45 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  61 |           1 | SUPPLIER_HANDOVER         | order              |        46 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  62 |           1 | SUPPLIER_HANDOVER         | order              |        47 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  63 |           1 | SUPPLIER_HANDOVER         | order              |        48 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  64 |           1 | SUPPLIER_HANDOVER         | order              |        49 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  65 |           1 | SUPPLIER_HANDOVER         | order              |        50 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  66 |           4 | AUTO_ASSIGN_DISPATCH      | delivery_task      |         0 | {"skipped": [], "assigned": 10}                                                                |
+|  67 |           6 | courier_report            | delivery_task      |        29 | {"reason": "缺货：", "taskId": 29, "orderId": 32}                                              |
+|  68 |           4 | RE_SPLIT_SHORTAGE         | order              |        28 | {"orderId": 28, "supplierCount": 2}                                                            |
+|  69 |           6 | courier_report            | delivery_task      |        26 | {"reason": "缺货：", "taskId": 26, "orderId": 28}                                              |
+|  70 |           4 | RE_SPLIT_SHORTAGE         | order              |        27 | {"orderId": 27, "supplierCount": 1}                                                            |
+|  71 |           4 | RE_SPLIT_SHORTAGE         | order              |        32 | {"orderId": 32, "supplierCount": 1}                                                            |
+|  72 |           4 | RE_SPLIT                  | order              |        28 | {"orderId": 28, "allocations": [{"productId": 1, "alloca                                       |
+|  73 |           1 | SUPPLIER_HANDOVER         | order              |        53 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  74 |           4 | AUTO_ASSIGN_DISPATCH      | delivery_task      |         0 | {"skipped": [], "assigned": 1}                                                                 |
+|  75 |           1 | SUPPLIER_HANDOVER         | order              |        54 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  76 |           1 | SUPPLIER_HANDOVER         | order              |        52 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  77 |           1 | SUPPLIER_HANDOVER         | order              |        28 | {"supplierId": 1, "orderStatus": 30}                                                           |
+|  78 |           4 | AUTO_ASSIGN_DISPATCH      | delivery_task      |         0 | {"skipped": [], "assigned": 2}                                                                 |
+|  79 |           1 | SUPPLIER_HANDOVER         | order              |        55 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  80 |           1 | SUPPLIER_HANDOVER         | order              |        56 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  81 |           1 | SUPPLIER_HANDOVER         | order              |        57 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  82 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 8, "freeNextDay": true, "freeThr                                       |
+|  83 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 0, "freeNextDay": true, "freeThr                                       |
+|  84 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 10, "freeNextDay": true, "freeTh                                       |
+|  85 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 8, "freeNextDay": true, "freeThr                                       |
+|  86 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 0, "freeNextDay": true, "freeThr                                       |
+|  87 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 10, "freeNextDay": true, "freeTh                                       |
+|  88 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 8, "freeNextDay": true, "freeThr                                       |
+|  89 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 0, "freeNextDay": true, "freeThr                                       |
+|  90 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 10, "freeNextDay": true, "freeTh                                       |
+|  91 |           4 | UPDATE_DELIVERY_FEE       | platform_config    |         0 | {"fee": 5, "urgentFee": 10, "freeNextDay": true, "freeTh                                       |
+|  92 |           1 | SUPPLIER_HANDOVER         | order              |        74 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  93 |           1 | SUPPLIER_HANDOVER         | order              |        75 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  94 |           1 | SUPPLIER_HANDOVER         | order              |        77 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  95 |           1 | SUPPLIER_DECLARE          | order              |        78 | {"supplierId": 1, "shortageItems": 1}                                                          |
+|  96 |           1 | SUPPLIER_HANDOVER         | order              |        78 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  97 |           1 | SUPPLIER_HANDOVER         | order              |        79 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  98 |           1 | SUPPLIER_HANDOVER         | order              |        65 | {"supplierId": 1, "orderStatus": 40}                                                           |
+|  99 |           1 | SUPPLIER_HANDOVER         | order              |        66 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 100 |           1 | SUPPLIER_HANDOVER         | order              |        69 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 101 |           1 | SUPPLIER_HANDOVER         | order              |        70 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 102 |           1 | SUPPLIER_HANDOVER         | order              |        73 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 103 |           1 | SUPPLIER_HANDOVER         | order              |        80 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 104 |          10 | REGISTER_COURIER          | courier            |         3 | {"name": "配送001", "source": 2, "status": 0}                                                  |
+| 105 |          10 | REGISTER_SUPPLIER         | supplier           |         5 | {"status": 0, "stallName": "供菜商003"}                                                        |
+| 106 |          21 | REGISTER_SUPPLIER         | supplier           |         6 | {"status": 0, "stallName": "测试档口"}                                                         |
+| 107 |          22 | REGISTER_COURIER          | courier            |         4 | {"name": "测试配送", "source": 2, "status": 0}                                                 |
+| 108 |           4 | UPDATE_BUYER              | purchaser          |         6 | {"address": "测试地址改了"}                                                                    |
+| 109 |           4 | UPDATE_SUPPLIER           | supplier           |         1 | {"address": "XX菜市场B区3号", "qualification": {"phone": "138                                  |
+| 110 |           4 | UPDATE_COURIER            | courier            |         1 | {"name": "配送员改", "ownVehicle": 1, "licenseType": "C1", "                                   |
+| 111 |          10 | REGISTER_SUPPLIER         | supplier           |         7 | {"status": 0, "stallName": "测试档口X"}                                                        |
+| 112 |          23 | REGISTER_COURIER          | courier            |         5 | {"name": "配送员003", "source": 2, "status": 0}                                                |
+| 113 |          24 | REGISTER_COURIER          | courier            |         6 | {"name": "测试配送员", "source": 2, "status": 0}                                               |
+| 114 |          25 | REGISTER_COURIER          | courier            |         7 | {"name": "测试配送员3", "source": 2, "status": 0}                                              |
+| 115 |           4 | REVIEW_COURIER            | courier            |         7 | {"status": 1}                                                                                  |
+| 116 |           4 | REVIEW_COURIER            | courier            |         5 | {"status": 1}                                                                                  |
+| 117 |           1 | SUPPLIER_HANDOVER         | order              |        81 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 118 |           4 | SPLIT                     | order              |        84 | {"orderId": 84, "allocations": [{"productId": 5, "alloca                                       |
+| 119 |           4 | SET_SUPPLY_PRIORITY       | product            |         5 | {"priorities": [{"priority": 3, "supplierId": 1}]}                                             |
+| 120 |           4 | SET_SUPPLY_PRIORITY       | product            |         5 | {"priorities": [{"priority": 9, "supplierId": 1}]}                                             |
+| 121 |           1 | SUPPLIER_DECLARE          | order              |        84 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 122 |           1 | SUPPLIER_HANDOVER         | order              |        84 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 123 |           4 | ASSIGN_DISPATCH           | delivery_task      |        65 | {"routeNo": "R20260909-5", "orderIds": [84], "courierId"                                       |
+| 124 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 125 |           4 | AUTO_DECLARE_FALLBACK     | order              |        83 | {"date": "2026-09-10", "details": [{"shortage": false, "                                       |
+| 126 |           4 | AUTO_DECLARE_FALLBACK     | order              |        85 | {"date": "2026-09-10", "details": [{"shortage": false, "                                       |
+| 127 |           4 | AUTO_DECLARE_FALLBACK     | order              |        86 | {"date": "2026-09-10", "details": [{"shortage": true, "q                                       |
+| 128 |           4 | AFTERSALE_HANDLE          | aftersale          |         4 | {"action": "compensate", "status": 2, "orderId": 84, "co                                       |
+| 129 |           4 | AFTERSALE_HANDLE          | aftersale          |         3 | {"action": "reject", "status": 3, "orderId": 9, "compens                                       |
+| 130 |           4 | REVIEW_BUYER_APPEAL       | buyer              |        16 | {"approved": true, "accountStatus": 2}                                                         |
+| 131 |           4 | REVIEW_BUYER              | buyer              |        17 | {"result": 2, "reasonCode": 6, "accountStatus": 3}                                             |
+| 132 |           4 | REVIEW_BUYER_APPEAL       | buyer              |        17 | {"approved": true, "accountStatus": 2}                                                         |
+| 133 |           1 | SUPPLIER_HANDOVER         | order              |        83 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 134 |           1 | SUPPLIER_HANDOVER         | order              |        88 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 135 |           4 | UPDATE_PAY_QR             | platform_config    |         0 | {"url": "/uploads/1789093993226_lg3l13.png"}                                                   |
+| 136 |           6 | COD_PAY_PROOF             | order              |        65 | {"photos": ["/uploads/1789093993226_lg3l13.png"]}                                              |
+| 137 |           4 | REVIEW_BUYER              | buyer              |         3 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 138 |           4 | REVIEW_BUYER              | buyer              |        19 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 139 |           4 | REVIEW_BUYER              | buyer              |        20 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 140 |           4 | REVIEW_BUYER              | buyer              |        21 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 141 |           4 | SPLIT                     | order              |        94 | {"orderId": 94, "allocations": [{"productId": 7, "alloca                                       |
+| 142 |           4 | REVIEW_BUYER              | buyer              |        22 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 143 |           4 | SPLIT                     | order              |        95 | {"orderId": 95, "allocations": [{"productId": 7, "alloca                                       |
+| 144 |           4 | REVIEW_BUYER              | buyer              |        23 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 145 |           4 | SPLIT                     | order              |        96 | {"orderId": 96, "allocations": [{"productId": 7, "alloca                                       |
+| 146 |           1 | SUPPLIER_HANDOVER         | order              |        96 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 147 |           4 | ASSIGN_DISPATCH           | delivery_task      |        66 | {"routeNo": "R20260911-1", "orderIds": [96], "courierId"                                       |
+| 148 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 149 |           4 | REVIEW_BUYER              | buyer              |        24 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 150 |           4 | SPLIT                     | order              |        97 | {"orderId": 97, "allocations": [{"productId": 7, "alloca                                       |
+| 151 |           1 | SUPPLIER_DECLARE          | order              |        97 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 152 |           1 | SUPPLIER_HANDOVER         | order              |        97 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 153 |           4 | ASSIGN_DISPATCH           | delivery_task      |        67 | {"routeNo": "R20260911-1", "orderIds": [97], "courierId"                                       |
+| 154 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 155 |           4 | REVIEW_BUYER              | buyer              |        25 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 156 |           4 | SPLIT                     | order              |        98 | {"orderId": 98, "allocations": [{"productId": 7, "alloca                                       |
+| 157 |           1 | SUPPLIER_DECLARE          | order              |        98 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 158 |           1 | SUPPLIER_HANDOVER         | order              |        98 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 159 |           4 | ASSIGN_DISPATCH           | delivery_task      |        68 | {"routeNo": "R20260911-1", "orderIds": [98], "courierId"                                       |
+| 160 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 161 |           4 | REVIEW_BUYER              | buyer              |        26 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 162 |           4 | SPLIT                     | order              |        99 | {"orderId": 99, "allocations": [{"productId": 7, "alloca                                       |
+| 163 |           1 | SUPPLIER_DECLARE          | order              |        99 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 164 |           1 | SUPPLIER_HANDOVER         | order              |        99 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 165 |           4 | ASSIGN_DISPATCH           | delivery_task      |        69 | {"routeNo": "R20260911-1", "orderIds": [99], "courierId"                                       |
+| 166 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 167 |           4 | REVIEW_BUYER              | buyer              |        27 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 168 |           4 | SPLIT                     | order              |       100 | {"orderId": 100, "allocations": [{"productId": 7, "alloc                                       |
+| 169 |           1 | SUPPLIER_DECLARE          | order              |       100 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 170 |           1 | SUPPLIER_HANDOVER         | order              |       100 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 171 |           4 | ASSIGN_DISPATCH           | delivery_task      |        70 | {"routeNo": "R20260911-1", "orderIds": [100], "courierId                                       |
+| 172 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 173 |           4 | REVIEW_BUYER              | buyer              |        28 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 174 |           4 | REVIEW_BUYER              | buyer              |        29 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 175 |           4 | SPLIT                     | order              |       102 | {"orderId": 102, "allocations": [{"productId": 7, "alloc                                       |
+| 176 |           1 | SUPPLIER_DECLARE          | order              |       102 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 177 |           1 | SUPPLIER_HANDOVER         | order              |       102 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 178 |           4 | ASSIGN_DISPATCH           | delivery_task      |        71 | {"routeNo": "R20260911-1", "orderIds": [102], "courierId                                       |
+| 179 |           4 | REVIEW_BUYER              | buyer              |        30 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 180 |           4 | SPLIT                     | order              |       103 | {"orderId": 103, "allocations": [{"productId": 7, "alloc                                       |
+| 181 |           1 | SUPPLIER_DECLARE          | order              |       103 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 182 |           1 | SUPPLIER_HANDOVER         | order              |       103 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 183 |           4 | ASSIGN_DISPATCH           | delivery_task      |        72 | {"routeNo": "R20260911-1", "orderIds": [103], "courierId                                       |
+| 184 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 185 |           4 | REVIEW_BUYER              | buyer              |        31 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 186 |           4 | SPLIT                     | order              |       104 | {"orderId": 104, "allocations": [{"productId": 7, "alloc                                       |
+| 187 |           1 | SUPPLIER_DECLARE          | order              |       104 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 188 |           1 | SUPPLIER_HANDOVER         | order              |       104 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 189 |           4 | ASSIGN_DISPATCH           | delivery_task      |        73 | {"routeNo": "R20260911-1", "orderIds": [104], "courierId                                       |
+| 190 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 191 |           4 | REVIEW_BUYER              | buyer              |        32 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 192 |           4 | SPLIT                     | order              |       105 | {"orderId": 105, "allocations": [{"productId": 7, "alloc                                       |
+| 193 |           1 | SUPPLIER_HANDOVER         | order              |       105 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 194 |           4 | ASSIGN_DISPATCH           | delivery_task      |        74 | {"routeNo": "R20260911-1", "orderIds": [105], "courierId                                       |
+| 195 |           4 | REVIEW_BUYER              | buyer              |        33 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 196 |           4 | SPLIT                     | order              |       106 | {"orderId": 106, "allocations": [{"productId": 7, "alloc                                       |
+| 197 |           1 | SUPPLIER_HANDOVER         | order              |       106 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 198 |           4 | ASSIGN_DISPATCH           | delivery_task      |        75 | {"routeNo": "R20260911-1", "orderIds": [106], "courierId                                       |
+| 199 |           4 | SPLIT                     | order              |       107 | {"orderId": 107, "allocations": [{"productId": 7, "alloc                                       |
+| 200 |           1 | SUPPLIER_HANDOVER         | order              |       107 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 201 |           4 | SPLIT                     | order              |       108 | {"orderId": 108, "allocations": [{"productId": 6, "alloc                                       |
+| 202 |           1 | SUPPLIER_HANDOVER         | order              |       108 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 203 |           4 | ASSIGN_DISPATCH           | delivery_task      |        76 | {"routeNo": "R20260911-1", "orderIds": [107], "courierId                                       |
+| 204 |           4 | ASSIGN_DISPATCH           | delivery_task      |        77 | {"routeNo": "R20260911-1", "orderIds": [108], "courierId                                       |
+| 205 |           4 | REVIEW_BUYER              | buyer              |        34 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 206 |           4 | SPLIT                     | order              |       113 | {"orderId": 113, "allocations": [{"productId": 7, "alloc                                       |
+| 207 |           1 | SUPPLIER_DECLARE          | order              |       113 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 208 |           1 | SUPPLIER_HANDOVER         | order              |       113 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 209 |           4 | ASSIGN_DISPATCH           | delivery_task      |        78 | {"routeNo": "R20260911-1", "orderIds": [113], "courierId                                       |
+| 210 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 211 |           4 | REVIEW_BUYER              | buyer              |        35 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 212 |           4 | SPLIT                     | order              |       114 | {"orderId": 114, "allocations": [{"productId": 7, "alloc                                       |
+| 213 |           1 | SUPPLIER_DECLARE          | order              |       114 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 214 |           1 | SUPPLIER_HANDOVER         | order              |       114 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 215 |           4 | ASSIGN_DISPATCH           | delivery_task      |        79 | {"routeNo": "R20260911-1", "orderIds": [114], "courierId                                       |
+| 216 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 217 |           4 | REVIEW_BUYER              | buyer              |        36 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 218 |           4 | REVIEW_BUYER              | buyer              |        37 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 219 |           4 | REVIEW_BUYER              | buyer              |        38 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 220 |           4 | REVIEW_BUYER              | buyer              |        39 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 221 |           4 | SPLIT                     | order              |       119 | {"orderId": 119, "allocations": [{"productId": 7, "alloc                                       |
+| 222 |           1 | SUPPLIER_DECLARE          | order              |       119 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 223 |           1 | SUPPLIER_HANDOVER         | order              |       119 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 224 |           4 | ASSIGN_DISPATCH           | delivery_task      |        80 | {"routeNo": "R20260911-1", "orderIds": [119], "courierId                                       |
+| 225 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 226 |           4 | REVIEW_BUYER              | buyer              |        40 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 227 |           4 | SPLIT                     | order              |       122 | {"orderId": 122, "allocations": [{"productId": 7, "alloc                                       |
+| 228 |           1 | SUPPLIER_DECLARE          | order              |       122 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 229 |           1 | SUPPLIER_HANDOVER         | order              |       122 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 230 |           4 | ASSIGN_DISPATCH           | delivery_task      |        81 | {"routeNo": "R20260911-1", "orderIds": [122], "courierId                                       |
+| 231 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 232 |           4 | REVIEW_BUYER              | buyer              |        41 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 233 |           4 | REVIEW_BUYER              | buyer              |        42 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 234 |           4 | REVIEW_BUYER              | buyer              |        43 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 235 |           4 | REVIEW_BUYER              | buyer              |        44 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 236 |           4 | REVIEW_BUYER              | buyer              |        45 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 237 |           4 | SPLIT                     | order              |       128 | {"orderId": 128, "allocations": [{"productId": 7, "alloc                                       |
+| 238 |           1 | SUPPLIER_DECLARE          | order              |       128 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 239 |           1 | SUPPLIER_HANDOVER         | order              |       128 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 240 |           4 | ASSIGN_DISPATCH           | delivery_task      |        82 | {"routeNo": "R20260911-1", "orderIds": [128], "courierId                                       |
+| 241 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 242 |           4 | REVIEW_BUYER              | buyer              |        46 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 243 |           4 | SPLIT                     | order              |       132 | {"orderId": 132, "allocations": [{"productId": 7, "alloc                                       |
+| 244 |           1 | SUPPLIER_DECLARE          | order              |       132 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 245 |           1 | SUPPLIER_HANDOVER         | order              |       132 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 246 |           4 | ASSIGN_DISPATCH           | delivery_task      |        83 | {"routeNo": "R20260911-1", "orderIds": [132], "courierId                                       |
+| 247 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 248 |           4 | REVIEW_BUYER              | buyer              |        47 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 249 |           4 | SPLIT                     | order              |       136 | {"orderId": 136, "allocations": [{"productId": 7, "alloc                                       |
+| 250 |           1 | SUPPLIER_DECLARE          | order              |       136 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 251 |           1 | SUPPLIER_HANDOVER         | order              |       136 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 252 |           4 | ASSIGN_DISPATCH           | delivery_task      |        84 | {"routeNo": "R20260911-1", "orderIds": [136], "courierId                                       |
+| 253 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 254 |           4 | REVIEW_BUYER              | buyer              |        48 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 255 |           4 | REVIEW_BUYER              | buyer              |        49 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 256 |           4 | REVIEW_BUYER              | buyer              |        50 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 257 |           4 | REVIEW_BUYER              | buyer              |        51 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 258 |           4 | REVIEW_BUYER              | buyer              |        52 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 259 |           4 | REVIEW_BUYER              | buyer              |        53 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 260 |           4 | SPLIT                     | order              |       145 | {"orderId": 145, "allocations": [{"productId": 7, "alloc                                       |
+| 261 |           1 | SUPPLIER_DECLARE          | order              |       145 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 262 |           1 | SUPPLIER_HANDOVER         | order              |       145 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 263 |           4 | ASSIGN_DISPATCH           | delivery_task      |        85 | {"routeNo": "R20260911-1", "orderIds": [145], "courierId                                       |
+| 264 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 265 |           4 | REVIEW_BUYER              | buyer              |        54 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 266 |           4 | SPLIT                     | order              |       149 | {"orderId": 149, "allocations": [{"productId": 7, "alloc                                       |
+| 267 |           1 | SUPPLIER_DECLARE          | order              |       149 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 268 |           1 | SUPPLIER_HANDOVER         | order              |       149 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 269 |           4 | ASSIGN_DISPATCH           | delivery_task      |        86 | {"routeNo": "R20260911-1", "orderIds": [149], "courierId                                       |
+| 270 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 271 |           4 | REVIEW_BUYER              | buyer              |        55 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 272 |           4 | REVIEW_BUYER              | buyer              |        56 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 273 |           4 | SPLIT                     | order              |       154 | {"orderId": 154, "allocations": [{"productId": 7, "alloc                                       |
+| 274 |           1 | SUPPLIER_DECLARE          | order              |       154 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 275 |           1 | SUPPLIER_HANDOVER         | order              |       154 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 276 |           4 | ASSIGN_DISPATCH           | delivery_task      |        87 | {"routeNo": "R20260911-1", "orderIds": [154], "courierId                                       |
+| 277 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 278 |           4 | REVIEW_BUYER              | buyer              |        57 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 279 |           4 | SPLIT                     | order              |       158 | {"orderId": 158, "allocations": [{"productId": 7, "alloc                                       |
+| 280 |           1 | SUPPLIER_DECLARE          | order              |       158 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 281 |           1 | SUPPLIER_HANDOVER         | order              |       158 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 282 |           4 | ASSIGN_DISPATCH           | delivery_task      |        88 | {"routeNo": "R20260911-1", "orderIds": [158], "courierId                                       |
+| 283 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 284 |           4 | REVIEW_BUYER              | buyer              |        60 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 285 |           4 | SPLIT                     | order              |       162 | {"orderId": 162, "allocations": [{"productId": 7, "alloc                                       |
+| 286 |           1 | SUPPLIER_DECLARE          | order              |       162 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 287 |           1 | SUPPLIER_HANDOVER         | order              |       162 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 288 |           4 | ASSIGN_DISPATCH           | delivery_task      |        89 | {"routeNo": "R20260911-1", "orderIds": [162], "courierId                                       |
+| 289 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 290 |           4 | REVIEW_BUYER              | buyer              |        61 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 291 |           4 | SPLIT                     | order              |       166 | {"orderId": 166, "allocations": [{"productId": 7, "alloc                                       |
+| 292 |           1 | SUPPLIER_DECLARE          | order              |       166 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 293 |           1 | SUPPLIER_HANDOVER         | order              |       166 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 294 |           4 | ASSIGN_DISPATCH           | delivery_task      |        90 | {"routeNo": "R20260911-1", "orderIds": [166], "courierId                                       |
+| 295 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 296 |           4 | REVIEW_BUYER              | buyer              |        62 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 297 |           4 | SPLIT                     | order              |       170 | {"orderId": 170, "allocations": [{"productId": 7, "alloc                                       |
+| 298 |           1 | SUPPLIER_DECLARE          | order              |       170 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 299 |           1 | SUPPLIER_HANDOVER         | order              |       170 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 300 |           4 | ASSIGN_DISPATCH           | delivery_task      |        91 | {"routeNo": "R20260911-1", "orderIds": [170], "courierId                                       |
+| 301 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 302 |           4 | REVIEW_BUYER              | buyer              |        63 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 303 |           4 | SPLIT                     | order              |       174 | {"orderId": 174, "allocations": [{"productId": 7, "alloc                                       |
+| 304 |           1 | SUPPLIER_DECLARE          | order              |       174 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 305 |           1 | SUPPLIER_HANDOVER         | order              |       174 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 306 |           4 | ASSIGN_DISPATCH           | delivery_task      |        92 | {"routeNo": "R20260911-1", "orderIds": [174], "courierId                                       |
+| 307 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 308 |           4 | REVIEW_BUYER              | buyer              |        64 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 309 |           4 | SPLIT                     | order              |       178 | {"orderId": 178, "allocations": [{"productId": 7, "alloc                                       |
+| 310 |           1 | SUPPLIER_DECLARE          | order              |       178 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 311 |           1 | SUPPLIER_HANDOVER         | order              |       178 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 312 |           4 | ASSIGN_DISPATCH           | delivery_task      |        93 | {"routeNo": "R20260911-1", "orderIds": [178], "courierId                                       |
+| 313 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 314 |           4 | REVIEW_BUYER              | buyer              |        65 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 315 |           4 | SPLIT                     | order              |       182 | {"orderId": 182, "allocations": [{"productId": 7, "alloc                                       |
+| 316 |           1 | SUPPLIER_DECLARE          | order              |       182 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 317 |           1 | SUPPLIER_HANDOVER         | order              |       182 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 318 |           4 | ASSIGN_DISPATCH           | delivery_task      |        94 | {"routeNo": "R20260911-1", "orderIds": [182], "courierId                                       |
+| 319 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 320 |           4 | REVIEW_BUYER              | buyer              |        66 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 321 |           4 | SPLIT                     | order              |       186 | {"orderId": 186, "allocations": [{"productId": 7, "alloc                                       |
+| 322 |           1 | SUPPLIER_DECLARE          | order              |       186 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 323 |           1 | SUPPLIER_HANDOVER         | order              |       186 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 324 |           4 | ASSIGN_DISPATCH           | delivery_task      |        95 | {"routeNo": "R20260911-1", "orderIds": [186], "courierId                                       |
+| 325 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 326 |           4 | REVIEW_BUYER              | buyer              |        67 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 327 |           4 | SPLIT                     | order              |       190 | {"orderId": 190, "allocations": [{"productId": 7, "alloc                                       |
+| 328 |           1 | SUPPLIER_DECLARE          | order              |       190 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 329 |           1 | SUPPLIER_HANDOVER         | order              |       190 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 330 |           4 | ASSIGN_DISPATCH           | delivery_task      |        96 | {"routeNo": "R20260911-1", "orderIds": [190], "courierId                                       |
+| 331 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 332 |           4 | REVIEW_BUYER              | buyer              |        68 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 333 |           4 | SPLIT                     | order              |       194 | {"orderId": 194, "allocations": [{"productId": 7, "alloc                                       |
+| 334 |           1 | SUPPLIER_DECLARE          | order              |       194 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 335 |           1 | SUPPLIER_HANDOVER         | order              |       194 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 336 |           4 | ASSIGN_DISPATCH           | delivery_task      |        97 | {"routeNo": "R20260911-1", "orderIds": [194], "courierId                                       |
+| 337 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 338 |           4 | REVIEW_BUYER              | buyer              |        69 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 339 |           4 | SPLIT                     | order              |       198 | {"orderId": 198, "allocations": [{"productId": 7, "alloc                                       |
+| 340 |           1 | SUPPLIER_DECLARE          | order              |       198 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 341 |           1 | SUPPLIER_HANDOVER         | order              |       198 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 342 |           4 | ASSIGN_DISPATCH           | delivery_task      |        98 | {"routeNo": "R20260911-1", "orderIds": [198], "courierId                                       |
+| 343 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 344 |           4 | REVIEW_BUYER              | buyer              |        70 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 345 |           4 | SPLIT                     | order              |       202 | {"orderId": 202, "allocations": [{"productId": 7, "alloc                                       |
+| 346 |           1 | SUPPLIER_DECLARE          | order              |       202 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 347 |           1 | SUPPLIER_HANDOVER         | order              |       202 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 348 |           4 | ASSIGN_DISPATCH           | delivery_task      |        99 | {"routeNo": "R20260911-1", "orderIds": [202], "courierId                                       |
+| 349 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 350 |           4 | REVIEW_BUYER              | buyer              |        71 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 351 |           4 | SPLIT                     | order              |       206 | {"orderId": 206, "allocations": [{"productId": 7, "alloc                                       |
+| 352 |           1 | SUPPLIER_DECLARE          | order              |       206 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 353 |           1 | SUPPLIER_HANDOVER         | order              |       206 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 354 |           4 | ASSIGN_DISPATCH           | delivery_task      |       100 | {"routeNo": "R20260911-1", "orderIds": [206], "courierId                                       |
+| 355 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 356 |           4 | SPLIT                     | order              |        58 | {"orderId": 58, "allocations": [{"productId": 6, "alloca                                       |
+| 357 |           4 | SPLIT                     | order              |        60 | {"orderId": 60, "allocations": [{"productId": 7, "alloca                                       |
+| 358 |           4 | RE_SPLIT                  | order              |        28 | {"orderId": 28, "allocations": [{"productId": 1, "alloca                                       |
+| 359 |           1 | SUPPLIER_HANDOVER         | order              |        60 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 360 |           4 | ASSIGN_DISPATCH           | delivery_task      |       101 | {"routeNo": "R20260911-1", "orderIds": [60], "courierId"                                       |
+| 361 |           6 | courier_report            | delivery_task      |        60 | {"reason": "到货不足（回归用例）", "taskId": null, "orderId": 60}                              |
+| 362 |           4 | RE_SPLIT_SHORTAGE         | order              |        60 | {"orderId": 60, "supplierCount": 1}                                                            |
+| 363 |           4 | REVIEW_BUYER              | buyer              |        72 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 364 |           4 | SPLIT                     | order              |       210 | {"orderId": 210, "allocations": [{"productId": 7, "alloc                                       |
+| 365 |           1 | SUPPLIER_DECLARE          | order              |       210 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 366 |           1 | SUPPLIER_HANDOVER         | order              |       210 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 367 |           4 | ASSIGN_DISPATCH           | delivery_task      |       102 | {"routeNo": "R20260911-1", "orderIds": [210], "courierId                                       |
+| 368 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 369 |           4 | RE_SPLIT                  | order              |       212 | {"orderId": 212, "allocations": [{"productId": 7, "alloc                                       |
+| 370 |           4 | SET_SUPPLY_PRIORITY       | product            |         1 | {"priorities": [{"priority": 1, "supplierId": 1}, {"prio                                       |
+| 371 |           4 | UPDATE_SERVICE_FEE        | service_fee_config |         1 | {"rate": 0.05, "categoryId": null}                                                             |
+| 372 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 373 |           4 | RE_SPLIT                  | order              |       212 | {"orderId": 212, "allocations": [{"productId": 7, "alloc                                       |
+| 374 |           4 | SET_SUPPLY_PRIORITY       | product            |         1 | {"priorities": [{"priority": 1, "supplierId": 1}, {"prio                                       |
+| 375 |           4 | UPDATE_SERVICE_FEE        | service_fee_config |         1 | {"rate": 0.05, "categoryId": null}                                                             |
+| 376 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 377 |           4 | RE_SPLIT                  | order              |       212 | {"orderId": 212, "allocations": [{"productId": 7, "alloc                                       |
+| 378 |           4 | SET_SUPPLY_PRIORITY       | product            |         1 | {"priorities": [{"priority": 1, "supplierId": 1}, {"prio                                       |
+| 379 |           4 | UPDATE_SERVICE_FEE        | service_fee_config |         1 | {"rate": 0.05, "categoryId": null}                                                             |
+| 380 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 381 |           4 | AFTERSALE_HANDLE          | aftersale          |         1 | {"action": "compensate", "status": 2, "orderId": 7, "com                                       |
+| 382 |           6 | courier_report            | delivery_task      |        96 | {"reason": "审计复核实测-异常上报", "taskId": null, "orderId": 96}                             |
+| 383 |           4 | REVIEW_BUYER              | buyer              |        73 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 384 |           4 | SPLIT                     | order              |       214 | {"orderId": 214, "allocations": [{"productId": 7, "alloc                                       |
+| 385 |           1 | SUPPLIER_DECLARE          | order              |       214 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 386 |           1 | SUPPLIER_HANDOVER         | order              |       214 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 387 |           4 | ASSIGN_DISPATCH           | delivery_task      |       103 | {"routeNo": "R20260911-1", "orderIds": [214], "courierId                                       |
+| 388 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 389 |           1 | SUPPLIER_HANDOVER         | order              |       112 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 390 |           1 | SUPPLIER_HANDOVER         | order              |       111 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 391 |           1 | SUPPLIER_HANDOVER         | order              |       120 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 392 |           1 | SUPPLIER_HANDOVER         | order              |       123 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 393 |           1 | SUPPLIER_HANDOVER         | order              |       129 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 394 |           1 | SUPPLIER_HANDOVER         | order              |       133 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 395 |           1 | SUPPLIER_HANDOVER         | order              |       137 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 396 |           1 | SUPPLIER_HANDOVER         | order              |       144 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 397 |           1 | SUPPLIER_HANDOVER         | order              |       146 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 398 |           1 | SUPPLIER_HANDOVER         | order              |       147 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 399 |           1 | SUPPLIER_HANDOVER         | order              |       150 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 400 |           1 | SUPPLIER_HANDOVER         | order              |       151 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 401 |           1 | SUPPLIER_HANDOVER         | order              |       153 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 402 |           1 | SUPPLIER_HANDOVER         | order              |       155 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 403 |           1 | SUPPLIER_HANDOVER         | order              |       156 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 404 |           1 | SUPPLIER_HANDOVER         | order              |       159 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 405 |           1 | SUPPLIER_HANDOVER         | order              |       160 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 406 |           1 | SUPPLIER_HANDOVER         | order              |       163 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 407 |           1 | SUPPLIER_HANDOVER         | order              |       164 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 408 |           1 | SUPPLIER_HANDOVER         | order              |       167 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 409 |           1 | SUPPLIER_HANDOVER         | order              |       168 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 410 |           1 | SUPPLIER_HANDOVER         | order              |       171 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 411 |           1 | SUPPLIER_HANDOVER         | order              |       172 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 412 |           1 | SUPPLIER_HANDOVER         | order              |       175 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 413 |           1 | SUPPLIER_HANDOVER         | order              |       176 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 414 |           1 | SUPPLIER_HANDOVER         | order              |       179 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 415 |           1 | SUPPLIER_HANDOVER         | order              |       180 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 416 |           1 | SUPPLIER_HANDOVER         | order              |       183 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 417 |           1 | SUPPLIER_HANDOVER         | order              |       184 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 418 |           1 | SUPPLIER_HANDOVER         | order              |        58 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 419 |           1 | SUPPLIER_HANDOVER         | order              |        94 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 420 |           1 | SUPPLIER_HANDOVER         | order              |        95 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 421 |           1 | SUPPLIER_HANDOVER         | order              |       187 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 422 |           1 | SUPPLIER_HANDOVER         | order              |       188 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 423 |           1 | SUPPLIER_HANDOVER         | order              |       191 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 424 |           1 | SUPPLIER_HANDOVER         | order              |       192 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 425 |           1 | SUPPLIER_HANDOVER         | order              |       195 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 426 |           1 | SUPPLIER_HANDOVER         | order              |       196 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 427 |           1 | SUPPLIER_HANDOVER         | order              |       199 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 428 |           1 | SUPPLIER_HANDOVER         | order              |       200 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 429 |           1 | SUPPLIER_HANDOVER         | order              |       203 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 430 |           1 | SUPPLIER_HANDOVER         | order              |       204 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 431 |           1 | SUPPLIER_HANDOVER         | order              |       207 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 432 |           1 | SUPPLIER_HANDOVER         | order              |       208 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 433 |           1 | SUPPLIER_HANDOVER         | order              |       211 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 434 |           1 | SUPPLIER_HANDOVER         | order              |       212 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 435 |           1 | SUPPLIER_HANDOVER         | order              |       215 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 436 |           1 | SUPPLIER_HANDOVER         | order              |       216 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 437 |           1 | SUPPLIER_HANDOVER         | order              |       218 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 438 |           4 | REVIEW_BUYER              | buyer              |        74 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 439 |          95 | ORDER_CREATE              | order              |       219 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 440 |          95 | ORDER_CREATE              | order              |       220 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 441 |          95 | ORDER_PAY                 | order              |       220 | {"note": "微信支付（模拟通道）待回调", "payNo": "693a5a68daade6b7adf3                          |
+| 442 |          95 | ORDER_CREATE              | order              |       221 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 443 |          95 | ORDER_PAY                 | order              |       221 | {"note": "微信支付（模拟通道）待回调", "payNo": "d9d532fa3655eb18cec9                          |
+| 444 |          95 | ORDER_CREATE              | order              |       222 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 445 |          95 | ORDER_PAY                 | order              |       222 | {"note": "微信支付（模拟通道）待回调", "payNo": "a779740c30a163a0c341                          |
+| 446 |          95 | ORDER_CANCEL              | order              |       222 | {"status": 91}                                                                                 |
+| 447 |           4 | SPLIT                     | order              |       219 | {"orderId": 219, "allocations": [{"productId": 7, "alloc                                       |
+| 448 |           1 | SUPPLIER_DECLARE          | order              |       219 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 449 |           1 | SUPPLIER_HANDOVER         | order              |       219 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 450 |           6 | COURIER_PICKUP            | delivery_task      |       104 | {"orderIds": [219], "taskStatus": 1}                                                           |
+| 451 |           6 | COURIER_DELIVER           | delivery_task      |       104 | {"orderIds": [219], "taskStatus": 3, "deliveredOrders":                                        |
+| 452 |           6 | COD_MARK_PAID             | order              |       219 | {"note": "客户称已支付（配送员标记，非核销依据）", "courierId": 1, "claimed                    |
+| 453 |          95 | ORDER_RECEIVE             | order              |       219 | {"status": 70, "itemCount": 1, "aftersaleIds": [40]}                                           |
+| 454 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 455 |           4 | REVIEW_BUYER              | buyer              |        75 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 456 |           1 | QUICK_UPDATE_DAILY_SUPPLY | product            |         7 | {"supplierId": 1, "dailySupply": 100}                                                          |
+| 457 |           6 | courier_report            | delivery_task      |        32 | {"reason": "审计闭合实测-异常上报", "taskId": null, "orderId": 32}                             |
+| 458 |           4 | HANDLE_DELIVERY_EXCEPTION | delivery_exception |        14 | {"status": 1, "orderId": 32, "toStatus": 50, "fromStatus                                       |
+| 459 |           4 | REVIEW_BUYER              | buyer              |        76 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 460 |           1 | QUICK_UPDATE_DAILY_SUPPLY | product            |         7 | {"supplierId": 1, "dailySupply": 100}                                                          |
+| 461 |          97 | ORDER_CREATE              | order              |       223 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 462 |          97 | ORDER_UPDATE              | order              |       223 | {"itemCount": 1, "deliveryFee": 5, "amountOrdered": 13.7                                       |
+| 463 |          97 | ORDER_CANCEL              | order              |       223 | {"status": 91}                                                                                 |
+| 464 |          97 | ORDER_CREATE              | order              |       224 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 465 |          97 | ORDER_PAY                 | order              |       224 | {"note": "货到付款", "status": 30, "payMethod": 2}                                             |
+| 466 |           6 | courier_report            | delivery_task      |        32 | {"reason": "审计闭合实测-异常上报", "taskId": null, "orderId": 32}                             |
+| 467 |           4 | HANDLE_DELIVERY_EXCEPTION | delivery_exception |        15 | {"status": 1, "orderId": 32, "toStatus": 50, "fromStatus                                       |
+| 468 |           4 | SET_SUPPLIER_CATEGORIES   | supplier           |         1 | {"categoryIds": [1]}                                                                           |
+| 469 |           4 | ASSIGN_BUYER_AGENT        | buyer              |         2 | {"agentId": 4}                                                                                 |
+| 470 |           4 | CATEGORY_CREATE           | category           |        16 | {"name": "审计闭合验证-临时分类", "sort": 99, "parentId": null}                                |
+| 471 |           4 | CATEGORY_UPDATE           | category           |        16 | {"name": "审计闭合验证-临时分类(改)", "sort": 98}                                              |
+| 472 |           4 | CATEGORY_DELETE           | category           |        16 | {"deleted": true}                                                                              |
+| 473 |           4 | REVIEW_BUYER              | buyer              |        77 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 474 |          98 | ORDER_CREATE              | order              |       225 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 475 |          98 | ORDER_CREATE              | order              |       226 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 476 |          98 | ORDER_PAY                 | order              |       226 | {"note": "微信支付（模拟通道）待回调", "payNo": "6c99d9bd57367f25e4d0                          |
+| 477 |          98 | ORDER_CREATE              | order              |       227 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 478 |          98 | ORDER_PAY                 | order              |       227 | {"note": "微信支付（模拟通道）待回调", "payNo": "bed6d296d26b42aaac7e                          |
+| 479 |          98 | ORDER_CREATE              | order              |       228 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 480 |          98 | ORDER_PAY                 | order              |       228 | {"note": "微信支付（模拟通道）待回调", "payNo": "695f0802701239981ab8                          |
+| 481 |          98 | ORDER_CANCEL              | order              |       228 | {"status": 91}                                                                                 |
+| 482 |           4 | SPLIT                     | order              |       225 | {"orderId": 225, "allocations": [{"productId": 7, "alloc                                       |
+| 483 |           1 | SUPPLIER_DECLARE          | order              |       225 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 484 |           1 | SUPPLIER_HANDOVER         | order              |       225 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 485 |           6 | COURIER_PICKUP            | delivery_task      |       105 | {"orderIds": [225], "taskStatus": 1}                                                           |
+| 486 |           6 | COURIER_DELIVER           | delivery_task      |       105 | {"orderIds": [225], "taskStatus": 3, "deliveredOrders":                                        |
+| 487 |           6 | COD_MARK_PAID             | order              |       225 | {"note": "客户称已支付（配送员标记，非核销依据）", "courierId": 1, "claimed                    |
+| 488 |          98 | ORDER_RECEIVE             | order              |       225 | {"status": 70, "itemCount": 1, "aftersaleIds": [41]}                                           |
+| 489 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 490 |           4 | REVIEW_BUYER              | buyer              |        78 | {"result": 1, "reasonCode": null, "accountStatus": 2}                                          |
+| 491 |          99 | ORDER_CREATE              | order              |       229 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 492 |          99 | ORDER_CREATE              | order              |       230 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 493 |          99 | ORDER_PAY                 | order              |       230 | {"note": "微信支付（模拟通道）待回调", "payNo": "7b511c74ce9b3a5b51cb                          |
+| 494 |          99 | ORDER_CREATE              | order              |       231 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 495 |          99 | ORDER_PAY                 | order              |       231 | {"note": "微信支付（模拟通道）待回调", "payNo": "18a9d4f29485483795aa                          |
+| 496 |          99 | ORDER_CREATE              | order              |       232 | {"status": 10, "itemCount": 1, "deliveryFee": 5, "purcha                                       |
+| 497 |          99 | ORDER_PAY                 | order              |       232 | {"note": "微信支付（模拟通道）待回调", "payNo": "083041530d13773fb838                          |
+| 498 |          99 | ORDER_CANCEL              | order              |       232 | {"status": 91}                                                                                 |
+| 499 |           4 | SPLIT                     | order              |       229 | {"orderId": 229, "allocations": [{"productId": 7, "alloc                                       |
+| 500 |           1 | SUPPLIER_DECLARE          | order              |       229 | {"supplierId": 1, "shortageItems": 1}                                                          |
+| 501 |           1 | SUPPLIER_HANDOVER         | order              |       229 | {"supplierId": 1, "orderStatus": 40}                                                           |
+| 502 |           6 | COURIER_PICKUP            | delivery_task      |       106 | {"orderIds": [229], "taskStatus": 1}                                                           |
+| 503 |           6 | COURIER_DELIVER           | delivery_task      |       106 | {"orderIds": [229], "taskStatus": 3, "deliveredOrders":                                        |
+| 504 |           6 | COD_MARK_PAID             | order              |       229 | {"note": "客户称已支付（配送员标记，非核销依据）", "courierId": 1, "claimed                    |
+| 505 |          99 | ORDER_RECEIVE             | order              |       229 | {"status": 70, "itemCount": 1, "aftersaleIds": [42]}                                           |
+| 506 |           4 | GENERATE_SETTLEMENT       | settlement         |         0 | {"period": "2026-09", "generated": 1, "globalRate": 0.05                                       |
+| 507 |          10 | ORDER_CREATE              | order              |       233 | {"status": 10, "itemCount": 1, "deliveryFee": 0, "purcha                                       |
+| 508 |          10 | ORDER_UPDATE              | order              |       233 | {"itemCount": 1, "deliveryFee": 0, "amountOrdered": 16.9                                       |
+| 509 |          10 | ORDER_PAY                 | order              |       233 | {"note": "货到付款", "status": 30, "payMethod": 2}                                             |
+| 510 |           4 | ASSIGN_DISPATCH           | delivery_task      |       107 | {"routeNo": "R20260911-1", "orderIds": [216], "courierId                                       |
+| 511 |           6 | COURIER_PICKUP            | delivery_task      |       107 | {"orderIds": [216], "taskStatus": 1}                                                           |
+| 512 |           4 | ASSIGN_DISPATCH           | delivery_task      |       108 | {"routeNo": "R20260911-1", "orderIds": [218], "courierId                                       |
+| 513 |           6 | COURIER_PICKUP            | order              |       218 | {"taskId": 108, "allPicked": true, "taskStatus": 1, "ord                                       |
++-----+-------------+---------------------------+--------------------+-----------+------------------------------------------------------------------------------------------------+
+
+
+【五、审计量增长估算（本卡新增的每单留痕行）】
+  每笔订单新增（必发生）:
+    ORDER_CREATE(1) + ORDER_PAY(1) + COURIER_PICKUP(1) + COURIER_DELIVER(1) + ORDER_RECEIVE(1) = 5 行/单
+  条件发生:
+    ORDER_UPDATE(编辑未支付订单, 1) / ORDER_CANCEL(取消, 1) / COD_MARK_PAID(仅货到付款单, 1)
+  ⇒ 常规估算 ≈ 5~7 行/单；若货到付款占比高、改单频繁，上探 7~8 行/单
+  quickStock：每「改一次可供量」+1 行（与订单量无关，走供应商操作频次）
+mysql: [Warning] Using a password on the command line interface can be insecure.
+  单行均长实测 ≈ 145 字节（含 action/entity/时间戳等固定列）
+  日增估算表：
+  | 日均订单 | 新增行/天 | 新增体积/天 | 年增行 | 年增体积 |
+  |---|---|---|---|---|
+  | 100 | 600 | 85.0 KB | 219000 | 30.3 MB |
+  | 500 | 3000 | 424.8 KB | 1095000 | 151.4 MB |
+  | 1000 | 6000 | 849.6 KB | 2190000 | 302.8 MB |
+  | 3000 | 18000 | 2548.8 KB | 6570000 | 908.5 MB |
+  注：按 6 行/单中位估计（create+pay+pickup+deliver+receive + 1 条件行）
+mysql: [Warning] Using a password on the command line interface can be insecure.
+  当前 audit_log 总量: 505 行（历史累计，含测试数据）
