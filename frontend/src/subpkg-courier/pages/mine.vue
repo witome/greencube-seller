@@ -11,10 +11,10 @@
     </view>
 
     <view class="card">
-      <view class="list-item" @tap="t('健康证：有效期至 2026-12-31（到期前 15 天预警）')"><view class="li-ico" style="background:#E6F9F0;">📋</view><view class="li-main"><view class="li-t">证照管理</view><view class="li-d">健康证 · 驾驶证</view></view><view class="arrow">›</view></view>
-      <view class="list-item" @tap="t('培训记录：冷链规范（已通过）· 客户服务（已通过）')"><view class="li-ico" style="background:#E8F1FF;">📚</view><view class="li-main"><view class="li-t">培训记录</view><view class="li-d">冷链规范 · 客户服务</view></view><view class="arrow">›</view></view>
+      <view class="list-item" @tap="t('健康证有效期：以运营登记为准')"><view class="li-ico" style="background:#E6F9F0;">📋</view><view class="li-main"><view class="li-t">证照管理</view><view class="li-d">健康证 · 驾驶证</view></view><view class="arrow">›</view></view>
+      <view class="list-item" @tap="t('培训记录：将由平台统一记录')"><view class="li-ico" style="background:#E8F1FF;">📚</view><view class="li-main"><view class="li-t">培训记录</view><view class="li-d">由平台统一记录</view></view><view class="arrow">›</view></view>
       <view class="list-item" @tap="t('收入由平台统一发放，不展示订单金额')"><view class="li-ico" style="background:#FFF3E6;">💰</view><view class="li-main"><view class="li-t">收入说明</view><view class="li-d">平台统一发放</view></view><view class="arrow">›</view></view>
-      <view class="list-item" @tap="t('违规记录：本月 0 次')"><view class="li-ico" style="background:#FFEDED;">⚠️</view><view class="li-main"><view class="li-t">违规记录</view><view class="li-d">本月 0 次</view></view><view class="arrow">›</view></view>
+      <view class="list-item" @tap="t('违规记录：以平台记录为准')"><view class="li-ico" style="background:#FFEDED;">⚠️</view><view class="li-main"><view class="li-t">违规记录</view><view class="li-d">以平台记录为准</view></view><view class="arrow">›</view></view>
     </view>
 
     <!-- 身份切换 -->
