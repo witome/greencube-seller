@@ -54,8 +54,8 @@ export class AdminUserController {
   /// 分配业务员
   @Post('buyers/:id/assign')
   @Roles(Role.ADMIN, Role.BUSINESS_AGENT)
-  async assignAgent(@Param('id') id: string, @Body() dto: AssignDto) {
-    return this.service.assignAgent(Number(id), dto)
+  async assignAgent(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() dto: AssignDto) {
+    return this.service.assignAgent(Number(id), dto, userId)
   }
 
   /// 供应商列表
@@ -82,22 +82,22 @@ export class AdminUserController {
   /// 新增分类
   @Post('categories')
   @Roles(Role.ADMIN)
-  async createCategory(@Body() dto: CategoryDto) {
-    return this.service.createCategory(dto)
+  async createCategory(@CurrentUser('userId') userId: bigint, @Body() dto: CategoryDto) {
+    return this.service.createCategory(dto, userId)
   }
 
   /// 修改分类
   @Put('categories/:id')
   @Roles(Role.ADMIN)
-  async updateCategory(@Param('id') id: string, @Body() dto: CategoryDto) {
-    return this.service.updateCategory(Number(id), dto)
+  async updateCategory(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() dto: CategoryDto) {
+    return this.service.updateCategory(Number(id), dto, userId)
   }
 
   /// 删除分类
   @Delete('categories/:id')
   @Roles(Role.ADMIN)
-  async deleteCategory(@Param('id') id: string) {
-    return this.service.deleteCategory(Number(id))
+  async deleteCategory(@Param('id') id: string, @CurrentUser('userId') userId: bigint) {
+    return this.service.deleteCategory(Number(id), userId)
   }
 
   /// 查看供应商授权分类
@@ -110,8 +110,12 @@ export class AdminUserController {
   /// 设置供应商授权分类
   @Put('suppliers/:id/categories')
   @Roles(Role.ADMIN)
-  async setSupplierCategories(@Param('id') id: string, @Body() dto: SupplierCategoriesDto) {
-    return this.service.setSupplierCategories(Number(id), dto)
+  async setSupplierCategories(
+    @Param('id') id: string,
+    @CurrentUser('userId') userId: bigint,
+    @Body() dto: SupplierCategoriesDto,
+  ) {
+    return this.service.setSupplierCategories(Number(id), dto, userId)
   }
 
   /// 审核供应商（0 待审核 / 1 合作中 / 2 停合作）

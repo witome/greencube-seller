@@ -4,6 +4,7 @@ import { BizException, ErrorCode } from '../../common/constants/error-codes'
 import { ApplyGoodsDto } from './dto/apply-goods.dto'
 import { ChangeGoodsDto } from './dto/change-goods.dto'
 import { QuickStockDto } from './dto/quick-stock.dto'
+import { AuditService } from '../audit/audit.service'
 
 /// 商品状态（与 schema Product.status 对应）
 const ProductStatus = {
@@ -14,7 +15,7 @@ const ProductStatus = {
 
 @Injectable()
 export class SupplierGoodsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   private async getSupplier(userId: bigint) {
     const supplier = await this.prisma.supplier.findUnique({ where: { userId } })
@@ -216,9 +217,21 @@ export class SupplierGoodsService {
     })
     if (!link) throw new BizException(ErrorCode.FORBIDDEN, '该商品不属于本供应商')
 
+    const dailySupplyBefore = Number(link.dailySupply)
     await this.prisma.productSupplierLink.update({
       where: { id: link.id },
       data: { dailySupply: dto.dailySupply },
+    })
+
+    // 铁律 3：免审即时改可供量 → 直接影响自动拆单结果，属关键操作，全量写审计
+    // （2026-09-11 补，闭合审计复核缺口 S4）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'QUICK_UPDATE_DAILY_SUPPLY',
+      entity: 'product',
+      entityId: productId,
+      before: { supplierId: Number(supplier.id), dailySupply: dailySupplyBefore },
+      after: { supplierId: Number(supplier.id), dailySupply: dto.dailySupply },
     })
 
     return { productId, dailySupply: dto.dailySupply, effectiveImmediately: true }

@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
 import { DeliverDto, ReportDto, PayProofDto } from './dto/courier.dto'
+import { AuditService } from '../audit/audit.service'
 
 /// 配送任务状态：0 待取货 / 1 已取货待出发 / 2 已出发配送中 / 3 已完成 / 4 异常
 const TaskStatus = { PENDING_PICKUP: 0, DELIVERING: 1, DEPARTED: 2, DONE: 3, EXCEPTION: 4 } as const
 
 @Injectable()
 export class CourierService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   private async getCourier(userId: bigint) {
     const courier = await this.prisma.courier.findUnique({ where: { userId } })
@@ -122,6 +123,16 @@ export class CourierService {
       ),
     ])
 
+    // 铁律 3：取货推进交付链路（任务 0→1、订单 45/40→50），写审计（2026-09-11 补，闭合 S2）
+    await this.audit.log({
+      operatorId: courier.userId,
+      action: 'COURIER_PICKUP',
+      entity: 'delivery_task',
+      entityId: taskId,
+      before: { taskStatus: task.status },
+      after: { taskStatus: TaskStatus.DELIVERING, orderIds },
+    })
+
     return { taskId, status: TaskStatus.DELIVERING }
   }
 
@@ -160,6 +171,16 @@ export class CourierService {
     if (remaining === 0) {
       await this.prisma.courier.update({ where: { id: courier.id }, data: { onRoute: 0 } })
     }
+
+    // 铁律 3：交付确认推进交付链路（任务→3、订单 50→60），写审计（2026-09-11 补，闭合 S2）
+    await this.audit.log({
+      operatorId: courier.userId,
+      action: 'COURIER_DELIVER',
+      entity: 'delivery_task',
+      entityId: taskId,
+      before: { taskStatus: task.status },
+      after: { taskStatus: TaskStatus.DONE, deliveredOrders: orderIds.length, orderIds },
+    })
 
     return { taskId, status: TaskStatus.DONE, deliveredOrders: orderIds.length, resumed: remaining === 0 }
   }
@@ -227,9 +248,19 @@ export class CourierService {
   // ⚠️ 铁律：不返回金额、不作核销依据，以服务端回调为准
   // ────────────────────────────────────────
   async markPaid(userId: bigint, orderId: number) {
-    await this.getCourier(userId)
+    const courier = await this.getCourier(userId)
     const order = await this.prisma.order.findUnique({ where: { id: BigInt(orderId) } })
     if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+
+    // 铁律 3：COD 收款的第一手记录（仅标记「客户称已支付」，不作核销依据），写审计
+    // （2026-09-11 补，闭合 S3；核销仍以 pay-proof / 服务端回调为准）
+    await this.audit.log({
+      operatorId: courier.userId,
+      action: 'COD_MARK_PAID',
+      entity: 'order',
+      entityId: orderId,
+      after: { courierId: Number(courier.id), claimedPaid: true, note: '客户称已支付（配送员标记，非核销依据）' },
+    })
 
     return {
       orderId,

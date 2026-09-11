@@ -292,6 +292,8 @@ export class AdminDispatchService {
 
     // 恢复异常订单为正常配送：根据是否已取货，恢复到「已派单(45)」或「配送中(50)」
     let resumed = false
+    let orderFromStatus: number | null = null
+    let orderToStatus: number | null = null
     if (exception.orderId) {
       let targetStatus: number = OrderStatus.DELIVERING
       if (exception.deliveryTaskId) {
@@ -300,10 +302,16 @@ export class AdminDispatchService {
         const station = stations.find((s: any) => s.type === 'deliver' && Number(s.orderId) === Number(exception.orderId))
         if (station && station.picked !== true) targetStatus = OrderStatus.ASSIGNED
       }
+      const orderBefore = await this.prisma.order.findUnique({
+        where: { id: exception.orderId },
+        select: { status: true },
+      })
+      orderFromStatus = orderBefore ? orderBefore.status : null
       await this.prisma.order.update({
         where: { id: exception.orderId },
         data: { status: targetStatus },
       })
+      orderToStatus = targetStatus
       resumed = true
     }
 
@@ -311,6 +319,24 @@ export class AdminDispatchService {
       where: { id: BigInt(id) },
       data: { status: 1, handledBy: operatorId, handledAt: new Date() },
     })
+
+    // 铁律 3：处理异常工单会推进订单状态（92 无法交付 → 45/50），属关键操作，全量写审计
+    // （2026-09-11 补，闭合审计复核缺口 G1）
+    await this.audit.log({
+      operatorId,
+      action: 'HANDLE_DELIVERY_EXCEPTION',
+      entity: 'delivery_exception',
+      entityId: id,
+      before: { status: exception.status, orderStatus: orderFromStatus },
+      after: {
+        status: 1,
+        exceptionId: id,
+        orderId: exception.orderId ? Number(exception.orderId) : null,
+        fromStatus: orderFromStatus,
+        toStatus: orderToStatus,
+      },
+    })
+
     return { exceptionId: id, status: 1, resumed }
   }
 }

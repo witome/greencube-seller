@@ -59,7 +59,6 @@ export const adminApi = {
   assignAgent: (id, agentId) => post(`/admin/buyers/${id}/assign`, { agentId }),
 
   // 其他模块（占位）
-  getDashboard: () => get('/admin/dashboard'),
   getGoodsPending: () => get('/admin/goods/pending'),
   getGoodsChangePending: () => get('/admin/goods/change-pending'),
   getGoodsPriority: (productId) => get(`/admin/goods/${productId}/priority`),

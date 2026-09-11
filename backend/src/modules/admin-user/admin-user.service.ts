@@ -195,14 +195,27 @@ export class AdminUserService {
   // ────────────────────────────────────────
   // 分配业务员（MVP：暂存为 verifiedBy 字段，作为负责人）
   // ────────────────────────────────────────
-  async assignAgent(id: number, dto: AssignDto) {
+  async assignAgent(id: number, dto: AssignDto, operatorId: bigint) {
     const p = await this.prisma.purchaser.findUnique({ where: { id: BigInt(id) } })
     if (!p) throw new BizException(ErrorCode.NOT_FOUND, '采购方不存在')
 
+    const beforeAgentId = p.verifiedBy ? Number(p.verifiedBy) : null
     await this.prisma.purchaser.update({
       where: { id: p.id },
       data: { verifiedBy: BigInt(dto.agentId) },
     })
+
+    // 铁律 3：分配业务员改写负责人归属，属权限类关键操作，全量写审计
+    // （2026-09-11 补，闭合审计复核缺口 G3）
+    await this.audit.log({
+      operatorId,
+      action: 'ASSIGN_BUYER_AGENT',
+      entity: 'buyer',
+      entityId: id,
+      before: { agentId: beforeAgentId },
+      after: { agentId: dto.agentId },
+    })
+
     return { purchaserId: Number(p.id), agentId: dto.agentId }
   }
 
@@ -265,26 +278,54 @@ export class AdminUserService {
     }))
   }
 
-  async createCategory(dto: CategoryDto) {
+  async createCategory(dto: CategoryDto, operatorId: bigint) {
     const cat = await this.prisma.category.create({
       data: { name: dto.name, parentId: dto.parentId ? BigInt(dto.parentId) : null, sort: dto.sort ?? 0 },
+    })
+    // 铁律 3：分类是商品/供货关系的挂载点，改动写审计（2026-09-11 补，闭合审计复核缺口 G4~G6）
+    await this.audit.log({
+      operatorId,
+      action: 'CATEGORY_CREATE',
+      entity: 'category',
+      entityId: Number(cat.id),
+      after: { name: cat.name, parentId: cat.parentId ? Number(cat.parentId) : null, sort: cat.sort },
     })
     return { categoryId: Number(cat.id), name: cat.name }
   }
 
-  async updateCategory(id: number, dto: CategoryDto) {
+  async updateCategory(id: number, dto: CategoryDto, operatorId: bigint) {
+    const before = await this.prisma.category.findUnique({ where: { id: BigInt(id) } })
     const cat = await this.prisma.category.update({
       where: { id: BigInt(id) },
       data: { name: dto.name, sort: dto.sort ?? 0 },
     })
+    // 铁律 3：分类是商品/供货关系的挂载点，改动写审计（2026-09-11 补，闭合审计复核缺口 G4~G6）
+    await this.audit.log({
+      operatorId,
+      action: 'CATEGORY_UPDATE',
+      entity: 'category',
+      entityId: id,
+      before: before ? { name: before.name, sort: before.sort } : null,
+      after: { name: cat.name, sort: cat.sort },
+    })
     return { categoryId: Number(cat.id), name: cat.name }
   }
 
-  async deleteCategory(id: number) {
+  async deleteCategory(id: number, operatorId: bigint) {
+    const cat = await this.prisma.category.findUnique({ where: { id: BigInt(id) } })
     const productCount = await this.prisma.product.count({ where: { categoryId: BigInt(id) } })
     if (productCount > 0) throw new BizException(ErrorCode.PARAM_ERROR, '该分类下有商品，无法删除')
     await this.prisma.supplierCategory.deleteMany({ where: { categoryId: BigInt(id) } })
     await this.prisma.category.delete({ where: { id: BigInt(id) } })
+    // 铁律 3：删除分类属结构性变更，写审计（2026-09-11 补，闭合审计复核缺口 G4~G6）
+    await this.audit.log({
+      operatorId,
+      action: 'CATEGORY_DELETE',
+      entity: 'category',
+      entityId: id,
+      before: cat ? { name: cat.name, parentId: cat.parentId ? Number(cat.parentId) : null, sort: cat.sort } : null,
+      after: { deleted: true },
+    })
     return { deleted: true }
   }
 
@@ -299,9 +340,14 @@ export class AdminUserService {
     return rows.map((r) => ({ categoryId: Number(r.categoryId), name: r.category.name }))
   }
 
-  async setSupplierCategories(id: number, dto: SupplierCategoriesDto) {
+  async setSupplierCategories(id: number, dto: SupplierCategoriesDto, operatorId: bigint) {
     const supplier = await this.prisma.supplier.findUnique({ where: { id: BigInt(id) } })
     if (!supplier) throw new BizException(ErrorCode.NOT_FOUND, '供应商不存在')
+
+    const beforeRows = await this.prisma.supplierCategory.findMany({
+      where: { supplierId: BigInt(id) },
+      select: { categoryId: true },
+    })
 
     await this.prisma.supplierCategory.deleteMany({ where: { supplierId: BigInt(id) } })
     if (dto.categoryIds.length) {
@@ -309,6 +355,18 @@ export class AdminUserService {
         data: dto.categoryIds.map((cid) => ({ supplierId: BigInt(id), categoryId: BigInt(cid) })),
       })
     }
+
+    // 铁律 3：分类授权决定供应商可见/可发布范围，属权限类关键操作，全量写审计
+    // （2026-09-11 补，闭合审计复核缺口 G2）
+    await this.audit.log({
+      operatorId,
+      action: 'SET_SUPPLIER_CATEGORIES',
+      entity: 'supplier',
+      entityId: id,
+      before: { categoryIds: beforeRows.map((r) => Number(r.categoryId)).sort((a, b) => a - b) },
+      after: { categoryIds: [...dto.categoryIds].sort((a, b) => a - b) },
+    })
+
     return { supplierId: Number(id), categoryIds: dto.categoryIds }
   }
 

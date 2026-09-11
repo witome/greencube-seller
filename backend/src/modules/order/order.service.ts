@@ -12,10 +12,11 @@ import { ReceiveOrderDto } from './dto/receive-order.dto'
 import { UpdateOrderDto } from './dto/update-order.dto'
 import { PayOrderDto } from './dto/pay-order.dto'
 import { allocateByPriority } from '../../common/utils/split.util'
+import { AuditService } from '../audit/audit.service'
 
 @Injectable()
 export class OrderService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   /// ⚠️ 仅「正常」采购方可下单
   private async assertActivePurchaser(userId: bigint) {
@@ -86,6 +87,23 @@ export class OrderService {
     // 下单成功后清空购物车中对应商品
     await this.prisma.cartItem.deleteMany({
       where: { userId, productId: { in: productIds } },
+    })
+
+    // 铁律 3：下单是订单全链路起点（含金额快照 + 下单事务内即时拆单），写审计
+    // （2026-09-11 补，闭合审计复核缺口 S1）
+    // ⚠️ 高频：落库量与订单量 1:1，代价评估见任务卡「审计量预估」段
+    await this.audit.log({
+      operatorId: userId,
+      action: 'ORDER_CREATE',
+      entity: 'order',
+      entityId: Number(order.id),
+      after: {
+        status: order.status,
+        purchaserId: Number(purchaser.id),
+        itemCount: dto.items.length,
+        amountOrdered: Number(order.amountOrdered),
+        deliveryFee: Number(order.deliveryFee),
+      },
     })
 
     return { orderId: Number(order.id), status: order.status, amountOrdered: Number(order.amountOrdered), deliveryFee: Number(order.deliveryFee) }
@@ -258,6 +276,17 @@ export class OrderService {
       where: { id: order.id },
       data: { status: OrderStatus.CANCELLED },
     })
+
+    // 铁律 3：取消订单属状态变更（含金额撤销），写审计（2026-09-11 补，闭合 S1）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'ORDER_CANCEL',
+      entity: 'order',
+      entityId: orderId,
+      before: { status: order.status, amountOrdered: Number(order.amountOrdered) },
+      after: { status: OrderStatus.CANCELLED },
+    })
+
     return { orderId, status: OrderStatus.CANCELLED }
   }
 
@@ -320,6 +349,20 @@ export class OrderService {
         where: { id: order.id },
         data: deliveryPatch,
       })
+    })
+
+    // 铁律 3：编辑待确认订单会重算金额并重新拆单，属关键操作，写审计（2026-09-11 补，闭合 S1）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'ORDER_UPDATE',
+      entity: 'order',
+      entityId: orderId,
+      before: { status: order.status, amountOrdered: Number(order.amountOrdered), deliveryFee: Number(order.deliveryFee) },
+      after: {
+        amountOrdered: amountOrderedRounded,
+        deliveryFee: deliveryPatch.deliveryFee,
+        itemCount: dto.items.length,
+      },
     })
 
     return { orderId, amountOrdered: Math.round(amountOrdered * 100) / 100 }
@@ -392,6 +435,15 @@ export class OrderService {
           amount,
         },
       })
+      // 铁律 3：创建支付流水属金额类关键操作，写审计（2026-09-11 补，闭合 S1）
+      await this.audit.log({
+        operatorId: userId,
+        action: 'ORDER_PAY',
+        entity: 'order',
+        entityId: orderId,
+        before: { payMethod: order.payMethod, status: order.status },
+        after: { payMethod: 1, payNo: rec.payNo, amount, status: OrderStatus.PENDING_CONFIRM, note: '微信支付（模拟通道）待回调' },
+      })
       return {
         orderId,
         payMethod: 1,
@@ -417,6 +469,16 @@ export class OrderService {
         where: { id: order.id },
         data: { status: OrderStatus.STOCKING },
       })
+    })
+
+    // 铁律 3：选择支付方式会推进订单状态（10→30）并可能触发补拆，写审计（2026-09-11 补，闭合 S1）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'ORDER_PAY',
+      entity: 'order',
+      entityId: orderId,
+      before: { payMethod: order.payMethod, status: order.status },
+      after: { payMethod: dto.payMethod, status: OrderStatus.STOCKING, note: '货到付款' },
     })
 
     return { orderId, payMethod: dto.payMethod, status: OrderStatus.STOCKING, note: '货到付款' }
@@ -534,6 +596,16 @@ export class OrderService {
     await this.prisma.order.update({
       where: { id: order.id },
       data: { status: OrderStatus.COMPLETED },
+    })
+
+    // 铁律 3：确认收货属状态变更（含拒收差额定责 + 售后工单生成），写审计（2026-09-11 补，闭合 S1）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'ORDER_RECEIVE',
+      entity: 'order',
+      entityId: orderId,
+      before: { status: order.status },
+      after: { status: OrderStatus.COMPLETED, itemCount: dto.items.length, aftersaleIds },
     })
 
     return { orderId, status: OrderStatus.COMPLETED, aftersaleIds }
