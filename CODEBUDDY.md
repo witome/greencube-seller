@@ -8,6 +8,20 @@
 四角色：**采购方、供应商、配送员、运营后台**。
 形态：微信小程序（uni-app，含 supplier / courier 分包）+ Web 运营后台 + NestJS 后端。
 
+### 📐 口径（稳定事实，勿再制造第二套数字）
+
+- **一键验收基线 = 77 通过 / 0 失败**（唯一权威数字，见下文「启动与验收」）
+- **页面数口径**：只统计「**原型对应页**」，非原型新增页与准入中间页单列
+  - 小程序路由 **30** = 原型对应 **27**（采购方 14 + 供应商 7 + 配送员 6）+ 非原型 **3**（登录页、采购方售后列表、配送员 COD 收款）
+  - 运营后台页面文件 **17** = 登录页 1 + 工作台 1 + 业务页 15（另 `Placeholder.vue` 为占位组件、非页面）；其中原型对应 14 页
+  - 原型合计 **41** 页；**`views/buyers/BuyerVerify.vue` 不存在**（审核详情是 `BuyerList.vue` 内弹窗）
+- **后端模块 22 个目录**（旧文档常写「15 个模块」，已过时）
+- **拆单时机**：下单事务内即自动拆单（明细分配供应商），订单状态仍 `10`；**无 `20 已拆单` 态**
+- **无「验收称重」环节**：`30→40` 走 `POST /supplier-fulfill/handover`，`weighing` 接口已从代码移除
+- **AI 客服 2 页**：页面已实现，**LLM 与企微链路未接**（勿写「已完成」）
+- **供货优先级**：前后端都已有（`PUT /admin/goods/:productId/priority` + `GoodsAudit.vue` 弹窗），**不是待办**
+- **数量模型**：五数量里**分拣 `qty_sorted` 仅 schema 预留、全仓零引用**（实际跑通 4 个）
+
 ## 路径
 
 | 内容 | 路径 |
@@ -24,6 +38,9 @@
 | 后端 NestJS | `cd backend && npm run dev` | http://localhost:3001/api/v1 |
 | 小程序端 | `cd frontend && npm run dev:h5` / `dev:mp-weixin` | http://localhost:5180 |
 | 运营后台 | `cd admin-web && npm run dev` | http://localhost:5190 |
+
+> ⚠️ **端口别记混**：`5180` = 小程序 H5（`frontend`），`5190` = 运营后台（`admin-web`）。
+> 且 admin-web 的 Vite 只绑 `[::1]`（IPv6）——浏览器/脚本必须用 `localhost:5190`，用 `127.0.0.1:5190` 会连不上。
 
 ### 🔁 改完后端**必须**重启（规范动作）
 
@@ -50,7 +67,7 @@ cd backend && node -e "fetch('http://127.0.0.1:3001/api/v1/auth/wx-login',{metho
 ⚠️ 小程序端要单独重编译：`cd frontend && npm run build:mp-weixin`，再在开发者工具里「编译」加载新包。
 
 - 数据库：MySQL84（`net start MySQL84`）
-- 一键验收：`cd backend && node 验收测试.js`（预期 **30/30**，2026-09-11 已把脚本对齐现行状态机）
+- 一键验收：`cd backend && node 验收测试.js`（预期 **77 通过 / 0 失败**；历史 25/25 为虚标、30/30 已过时，**不要再引用旧值**）
 - 登录：`POST /api/v1/auth/wx-login`，body `{"code":"xxx"}`；dev mock 下 code 直接映射 openid
 - 演示账号：运营 `admin`｜供应商 `demo_supplier`｜配送员 `courier`｜采购方任意 code（新号走注册+审核）
 - 真机调试：微信开发者工具，本机 IP `192.168.1.78`；AppID 已配在 `frontend/src/manifest.json`（密钥问大辉）
