@@ -498,13 +498,20 @@ export class AdminUserService {
     if (dto.licenseType !== undefined) data.licenseType = dto.licenseType || null
     if (dto.healthCertExpiry !== undefined) data.healthCertExpiry = dto.healthCertExpiry ? new Date(dto.healthCertExpiry) : null
 
-    await this.prisma.courier.update({ where: { id: BigInt(id) }, data })
-    if (dto.name !== undefined || dto.phone !== undefined) {
-      const ud: any = {}
-      if (dto.name !== undefined) ud.name = dto.name
-      if (dto.phone !== undefined) ud.phone = dto.phone
-      await this.prisma.user.update({ where: { id: c.userId }, data: ud })
+    const ud: any = {}
+    if (dto.name !== undefined) ud.name = dto.name
+    if (dto.phone !== undefined) ud.phone = dto.phone
+
+    // 手机号唯一前置校验 + 事务（2026-09-12 #24：撞号原抛 P2002→裸 5001 且 courier 已更新成半更新；修法同 #22 updateBuyer/updateSupplier）
+    if (dto.phone) {
+      const phoneOwner = await this.prisma.user.findFirst({ where: { phone: dto.phone, NOT: { id: c.userId } } })
+      if (phoneOwner) throw new BizException(ErrorCode.PHONE_ALREADY_USED, '该手机号已被其他账号使用')
     }
+
+    await this.prisma.$transaction([
+      this.prisma.courier.update({ where: { id: BigInt(id) }, data }),
+      ...(Object.keys(ud).length ? [this.prisma.user.update({ where: { id: c.userId }, data: ud })] : []),
+    ])
     await this.audit.log({
       operatorId,
       action: 'UPDATE_COURIER',

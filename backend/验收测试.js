@@ -421,6 +421,58 @@ async function main() {
   const admOk2 = await call('PUT', `/admin/buyers/${aPurchaserId}`, { shopName: b0Shop }, at)
   check('运营改采购方·不带phone正常更新', admOk2.code === 0)
 
+  // ── 3.11 #24 撞号事务化收口（2026-09-12：updateCourier + 注册链路 3 处，前置校验+$transaction+3009） ──
+  // 撞号源用 reg2Phone（B 账号的 user.phone，确定存在于 user 表、且不属于本节任何新用户本人）
+  console.log('\n【3.11 #24 撞号事务化收口（updateCourier + 注册链路3处）】')
+  const collidePhone = reg2Phone
+
+  // ① updateCourier 撞号：3009 且 courier 主表未被改脏（前后 GET 对比）
+  const courList0 = await call('GET', '/admin/couriers', null, at)
+  const courRow = courList0.data.find(c => c.courierId === 1) || courList0.data[0]
+  check('找到测试配送员', !!courRow)
+  const courHit = await call('PUT', `/admin/couriers/${courRow.courierId}`, { name: '撞号不应改到我', phone: collidePhone, idCardNo: 'HACKED-24' }, at)
+  check('运营改配送员·撞号被拒(3009·非裸5001)', courHit.code === 3009)
+  const courRow2 = (await call('GET', '/admin/couriers', null, at)).data.find(c => c.courierId === courRow.courierId)
+  check('运营改配送员·撞号无半更新(courier主表未被改脏)',
+    courRow2.name === courRow.name && courRow2.phone === courRow.phone && courRow2.idCardNo === courRow.idCardNo &&
+    courRow2.vehicleType === courRow.vehicleType && courRow2.ownVehicle === courRow.ownVehicle &&
+    courRow2.hasDriverLicense === courRow.hasDriverLicense && courRow2.licenseType === courRow.licenseType,
+    { before: courRow, after: courRow2 })
+
+  // ② 供应商注册撞号：不留半成品（总数不变）+ 正确手机号仍能注册成功（证明前置校验无误伤）
+  const supCount0 = (await call('GET', '/admin/suppliers', null, at)).data.length
+  const supRegTok = (await call('POST', '/auth/wx-login', { code: 'supreg_' + ts })).data.token
+  const supHit = await call('POST', '/register/supplier', { stallName: '撞号半成品检测档口', contact: '测试', phone: collidePhone }, supRegTok)
+  check('供应商注册·撞号被拒(3009)', supHit.code === 3009)
+  const supCount1 = (await call('GET', '/admin/suppliers', null, at)).data.length
+  check('供应商注册·撞号无半成品(供应商总数不变)', supCount1 === supCount0, { supCount0, supCount1 })
+  const supOk = await call('POST', '/register/supplier', { stallName: '#24验收档口', contact: '测试', phone: '136' + String(ts).slice(-8) }, supRegTok)
+  check('供应商注册·正确手机号成功(前置校验无误伤)', supOk.code === 0 && supOk.data.status === 0)
+  check('供应商注册·成功后总数+1', (await call('GET', '/admin/suppliers', null, at)).data.length === supCount1 + 1)
+
+  // ③ 配送员注册撞号：同上双证
+  const courCount0 = (await call('GET', '/admin/couriers', null, at)).data.length
+  const courRegTok = (await call('POST', '/auth/wx-login', { code: 'courreg_' + ts })).data.token
+  const regIdCard = '110' + String(ts).slice(-10)
+  const courRegHit = await call('POST', '/register/courier', { name: '撞号半成品检测员', phone: collidePhone, idCardNo: regIdCard }, courRegTok)
+  check('配送员注册·撞号被拒(3009)', courRegHit.code === 3009)
+  const courCount1 = (await call('GET', '/admin/couriers', null, at)).data.length
+  check('配送员注册·撞号无半成品(配送员总数不变)', courCount1 === courCount0, { courCount0, courCount1 })
+  const courOk = await call('POST', '/register/courier', { name: '#24验收配送员', phone: '135' + String(ts).slice(-8), idCardNo: regIdCard }, courRegTok)
+  check('配送员注册·正确手机号成功(前置校验无误伤)', courOk.code === 0 && courOk.data.status === 0)
+  check('配送员注册·成功后总数+1', (await call('GET', '/admin/couriers', null, at)).data.length === courCount1 + 1)
+
+  // ④ 采购方注册撞号：同上双证（撞号时不得留下半成品 purchaser 记录）
+  const pend0 = (await call('GET', '/admin/buyers/pending?pageSize=1', null, at)).data.total
+  const buyRegTok = (await call('POST', '/auth/wx-login', { code: 'buyreg_' + ts })).data.token
+  const buyHit = await call('POST', '/buyer/register', { shopName: '撞号半成品检测餐馆', contact: '测试', phone: collidePhone, address: '撞号路 1 号' }, buyRegTok)
+  check('采购方注册·撞号被拒(3009)', buyHit.code === 3009)
+  const pend1 = (await call('GET', '/admin/buyers/pending?pageSize=1', null, at)).data.total
+  check('采购方注册·撞号无半成品(待审核总数不变)', pend1 === pend0, { pend0, pend1 })
+  const buyOk = await call('POST', '/buyer/register', { shopName: '#24验收餐馆', contact: '测试', phone: '134' + String(ts).slice(-8), address: '验收路 2 号' }, buyRegTok)
+  check('采购方注册·正确手机号成功(前置校验无误伤)', buyOk.code === 0 && buyOk.data.accountStatus === 1)
+  check('采购方注册·成功后待审核总数+1', (await call('GET', '/admin/buyers/pending?pageSize=1', null, at)).data.total === pend1 + 1)
+
   // ── 4. 核单拆单（10 待确认 → 30 备货中）──
   // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行
   //   10 待确认 ──支付后自动拆单──> 30 备货中 ──供应商确认备货完成──> 40 待配送 ──派单──> 45 ──取货──> 50

@@ -38,26 +38,38 @@ export class BuyerService {
     const existing = await this.prisma.purchaser.findUnique({ where: { userId } })
     if (existing) throw new BizException(ErrorCode.PARAM_ERROR, '已注册，请勿重复提交')
 
-    const purchaser = await this.prisma.purchaser.create({
-      data: {
-        userId,
-        shopName: dto.shopName,
-        contact: dto.contact,
-        phone: dto.phone,
-        address: dto.address,
-        deliveryWindows: dto.deliveryWindows ?? ['中 10-13'],
-        // 空字符串统一转 null，避免 business_license_no 唯一约束冲突（前端会传 ''）
-        businessLicenseNo: dto.businessLicenseNo || null,
-        businessLicenseImg: dto.licenseImg || null,
-        foodPermitImg: dto.permitImg || null,
-        accountStatus: AccountStatus.PENDING,
-      },
-    })
+    // ④ 手机号唯一前置校验（2026-09-12 #24：必须在建任何记录之前拦下，撞号不留半成品；修法同 #22 模式）
+    // user.phone 唯一约束，仅排除本人（本人 user.phone 本就等于该号时不算撞）
+    if (dto.phone) {
+      const phoneOwner = await this.prisma.user.findFirst({ where: { phone: dto.phone, NOT: { id: userId } } })
+      if (phoneOwner) throw new BizException(ErrorCode.PHONE_ALREADY_USED, '该手机号已被其他账号使用')
+    }
 
-    // 同步手机号到 user（首填）；roles 由 auth 登录时的 resolveRoles 依据 purchaser 关联自动补齐
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { phone: dto.phone },
+    // 事务：purchaser 主表 + user 手机号同步要么都成、要么整体回滚（杜绝主表已建、user 未更新的半成品）
+    const purchaser = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.purchaser.create({
+        data: {
+          userId,
+          shopName: dto.shopName,
+          contact: dto.contact,
+          phone: dto.phone,
+          address: dto.address,
+          deliveryWindows: dto.deliveryWindows ?? ['中 10-13'],
+          // 空字符串统一转 null，避免 business_license_no 唯一约束冲突（前端会传 ''）
+          businessLicenseNo: dto.businessLicenseNo || null,
+          businessLicenseImg: dto.licenseImg || null,
+          foodPermitImg: dto.permitImg || null,
+          accountStatus: AccountStatus.PENDING,
+        },
+      })
+
+      // 同步手机号到 user（首填）；roles 由 auth 登录时的 resolveRoles 依据 purchaser 关联自动补齐
+      await tx.user.update({
+        where: { id: userId },
+        data: { phone: dto.phone },
+      })
+
+      return created
     })
 
     return {
