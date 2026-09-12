@@ -427,10 +427,16 @@ export class AdminUserService {
     if (dto.businessLicenseNo !== undefined) data.businessLicenseNo = dto.businessLicenseNo || null
     if (dto.deliveryWindows !== undefined) data.deliveryWindows = dto.deliveryWindows
 
-    await this.prisma.purchaser.update({ where: { id: BigInt(id) }, data })
-    if (dto.phone !== undefined) {
-      await this.prisma.user.update({ where: { id: p.userId }, data: { phone: dto.phone } })
+    // 手机号唯一前置校验 + 事务（2026-09-12 #22：撞号原抛 P2002→裸 5001 且 purchaser 已更新成半更新；修法同自助接口）
+    if (dto.phone) {
+      const phoneOwner = await this.prisma.user.findFirst({ where: { phone: dto.phone, NOT: { id: p.userId } } })
+      if (phoneOwner) throw new BizException(ErrorCode.PHONE_ALREADY_USED, '该手机号已被其他账号使用')
     }
+
+    await this.prisma.$transaction([
+      this.prisma.purchaser.update({ where: { id: BigInt(id) }, data }),
+      ...(dto.phone !== undefined ? [this.prisma.user.update({ where: { id: p.userId }, data: { phone: dto.phone } })] : []),
+    ])
     await this.audit.log({
       operatorId,
       action: 'UPDATE_BUYER',
@@ -457,10 +463,16 @@ export class AdminUserService {
     if (dto.phone !== undefined) qual.phone = dto.phone
     if (dto.contact !== undefined || dto.phone !== undefined) data.qualification = qual
 
-    await this.prisma.supplier.update({ where: { id: BigInt(id) }, data })
-    if (dto.phone !== undefined) {
-      await this.prisma.user.update({ where: { id: s.userId }, data: { phone: dto.phone } })
+    // 手机号唯一前置校验 + 事务（2026-09-12 #22：修法同 updateBuyer / 自助接口）
+    if (dto.phone) {
+      const phoneOwner = await this.prisma.user.findFirst({ where: { phone: dto.phone, NOT: { id: s.userId } } })
+      if (phoneOwner) throw new BizException(ErrorCode.PHONE_ALREADY_USED, '该手机号已被其他账号使用')
     }
+
+    await this.prisma.$transaction([
+      this.prisma.supplier.update({ where: { id: BigInt(id) }, data }),
+      ...(dto.phone !== undefined ? [this.prisma.user.update({ where: { id: s.userId }, data: { phone: dto.phone } })] : []),
+    ])
     await this.audit.log({
       operatorId,
       action: 'UPDATE_SUPPLIER',

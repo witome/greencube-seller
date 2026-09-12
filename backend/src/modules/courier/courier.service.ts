@@ -190,14 +190,13 @@ export class CourierService {
   // ────────────────────────────────────────
   async report(userId: bigint, dto: ReportDto) {
     const courier = await this.getCourier(userId)
-    await this.prisma.auditLog.create({
-      data: {
-        operatorId: courier.userId,
-        action: 'courier_report',
-        entity: 'delivery_task',
-        entityId: BigInt(dto.taskId ?? dto.orderId ?? 0),
-        after: { orderId: dto.orderId ?? null, taskId: dto.taskId ?? null, reason: dto.reason, photos: dto.photos },
-      },
+    // 2026-09-12 #14 收口：直写 prisma.auditLog.create → 统一走 AuditService（字段等价；action 值逐字保留 courier_report）
+    await this.audit.log({
+      operatorId: courier.userId,
+      action: 'courier_report',
+      entity: 'delivery_task',
+      entityId: BigInt(dto.taskId ?? dto.orderId ?? 0),
+      after: { orderId: dto.orderId ?? null, taskId: dto.taskId ?? null, reason: dto.reason, photos: dto.photos },
     })
 
     // 订单级异常：只标记该订单，不影响同任务其他订单与任务状态
@@ -297,14 +296,13 @@ export class CourierService {
         payProof: { photos: dto.photos, courierId: Number(courier.id), paidAt: new Date().toISOString() },
       },
     })
-    await this.prisma.auditLog.create({
-      data: {
-        operatorId: userId,
-        action: 'COD_PAY_PROOF',
-        entity: 'order',
-        entityId: orderId,
-        after: { photos: dto.photos },
-      },
+    // 2026-09-12 #14 收口：直写 → AuditService（action 值逐字保留 COD_PAY_PROOF）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'COD_PAY_PROOF',
+      entity: 'order',
+      entityId: orderId,
+      after: { photos: dto.photos },
     })
 
     return { orderId, recorded: true }

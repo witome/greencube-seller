@@ -397,6 +397,30 @@ async function main() {
   await call('PUT', '/supplier/profile', { stallName: pA0.data.stallName, contact: null, phone: null, address: null }, stA)
   check('复位·档口名还原', (await call('GET', '/supplier/profile', null, stA)).data.stallName === pA0.data.stallName)
 
+  // ── 3.10 运营侧撞号修复（#22，2026-09-12：前置校验+事务+3009，修法同自助接口） ──
+  console.log('\n【3.10 运营侧 updateBuyer/updateSupplier 撞号修复】')
+  // ① updateSupplier 撞号：3009 且 supplier 主表未被改脏
+  const supDet0 = await call('GET', '/admin/suppliers/1', null, at)
+  const sup0Name = supDet0.data?.stallName ?? (supDet0.data?.supplier || supDet0.data)?.stallName
+  const admHit1 = await call('PUT', '/admin/suppliers/1', { phone: '13800001111', stallName: '撞号不应改到我' }, at)
+  check('运营改供应商·撞号被拒(3009)', admHit1.code === 3009)
+  const supDet1 = await call('GET', '/admin/suppliers/1', null, at)
+  const sup1Name = supDet1.data?.stallName ?? (supDet1.data?.supplier || supDet1.data)?.stallName
+  check('运营改供应商·撞号无半更新(主表未改脏)', sup1Name === sup0Name, { sup0Name, sup1Name })
+  // ② 不改手机号时其余字段正常更新
+  const admOk1 = await call('PUT', '/admin/suppliers/1', { stallName: sup0Name }, at)
+  check('运营改供应商·不带phone正常更新', admOk1.code === 0)
+  // ③ updateBuyer 撞号：3009 且 purchaser 主表未被改脏
+  const buyerDet0 = await call('GET', `/admin/buyers/${aPurchaserId}/verify-detail`, null, at)
+  const b0Shop = buyerDet0.data.shopName
+  const admHit2 = await call('PUT', `/admin/buyers/${aPurchaserId}`, { phone: '13800001111', shopName: '撞号不应改到我' }, at)
+  check('运营改采购方·撞号被拒(3009)', admHit2.code === 3009)
+  const buyerDet1 = await call('GET', `/admin/buyers/${aPurchaserId}/verify-detail`, null, at)
+  check('运营改采购方·撞号无半更新(主表未改脏)', buyerDet1.data.shopName === b0Shop)
+  // ④ 不改手机号时其余字段正常更新（店名原值写回，净零）
+  const admOk2 = await call('PUT', `/admin/buyers/${aPurchaserId}`, { shopName: b0Shop }, at)
+  check('运营改采购方·不带phone正常更新', admOk2.code === 0)
+
   // ── 4. 核单拆单（10 待确认 → 30 备货中）──
   // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行
   //   10 待确认 ──支付后自动拆单──> 30 备货中 ──供应商确认备货完成──> 40 待配送 ──派单──> 45 ──取货──> 50

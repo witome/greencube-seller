@@ -45,7 +45,9 @@
         <text class="pv-overdue-badge">⏰ 已超过 24 小时</text>
       </template>
       <text>已超过 24 小时？</text>
-      <text class="pv-link" @tap="urge">催办</text>
+      <!-- 2026-09-12 催办修复：原 <text @tap> 在 uni-h5 vue3 编译为 onClick、运行时无消费（点击恒无效），
+           改 <view @tap>（onTap touch 委托，全仓 view 模式已验证可用）；inline 化保持行内视觉 -->
+      <view class="pv-link pv-link-view" @tap="urge">催办</view>
       <text> · 联系客服 400-XXX-XXXX</text>
     </view>
   </view>
@@ -53,6 +55,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { buyerApi } from '@/api/modules'
 
 // 分角色文案：注册身份不同，审核中页面内容不同
 const roleConfig = {
@@ -90,13 +93,16 @@ const cfg = computed(() => {
   return roleConfig[role] || roleConfig.purchaser
 })
 
-const urge = () => {
-  uni.request({
-    url: '/api/buyer/urge-verify',
-    method: 'POST',
-    success: () => uni.showToast({ title: '已催办，运营将尽快介入', icon: 'none' }),
-    fail: () => uni.showToast({ title: '已催办', icon: 'none' }),
-  })
+// 催办：走统一 request 封装（后端 POST /buyer/urge-verify → { urged, nextFollowHours }）
+// 成功才提示已催办（附真实跟进时长）；失败如实提示——不允许任何「失败弹成功」分支
+const urge = async () => {
+  try {
+    const r = await buyerApi.urgeVerify()
+    const h = r?.nextFollowHours
+    uni.showToast({ title: h ? `已催办，运营将在 ${h} 小时内跟进` : '已催办，运营将尽快介入', icon: 'none' })
+  } catch (e) {
+    uni.showToast({ title: '催办失败，请稍后重试', icon: 'none' })
+  }
 }
 const previewGoods = () => {
   if (cfg.value.previewLabel.includes('商品')) {
@@ -283,6 +289,7 @@ onMounted(async () => {
   color: $text-placeholder;
 }
 .pv-link {
+  display: inline; /* view 行内化，保持与前后 text 同行 */
   color: $brand;
   font-weight: 600;
 }
