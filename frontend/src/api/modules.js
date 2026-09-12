@@ -84,6 +84,9 @@ export const supplierApi = {
   handover: (orderId) => post('/supplier-fulfill/handover', { orderId }), // 备货完成确认
   // 结算（含服务费扣除行）
   getSettlement: (period) => get(`/supplier-finance/settlement/${period}`),
+  // 店铺资料自助（2026-09-11 深夜卡：只改自己，资质/状态不可改）
+  getProfile: () => get('/supplier/profile'),
+  updateProfile: (data) => put('/supplier/profile', data),
 }
 
 /* ── 配送员端 ── */

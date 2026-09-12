@@ -13,7 +13,7 @@
     <view class="card">
       <view class="list-item" @tap="go('/subpkg-supplier/pages/goods-manage')"><view class="li-ico" style="background:#E6F9F0;">📦</view><view class="li-main"><view class="li-t">商品管理</view><view class="li-d">提交新品 · 变更 · 改库存</view></view><view class="arrow">›</view></view>
       <view class="list-item" @tap="go('/subpkg-supplier/pages/finance')"><view class="li-ico" style="background:#F3EDFF;">💰</view><view class="li-main"><view class="li-t">历史与应付</view><view class="li-d">月度结算单</view></view><view class="arrow">›</view></view>
-      <view class="list-item" @tap="t('资质证照：营业执照/检疫证（含有效期预警）')"><view class="li-ico" style="background:#FFF3E6;">📋</view><view class="li-main"><view class="li-t">资质维护</view><view class="li-d">营业执照 · 检疫合格证</view></view><view class="arrow">›</view></view>
+      <view class="list-item" @tap="go('/subpkg-supplier/pages/profile-edit')"><view class="li-ico" style="background:#FFF3E6;">🏪</view><view class="li-main"><view class="li-t">店铺资料</view><view class="li-d">档口信息 · 资质证照（只读）</view></view><view class="arrow">›</view></view>
     </view>
 
     <!-- 身份切换 -->

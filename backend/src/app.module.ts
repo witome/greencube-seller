@@ -16,6 +16,7 @@ import { OrderModule } from './modules/order/order.module'
 import { SupplierGoodsModule } from './modules/supplier-goods/supplier-goods.module'
 import { SupplierFulfillModule } from './modules/supplier-fulfill/supplier-fulfill.module'
 import { SupplierFinanceModule } from './modules/supplier-finance/supplier-finance.module'
+import { SupplierModule } from './modules/supplier/supplier.module'
 import { CourierModule } from './modules/courier/courier.module'
 import { AdminGoodsModule } from './modules/admin-goods/admin-goods.module'
 import { AdminOrderModule } from './modules/admin-order/admin-order.module'
@@ -50,6 +51,7 @@ import { PaymentModule } from './modules/payment/payment.module'
     SupplierGoodsModule,
     SupplierFulfillModule,
     SupplierFinanceModule,
+    SupplierModule,
     CourierModule,
     AdminGoodsModule,
     AdminOrderModule,

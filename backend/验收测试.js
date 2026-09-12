@@ -127,6 +127,13 @@ async function main() {
   const badPhone = await call('PUT', '/buyer/profile', { phone: '123' }, bt2)
   check('手机号格式错误被拒(1001)', badPhone.code === 1001 && JSON.stringify(badPhone.msg || '').includes('手机号格式错误'))
 
+  // ④b 撞号手机号 → 业务码 3009 且无半更新（2026-09-12 补：事务化修复原 P2002 裸 5001 + 半更新）
+  const profA0 = await call('GET', '/buyer/profile', null, bt2)
+  const bCollide = await call('PUT', '/buyer/profile', { phone: '13800001111', shopName: '撞号不应改到我' }, bt2)
+  check('采购方撞号被拒(3009·非裸5001)', bCollide.code === 3009)
+  const profA2 = await call('GET', '/buyer/profile', null, bt2)
+  check('采购方撞号无半更新(purchaser 未改脏)', profA2.data.shopName === profA0.data.shopName && profA2.data.phone === profA0.data.phone)
+
   // ⑤ 反向：供应商/配送员 token 调自助改资料 → 2002 FORBIDDEN
   const revS = await call('PUT', '/buyer/profile', { shopName: 'x' }, st)
   check('供应商调自助改资料被拒(2002)', revS.code === 2002)
@@ -349,6 +356,46 @@ async function main() {
   }, at)
   const hcReset = await call('GET', '/buyer/home-content', null, bt)
   check('复位后·推荐位空数组(前台空态)', hcReset.data.recommendations.length === 0 && hcReset.data.notice === null)
+
+  // ── 3.9 供应商自助改店铺资料（2026-09-11 深夜卡第二部分，同 A 卡标准） ──
+  console.log('\n【3.9 供应商自助改店铺资料】')
+  const supA = await call('POST', '/auth/wx-login', { code: 'demo_supplier' })
+  const stA = supA.data.token
+  const supB = await call('POST', '/auth/wx-login', { code: 'test001' })
+  const stB = supB.data.token
+  check('A·GET 店铺资料', (await call('GET', '/supplier/profile', null, stA)).code === 0)
+  const pA0 = await call('GET', '/supplier/profile', null, stA)
+  const pB0 = await call('GET', '/supplier/profile', null, stB)
+  check('B·GET 店铺资料(基线·另一档口)', pB0.code === 0 && pB0.data.supplierId !== pA0.data.supplierId)
+  // ① 只改自己：body 里塞 id/supplierId 指向 B → 被剥离，改的还是 A 自己（接口本就无此参数）
+  const supSelf = await call('PUT', '/supplier/profile', { stallName: '陈记蔬菜档·自改', id: pB0.data.supplierId, supplierId: pB0.data.supplierId }, stA)
+  check('A·PUT 携带 id/supplierId 被无视', supSelf.code === 0)
+  const pA1 = await call('GET', '/supplier/profile', null, stA)
+  const pB1 = await call('GET', '/supplier/profile', null, stB)
+  check('只改自己(A 改的是 A 自己)', pA1.data.stallName === '陈记蔬菜档·自改' && pA1.data.supplierId === pA0.data.supplierId)
+  check('B 无恙(档口名不变)', pB1.data.stallName === pB0.data.stallName)
+  // ② 撞号手机号被前置拒绝（user.phone 唯一约束 → 业务码 3009，2026-09-12 补：原裸 5001 + 半更新）
+  const collide = await call('PUT', '/supplier/profile', { phone: '13800001111', stallName: '撞号不应改到我' }, stA)
+  check('撞号手机号被拒(3009·非裸5001)', collide.code === 3009 && collide.code !== 5001)
+  const pAcol = await call('GET', '/supplier/profile', null, stA)
+  check('撞号无半更新(supplier 未改脏)', pAcol.data.stallName === '陈记蔬菜档·自改' && pAcol.data.phone === pA1.data.phone)
+  // ③ 夹带 qualification/status → whitelist 剥离，资质与合作状态原值不变
+  await call('PUT', '/supplier/profile', { contact: '陈老板', phone: '13900009999', qualification: { businessLicense: 'HACKED' }, status: 0 }, stA)
+  const pA2 = await call('GET', '/supplier/profile', null, stA)
+  check('夹带 qualification 被剥离(执照原值不变)', pA2.data.qualification.businessLicense === pA0.data.qualification.businessLicense)
+  check('status 不可自助改(仍合作中)', pA2.data.status === 1 && pA2.data.statusText === '合作中')
+  check('联系人/电话已自助更新', pA2.data.contact === '陈老板' && pA2.data.phone === '13900009999')
+  // ④ 字段校验
+  check('手机号格式错误被拒(1001)', (await call('PUT', '/supplier/profile', { phone: '123' }, stA)).code === 1001)
+  // ⑤ 反向：采购方/配送员身份调用 → 明确拒绝
+  check('采购方被拒·GET /supplier/profile', (await call('GET', '/supplier/profile', null, bt)).code === 2002)
+  check('配送员被拒·GET /supplier/profile', (await call('GET', '/supplier/profile', null, ct)).code === 2002)
+  // ⑥ 审计落库（SUPPLIER_SELF_UPDATE，before/after 逐字段）
+  const supAudit = await call('GET', '/audit?entity=supplier&pageSize=10', null, at)
+  check('审计 SUPPLIER_SELF_UPDATE 落库(含before/after)', (supAudit.data?.list || []).some(l => l.action === 'SUPPLIER_SELF_UPDATE' && l.before && l.after))
+  // ⑦ 复位 A：档口名还原、联系人/电话/地址清空（null=清空，不触发撞号校验）
+  await call('PUT', '/supplier/profile', { stallName: pA0.data.stallName, contact: null, phone: null, address: null }, stA)
+  check('复位·档口名还原', (await call('GET', '/supplier/profile', null, stA)).data.stallName === pA0.data.stallName)
 
   // ── 4. 核单拆单（10 待确认 → 30 备货中）──
   // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行

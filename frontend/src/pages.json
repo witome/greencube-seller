@@ -28,7 +28,8 @@
         { "path": "pages/goods-manage", "style": { "navigationBarTitleText": "商品管理" } },
         { "path": "pages/handover", "style": { "navigationBarTitleText": "交接确认" } },
         { "path": "pages/finance", "style": { "navigationBarTitleText": "历史与应付" } },
-        { "path": "pages/mine", "style": { "navigationBarTitleText": "我的" } }
+        { "path": "pages/mine", "style": { "navigationBarTitleText": "我的" } },
+        { "path": "pages/profile-edit", "style": { "navigationBarTitleText": "店铺资料" } }
       ]
     },
     {

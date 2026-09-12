@@ -105,15 +105,22 @@ export class BuyerService {
       throw new BizException(ErrorCode.PARAM_ERROR, '没有可更新的字段')
     }
 
+    // 手机号唯一前置校验（2026-09-12 补，与供应商自助接口同款修复）：
+    // user.phone 唯一约束，撞号原会抛 P2002→裸 5001 且 purchaser/user 半更新。仅非空 phone 参与校验（null=清空）
+    if (dto.phone) {
+      const phoneOwner = await this.prisma.user.findFirst({ where: { phone: dto.phone, NOT: { id: p.userId } } })
+      if (phoneOwner) throw new BizException(ErrorCode.PHONE_ALREADY_USED, '该手机号已被其他账号使用')
+    }
+
     // 变更前后值（仅记录实际变更的字段）
     const before: any = {}
     for (const k of Object.keys(data)) before[k] = p[k]
 
-    await this.prisma.purchaser.update({ where: { id: p.id }, data })
-    // 手机号与 user 表同步（与运营侧 updateBuyer 同口径）
-    if (dto.phone !== undefined) {
-      await this.prisma.user.update({ where: { id: p.userId }, data: { phone: dto.phone } })
-    }
+    // 事务：purchaser 更新 + user 手机号同步要么都成、要么都不成（杜绝半更新）
+    await this.prisma.$transaction([
+      this.prisma.purchaser.update({ where: { id: p.id }, data }),
+      ...(dto.phone !== undefined ? [this.prisma.user.update({ where: { id: p.userId }, data: { phone: dto.phone } })] : []),
+    ])
 
     await this.audit.log({
       operatorId: userId,

@@ -21,6 +21,7 @@ export const ErrorCode = {
   LICENSE_DUPLICATED: 3006,   // 该营业执照已注册
   APPEAL_LIMIT: 3007,         // 30 天内仅可申诉 1 次
   PRODUCT_OFF_SHELF: 3008,    // 已下架商品不可发起变更
+  PHONE_ALREADY_USED: 3009,   // 该手机号已被其他账号使用（撞 user.phone 唯一约束，2026-09-12 补）
 
   // 4xxx 资源不存在
   NOT_FOUND: 4001,
@@ -42,6 +43,7 @@ export const ErrorMessage: Record<number, string> = {
   [ErrorCode.LICENSE_DUPLICATED]: '该营业执照已注册，连锁分店请联系运营走授权流程',
   [ErrorCode.APPEAL_LIMIT]: '30 天内仅可申诉 1 次',
   [ErrorCode.PRODUCT_OFF_SHELF]: '已下架商品不可发起变更',
+  [ErrorCode.PHONE_ALREADY_USED]: '该手机号已被其他账号使用',
   [ErrorCode.NOT_FOUND]: '资源不存在',
   [ErrorCode.INTERNAL_ERROR]: '服务异常，请稍后重试',
 }
