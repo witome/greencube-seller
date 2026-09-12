@@ -128,6 +128,11 @@
       <view class="row"><text class="k">支付方式</text><text class="v" style="color:#00b96b;font-weight:600;">{{ payMethodText }}</text></view>
     </view>
 
+    <!-- 配送前取消（2026-09-12 拍板 2A+3：备货中(30)/待配送(40)可自助取消；待确认(10)未支付的取消入口在上方支付卡内；已派单(45)及之后不显示） -->
+    <view class="card" v-if="order.status === 30 || order.status === 40">
+      <view class="cancel-link" @tap="cancel">取消订单</view>
+    </view>
+
     <!-- 收货操作 -->
     <view class="row-btns" v-if="order.status === 60">
       <view class="pbtn primary" @tap="receive">确认收货（全部接受）</view>
@@ -315,6 +320,17 @@ const pay = async (payMethod) => {
 }
 
 const cancel = async () => {
+  // 二次确认（2026-09-12 拍板保留；10/30/40 三态共用）
+  const confirmed = await new Promise((resolve) => {
+    uni.showModal({
+      title: '取消订单',
+      content: '确认取消该订单？取消后不可恢复',
+      confirmText: '确认取消',
+      success: (r) => resolve(r.confirm),
+      fail: () => resolve(false),
+    })
+  })
+  if (!confirmed) return
   await buyerApi.cancelOrder(orderId.value)
   uni.showToast({ title: '已取消', icon: 'success' })
   setTimeout(() => uni.navigateBack(), 600)

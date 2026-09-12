@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 
 /// 支付流水状态文案（与 payment_record.status 取值对齐）
+/// 3=已撤销/待退款（2026-09-12 补：订单配送前取消时，已支付流水由 cancel 事务标记）
 const STATUS_TEXT: Record<number, string> = {
   0: '待支付',
   1: '成功',
   2: '关闭',
+  3: '已撤销/待退款',
 }
 
 /**
@@ -28,10 +30,10 @@ export class AdminPaymentService {
 
     const where: any = {}
 
-    // 状态筛选：0 待支付 / 1 成功 / 2 关闭；不传 = 全部
+    // 状态筛选：0 待支付 / 1 成功 / 2 关闭 / 3 已撤销待退款；不传 = 全部
     if (query.status !== undefined && query.status !== null && String(query.status) !== '') {
       const s = Number(query.status)
-      if (Number.isInteger(s) && s >= 0 && s <= 2) where.status = s
+      if (Number.isInteger(s) && s >= 0 && s <= 3) where.status = s
     }
 
     // 关键词：同时匹配单号（模糊）与订单号（纯数字时精确匹配）

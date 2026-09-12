@@ -17,6 +17,17 @@
         </div>
         <div class="toolbar-tip">以自动派单为主：订单备货完成会自动派单；也可点「自动派单」手动触发，按优先级派给「在线 + 空闲」配送员，不超过单量限制</div>
       </div>
+      <!-- 派单积压提示（2026-09-12 派单积压卡：不许静默堆积） -->
+      <el-alert
+        v-if="list.length > 0"
+        :type="availableCouriers.length ? 'warning' : 'error'"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 12px"
+        :title="availableCouriers.length
+          ? `⏰ ${list.length} 单待配送积压：系统每 5 分钟自动重试派单，也可手动指派`
+          : `⛔ ${list.length} 单待配送、无人可派：当前无在线空闲配送员，系统每 5 分钟自动重试，请让配送员上线或手动指派`"
+      />
       <el-table :data="list" v-loading="loading" stripe @selection-change="onSelect">
         <el-table-column type="selection" width="50" />
         <el-table-column prop="orderId" label="订单号" width="90">
@@ -141,12 +152,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dispatchAdminApi, orderAdminApi } from '../../api/modules'
 
 const list = ref([])
 const couriers = ref([])
+
+// 在线且空闲（可被自动派单）的配送员（2026-09-12 派单积压卡：积压提示用）
+const availableCouriers = computed(() => couriers.value.filter(c => c.online === 1 && c.onRoute === 0))
 const selectedOrders = ref([])
 const courierId = ref(null)
 const loading = ref(false)

@@ -30,9 +30,14 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { supplierApi } from '@/api/modules'
+import { useNewOrderAlerter } from '@/utils/new-order-alerter'
 import CustomTabBar from '@/components/CustomTabBar.vue'
 
 const orders = ref([])
+
+// 新单语音提示（2026-09-12 拍板 1A）：30s 轮询现有接口，比对订单 id，新单播预置音频
+// 首次=基线不播；同单只播一次；onHide 停/onShow 启（见 @/utils/new-order-alerter）
+useNewOrderAlerter(async () => (await supplierApi.getStockList()).map((o) => o.orderId), { tag: 'supplier-stock-list' })
 
 const supplierTabs = [
   { path: '/subpkg-supplier/pages/home', icon: '📋', label: '今日待办' },

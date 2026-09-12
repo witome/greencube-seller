@@ -258,7 +258,13 @@ export class OrderService {
   }
 
   // ────────────────────────────────────────
-  // 取消订单（仅待确认可取消）
+  // 取消订单（2026-09-12 拍板 2A+3：配送前可取消）
+  // 允许采购方自助取消：待确认(10) / 备货中(30) / 待配送(40)
+  // 已派单(45)及之后一律拒绝（提示「已派单，请联系运营处理」）
+  // 取消时同步处理：①已支付流水标记「已撤销/待退款」(status=3)；
+  // ②拆单痕迹（order_item.supplierId）保留不清（留证据）；
+  // ③订单置 91 后天然不可再派单（派单入口都只取 WAIT_DELIVERY）
+  // 真实微信退款等接商户号后实现（登记欠账，本卡不做真退款）
   // ────────────────────────────────────────
   async cancel(userId: bigint, orderId: number) {
     const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
@@ -268,23 +274,61 @@ export class OrderService {
       where: { id: BigInt(orderId), purchaserId: purchaser.id },
     })
     if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
-    if (order.status !== OrderStatus.PENDING_CONFIRM) {
-      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅待确认订单可取消')
+
+    const cancellable: number[] = [OrderStatus.PENDING_CONFIRM, OrderStatus.STOCKING, OrderStatus.WAIT_DELIVERY]
+    if (!cancellable.includes(order.status)) {
+      // 45 及之后（含配送中/已送达/已完成等）明确告知联系运营；91 已取消等其它状态给通用提示
+      const msg = order.status >= OrderStatus.ASSIGNED && order.status !== OrderStatus.CANCELLED
+        ? '已派单，请联系运营处理'
+        : '当前状态不可取消'
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, msg)
     }
 
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: { status: OrderStatus.CANCELLED },
+    // 事务：订单置取消 + 已支付流水标记「已撤销/待退款」，要么都成要么都不成
+    let revokedPayments = 0
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.CANCELLED },
+      })
+
+      // 支付流水：仅「已支付(status=1)」标记为 3=已撤销/待退款（按该表现有 Int status 口径扩展）；
+      // status=0 待支付的悬挂流水是既有欠账口径（放弃支付，见 payment.service 头注释），本卡不动
+      if (order.payMethod === 1) {
+        const paid = await tx.paymentRecord.findMany({
+          where: { orderId: order.id, status: 1 },
+        })
+        for (const rec of paid) {
+          await tx.paymentRecord.update({
+            where: { id: rec.id },
+            data: {
+              status: 3,
+              callbackPayload: [
+                ...((rec.callbackPayload as any[]) || []),
+                { source: 'order-cancel', revokedAt: new Date().toISOString(), note: '订单取消，流水撤销待退款（真实退款待接商户号）' },
+              ],
+            },
+          })
+          revokedPayments++
+        }
+      }
     })
 
-    // 铁律 3：取消订单属状态变更（含金额撤销），写审计（2026-09-11 补，闭合 S1）
+    // 铁律 3：取消订单属状态变更（含金额撤销），写审计
+    // before 必须带「取消时的状态」（区分在哪一步取消：待确认/备货中/待配送）+ 金额
     await this.audit.log({
       operatorId: userId,
       action: 'ORDER_CANCEL',
       entity: 'order',
       entityId: orderId,
-      before: { status: order.status, amountOrdered: Number(order.amountOrdered) },
-      after: { status: OrderStatus.CANCELLED },
+      before: {
+        status: order.status,
+        statusText: this.statusText(order.status),
+        payMethod: order.payMethod,
+        amountOrdered: Number(order.amountOrdered),
+        amountFinal: order.amountFinal ? Number(order.amountFinal) : null,
+      },
+      after: { status: OrderStatus.CANCELLED, revokedPayments },
     })
 
     return { orderId, status: OrderStatus.CANCELLED }

@@ -26,6 +26,23 @@ export class AdminDispatchService {
     return map
   }
 
+  /// 未完成任务的「已引用订单 id」集合（2026-09-12 派单积压卡：幂等防线①，
+  /// 待配送单若已被任何未完成任务引用，绝不再派，杜绝定时重试与手动触发并发重复派单）
+  private async activeTaskOrderRefs(): Promise<Set<number>> {
+    const tasks = await this.prisma.deliveryTask.findMany({
+      where: { status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED] } },
+      select: { stationList: true },
+    })
+    const set = new Set<number>()
+    for (const t of tasks) {
+      const stations = Array.isArray(t.stationList) ? (t.stationList as any[]) : []
+      for (const s of stations) {
+        if (s && s.type === 'deliver' && s.orderId !== undefined) set.add(Number(s.orderId))
+      }
+    }
+    return set
+  }
+
   // ────────────────────────────────────────
   // 配送员列表（含接单状态 / 优先级 / 单量限制 / 当前任务数）
   // ────────────────────────────────────────
@@ -137,10 +154,17 @@ export class AdminDispatchService {
     }
 
     const taskCount = await this.activeTaskCounts()
+    const taskRefs = await this.activeTaskOrderRefs()
     const skipped: number[] = []
     let assigned = 0
 
     for (const order of orders) {
+      // 幂等防线①：已被未完成任务引用的订单直接跳过（正常不会出现：派单与状态推进同事务；
+      // 防御的是异常残留/并发触发场景）
+      if (taskRefs.has(Number(order.id))) {
+        skipped.push(Number(order.id))
+        continue
+      }
       // 找优先级最高、未超单量限制的配送员
       let target = null
       for (const c of couriers) {
@@ -159,12 +183,23 @@ export class AdminDispatchService {
       ]
       const routeNo = `R${order.deliveryDate.toISOString().slice(0, 10).replace(/-/g, '')}-${Number(target.id)}`
 
+      let claimedOk = true
       await this.prisma.$transaction(async (tx) => {
+        // 幂等防线②：事务内按 status=40 条件「认领」订单，认领失败（已被并发派单/取消）则放弃
+        const claimed = await tx.order.updateMany({
+          where: { id: order.id, status: OrderStatus.WAIT_DELIVERY },
+          data: { status: OrderStatus.ASSIGNED },
+        })
+        if (claimed.count === 0) {
+          claimedOk = false
+          skipped.push(Number(order.id))
+          return
+        }
         await tx.deliveryTask.create({
           data: { courierId: target!.id, routeNo, stationList, status: 0 },
         })
-        await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.ASSIGNED } })
       })
+      if (!claimedOk) continue
 
       taskCount.set(Number(target.id), (taskCount.get(Number(target.id)) || 0) + 1)
       assigned++

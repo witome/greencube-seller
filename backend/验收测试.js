@@ -473,6 +473,65 @@ async function main() {
   check('采购方注册·正确手机号成功(前置校验无误伤)', buyOk.code === 0 && buyOk.data.accountStatus === 1)
   check('采购方注册·成功后待审核总数+1', (await call('GET', '/admin/buyers/pending?pageSize=1', null, at)).data.total === pend1 + 1)
 
+  // ── 3.12 配送前可取消（2026-09-12 拍板 2A+3：10/30/40 可自助取消，45+ 拒绝）──
+  console.log('\n【3.12 配送前可取消（10/30/40）】')
+  // 配送员先下线，阻断「备货完成自动派单」把用例订单推到 45（段尾还原上线）
+  await call('POST', '/courier/online', { online: 0 }, ct)
+  // ① 待确认(10) 取消
+  const oA = await call('POST', '/order', { deliveryDate: '2026-09-21', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  check('取消用例A下单(10)', oA.code === 0 && oA.data.status === 10)
+  const cA = await call('POST', `/order/${oA.data.orderId}/cancel`, null, bt2)
+  check('待确认(10)取消成功→91', cA.code === 0 && cA.data.status === 91)
+  // ② 备货中(30) 取消（货到付款，无线上流水）+ 备货单不再返回该单
+  const oB = await call('POST', '/order', { deliveryDate: '2026-09-21', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  await call('POST', `/order/${oB.data.orderId}/pay`, { payMethod: 2 }, bt2)
+  check('取消用例B选货到付款→30 备货中', (await call('GET', `/order/${oB.data.orderId}`, null, bt2)).data.status === 30)
+  const slB0 = await call('GET', '/supplier-fulfill/stock-list', null, st)
+  check('取消前备货单可见(基线)', (slB0.data || []).some(o => o.orderId === oB.data.orderId))
+  const cB = await call('POST', `/order/${oB.data.orderId}/cancel`, null, bt2)
+  check('备货中(30)取消成功→91', cB.code === 0 && cB.data.status === 91)
+  const slB1 = await call('GET', '/supplier-fulfill/stock-list', null, st)
+  check('取消后备货单不再返回该单(拆单痕迹保留但不再可见)', !(slB1.data || []).some(o => o.orderId === oB.data.orderId))
+  // ③ 待配送(40) 取消 + 不可再被派单
+  const oC = await call('POST', '/order', { deliveryDate: '2026-09-21', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  await call('POST', `/order/${oC.data.orderId}/pay`, { payMethod: 2 }, bt2)
+  await call('POST', '/supplier-fulfill/handover', { orderId: oC.data.orderId }, st)
+  check('取消用例C备货完成→40 待配送', (await call('GET', `/order/${oC.data.orderId}`, null, bt2)).data.status === 40)
+  const cC = await call('POST', `/order/${oC.data.orderId}/cancel`, null, bt2)
+  check('待配送(40)取消成功→91', cC.code === 0 && cC.data.status === 91)
+  check('已取消订单不出现在待派送列表(不可再被派单)', !((await call('GET', '/admin/dispatch', null, at)).data || []).some(o => o.orderId === oC.data.orderId))
+  // ④ 已派单(45) 拒绝采购方自助取消（业务错误 + 明确提示）
+  const oD = await call('POST', '/order', { deliveryDate: '2026-09-21', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  await call('POST', `/order/${oD.data.orderId}/pay`, { payMethod: 2 }, bt2)
+  await call('POST', '/supplier-fulfill/handover', { orderId: oD.data.orderId }, st)
+  const dispD = await call('POST', '/admin/dispatch', { courierId: 1, orderIds: [oD.data.orderId] }, at)
+  check('取消用例D手动派单→45', dispD.code === 0 && (await call('GET', `/order/${oD.data.orderId}`, null, bt2)).data.status === 45)
+  const cD = await call('POST', `/order/${oD.data.orderId}/cancel`, null, bt2)
+  check('已派单(45)取消被拒(业务错误+明确提示)', cD.code !== 0 && JSON.stringify(cD.msg || '').includes('已派单'), cD)
+  check('被拒后订单仍为45(未被改脏)', (await call('GET', `/order/${oD.data.orderId}`, null, bt2)).data.status === 45)
+  // 清理：oD 任务走完 取货→出发→交付（否则留下的「未取货」任务会卡死第 7 节 depart 与下次回归）
+  const tasksD = await call('GET', '/courier/today-tasks', null, ct)
+  const oDTaskId = (tasksD.data || []).find(t => (t.stationList || []).some(s => s.orderId === oD.data.orderId))?.taskId
+  if (oDTaskId) {
+    await call('POST', `/courier/task/${oDTaskId}/pickup`, {}, ct)
+    await call('POST', '/courier/depart', {}, ct)
+    await call('POST', `/courier/task/${oDTaskId}/deliver`, { photos: ['t.jpg'], signature: 's.png' }, ct)
+  }
+  // ⑤ 已支付（微信模拟通道）取消 → 流水标记「已撤销/待退款」(3)
+  const oE = await call('POST', '/order', { deliveryDate: '2026-09-21', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  const payE = await call('POST', `/order/${oE.data.orderId}/pay`, { payMethod: 1 }, bt2)
+  await call('POST', '/payment/mock/pay', { payNo: payE.data.payNo }, bt2)
+  check('取消用例E微信支付→30 已支付', (await call('GET', `/order/${oE.data.orderId}`, null, bt2)).data.status === 30)
+  await call('POST', `/order/${oE.data.orderId}/cancel`, null, bt2)
+  const payRevoked = await call('GET', '/admin/payments?status=3&pageSize=100', null, at)
+  check('已支付流水被标记已撤销/待退款(3)', (payRevoked.data?.list || []).some(x => x.payNo === payE.data.payNo && x.statusText === '已撤销/待退款'))
+  // ⑥ 审计 ORDER_CANCEL：before 必须带「取消时的状态」（10/30/40 三种都留下）
+  const cancAudit = await call('GET', '/audit?entity=order&pageSize=100', null, at)
+  const cancelLogs = (cancAudit.data?.list || []).filter(l => l.action === 'ORDER_CANCEL')
+  check('审计 ORDER_CANCEL before 含取消时状态(10/30/40 各有)', [10, 30, 40].every(s => cancelLogs.some(l => l.before && l.before.status === s)), { cancelCount: cancelLogs.length })
+  // 段内还原：配送员恢复上线
+  await call('POST', '/courier/online', { online: 1 }, ct)
+
   // ── 4. 核单拆单（10 待确认 → 30 备货中）──
   // 状态机依据：《开发配套-数据模型与接口草案》第 206/223 行
   //   10 待确认 ──支付后自动拆单──> 30 备货中 ──供应商确认备货完成──> 40 待配送 ──派单──> 45 ──取货──> 50
@@ -553,6 +612,43 @@ async function main() {
   check('生成结算单', gen.code === 0 && gen.data.generated > 0)
   const settle = await call('GET', '/supplier-finance/settlement/2026-09', null, st)
   check('供应商查结算单(含服务费行)', settle.code === 0 && settle.data.serviceFee >= 0)
+
+  // ── 3.13 派单积压定时重试（2026-09-12 派单积压卡：幂等双跑实测，放末尾避免遗留任务卡前面用例）──
+  // 定时任务与手动触发共用 AdminDispatchService.autoAssign（cron 每 5 分钟 runRetry→autoAssign，
+  // DISPATCH_RETRY_CRON 可覆盖）。cron 正跑证据见 自测证据/派单重试-20260912/（30s 试验日志 + 审计 1240）。
+  console.log('\n【3.13 派单积压定时重试（幂等双跑）】')
+  // 先下线阻断 handover 即时自动派单，保证 oF 稳定停在 40 供首次重试派出
+  await call('POST', '/courier/online', { online: 0 }, ct)
+  const oF = await call('POST', '/order', { deliveryDate: '2026-09-21', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  await call('POST', `/order/${oF.data.orderId}/pay`, { payMethod: 2 }, bt2)
+  await call('POST', '/supplier-fulfill/handover', { orderId: oF.data.orderId }, st)
+  check('重试用例下单→40 待配送', (await call('GET', `/order/${oF.data.orderId}`, null, bt2)).data.status === 40)
+  const auditF0 = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
+  const cnt0 = (auditF0.data?.list || []).filter(l => l.action === 'AUTO_ASSIGN_DISPATCH').length
+  await call('POST', '/courier/online', { online: 1 }, ct)
+  const retry1 = await call('POST', '/admin/dispatch/auto-assign', null, at)
+  check('第一次自动派单派出(assigned≥1)', retry1.code === 0 && retry1.data.assigned >= 1, retry1)
+  check('重试后订单→45 已派单', (await call('GET', `/order/${oF.data.orderId}`, null, bt2)).data.status === 45)
+  const auditF1 = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
+  const cnt1 = (auditF1.data?.list || []).filter(l => l.action === 'AUTO_ASSIGN_DISPATCH').length
+  check('派出时写审计 AUTO_ASSIGN_DISPATCH(assigned>0 才写)', cnt1 === cnt0 + 1, { cnt0, cnt1 })
+  const retry2 = await call('POST', '/admin/dispatch/auto-assign', null, at)
+  check('第二次跑 assigned=0(待配送队列已空,第二次不产生新任务)', retry2.code === 0 && retry2.data.assigned === 0, retry2)
+  check('双跑后订单仍45(未被重复派单)', (await call('GET', `/order/${oF.data.orderId}`, null, bt2)).data.status === 45)
+  const auditF2 = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
+  const cnt2 = (auditF2.data?.list || []).filter(l => l.action === 'AUTO_ASSIGN_DISPATCH').length
+  check('第二次跑不写审计(不刷噪音)', cnt2 === cnt1)
+  check('oF 仅存在一个派送任务(绝不重复建任务)',
+    ((await call('GET', '/courier/today-tasks', null, ct)).data || [])
+      .filter(t => (t.stationList || []).some(s => s.orderId === oF.data.orderId)).length === 1)
+  // 清理：oF 任务走完 取货→出发→交付（不留未取货任务卡死下次回归的 depart）
+  const tasksF = await call('GET', '/courier/today-tasks', null, ct)
+  const oFTaskId = (tasksF.data || []).find(t => (t.stationList || []).some(s => s.orderId === oF.data.orderId))?.taskId
+  if (oFTaskId) {
+    await call('POST', `/courier/task/${oFTaskId}/pickup`, {}, ct)
+    await call('POST', '/courier/depart', {}, ct)
+    await call('POST', `/courier/task/${oFTaskId}/deliver`, { photos: ['t.jpg'], signature: 's.png' }, ct)
+  }
 
   console.log('\n' + '='.repeat(50))
   console.log(`验收结果：✅ 通过 ${passed} 项 / ❌ 失败 ${failed} 项`)

@@ -92,6 +92,7 @@
 import { ref, reactive, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { courierApi } from '@/api/modules'
+import { useNewOrderAlerter } from '@/utils/new-order-alerter'
 // #ifdef MP-WEIXIN
 import DevRoleSwitcher from '@/components/DevRoleSwitcher.vue'
 // #endif
@@ -99,6 +100,13 @@ import CustomTabBar from '@/components/CustomTabBar.vue'
 
 const tasks = ref([])
 const status = reactive({ online: 0, autoAccept: 0, onRoute: 0, activeTasks: 0 })
+
+// 新单语音提示（2026-09-12 拍板 1A）：30s 轮询现有接口，比对任务内订单 id，新单播预置音频
+// 首次=基线不播；同单只播一次；onHide 停/onShow 启（见 @/utils/new-order-alerter）
+useNewOrderAlerter(async () => {
+  const ts = await courierApi.getTodayTasks()
+  return ts.flatMap((t) => (t.stationList || []).filter((s) => s.type === 'deliver').map((s) => s.orderId))
+}, { tag: 'courier-tasks' })
 
 const courierTabs = [
   { path: '/subpkg-courier/pages/home', icon: '📋', label: '今日任务' },
