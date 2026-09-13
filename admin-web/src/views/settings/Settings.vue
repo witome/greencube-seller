@@ -15,7 +15,7 @@
 
         <el-divider content-position="left">分类覆盖（不设置则按全局费率）</el-divider>
 
-        <el-table :data="categoryRates" size="small">
+        <el-table :data="categoryRates" size="small" empty-text="尚未配置分类覆盖，全部按全局费率执行">
           <el-table-column prop="categoryName" label="分类" />
           <el-table-column label="费率" width="180">
             <template #default="{ row }">
