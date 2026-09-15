@@ -42,9 +42,11 @@ export class AuditService {
 
   // ────────────────────────────────────────
   // 写审计日志（金额/权限等关键操作统一入口）
+  // tx 可选：传入交互式事务客户端时，审计随该事务一并提交/回滚（保证与业务写原子）
   // ────────────────────────────────────────
-  async log(data: { operatorId: bigint; action: string; entity: string; entityId: bigint | number; before?: any; after?: any }) {
-    await this.prisma.auditLog.create({
+  async log(data: { operatorId: bigint; action: string; entity: string; entityId: bigint | number; before?: any; after?: any }, tx?: any) {
+    const client = tx || this.prisma
+    await client.auditLog.create({
       data: {
         operatorId: data.operatorId,
         action: data.action,

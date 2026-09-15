@@ -65,12 +65,12 @@
       <view class="pk-sheet" @tap.stop>
         <view class="pk-head">
           <text class="pk-title">添加商品</text>
-          <text class="pk-close" @tap="closePicker">✕</text>
+          <view class="pk-close" @tap="closePicker">✕</view>
         </view>
 
         <view class="pk-search">
           <input class="pk-input" v-model="pkKeyword" placeholder="搜索商品" confirm-type="search" @confirm="loadPkGoods" />
-          <text class="pk-search-btn" @tap="loadPkGoods">搜索</text>
+          <view class="pk-search-btn" @tap="loadPkGoods">搜索</view>
         </view>
 
         <view class="pk-body">
@@ -290,10 +290,10 @@ onLoad(async () => {
 .pk-sheet { width: 100%; height: 78vh; background: #fff; border-radius: 14px 14px 0 0; display: flex; flex-direction: column; overflow: hidden; }
 .pk-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid $bg-soft; }
 .pk-title { font-size: 15px; font-weight: 700; color: $text-title; }
-.pk-close { color: $text-placeholder; font-size: 16px; padding: 0 4px; }
+.pk-close { display: inline; color: $text-placeholder; font-size: 16px; padding: 0 4px; }
 .pk-search { display: flex; align-items: center; gap: 8px; padding: 8px 14px; }
 .pk-input { flex: 1; background: $bg-soft; border-radius: 16px; padding: 7px 14px; font-size: 13px; }
-.pk-search-btn { font-size: 13px; color: $brand; font-weight: 600; flex-shrink: 0; }
+.pk-search-btn { display: inline; font-size: 13px; color: $brand; font-weight: 600; flex-shrink: 0; }
 .pk-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
 .pk-cate { width: 84px; background: #f7f8fa; height: 100%; flex-shrink: 0; }
 .pk-cate-item { padding: 12px 6px; font-size: 12px; color: $text-second; text-align: center; }

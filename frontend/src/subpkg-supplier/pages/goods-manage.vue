@@ -65,8 +65,8 @@
       <view class="li-main">
         <view class="li-t">
           {{ g.name }}
-          <text class="act-link" @tap="openEdit(g)">✏️ 编辑</text>
-          <text class="act-stock" @tap="openStock(g)">⚡ 改库存</text>
+          <view class="act-link" @tap="openEdit(g)">✏️ 编辑</view>
+          <view class="act-stock" @tap="openStock(g)">⚡ 改库存</view>
         </view>
         <view class="li-d">
           供货价 ¥{{ g.supplyPrice }}/{{ g.unit }} · 日供 {{ g.dailySupply }}{{ g.unit }}
@@ -252,8 +252,8 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .filter-chips { margin-top: 8px; }
-.act-link { color: $brand-deep; font-size: 12px; font-weight: 600; margin-left: 8px; }
-.act-stock { color: $info; font-size: 12px; font-weight: 600; margin-left: 8px; }
+.act-link { display: inline; color: $brand-deep; font-size: 12px; font-weight: 600; margin-left: 8px; }
+.act-stock { display: inline; color: $info; font-size: 12px; font-weight: 600; margin-left: 8px; }
 .form-row { display: flex; align-items: center; padding: 12px 0; font-size: 14px; }
 .fr-l { width: 76px; color: $text-second; flex-shrink: 0; }
 .fr-r { flex: 1; margin-left: 12px; min-width: 0; }

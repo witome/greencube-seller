@@ -4,9 +4,17 @@
  * - 统一处理 { code, msg, data } 信封：code≠0 时 toast + reject
  * - 401/2001 跳登录
  */
-// 后端地址：开发/测试默认连本机 3001；生产部署时通过 VITE_API_BASE 环境变量覆盖
+// 后端地址：开发/测试默认连本机 3001；生产部署时必须通过 VITE_API_BASE 环境变量覆盖
 // 真机调试：用局域网 IP（手机与电脑同 WiFi）；H5 本机预览也可用 127.0.0.1/localhost
-const BASE_URL = import.meta.env.VITE_API_BASE || 'http://192.168.1.78:3001/api/v1'
+// 生产构建硬校验：VITE_API_BASE 缺失直接抛错中断，避免正式包静默连回开发机局域网地址
+const ENV_API_BASE = import.meta.env.VITE_API_BASE
+if (!ENV_API_BASE && import.meta.env.NODE_ENV === 'production') {
+  throw new Error(
+    '[配置错误] 生产构建必须设置 VITE_API_BASE（后端接口地址）。' +
+      '请在构建命令或 .env.production 中显式指定，禁止让正式包使用默认局域网地址。',
+  )
+}
+const BASE_URL = ENV_API_BASE || 'http://192.168.1.78:3001/api/v1'
 
 // 图片/静态资源服务器地址（去掉 /api/v1 前缀），上传图片返回的相对路径拼此前缀
 export const BASE_HOST = BASE_URL.replace(/\/api\/v1$/, '')

@@ -465,34 +465,42 @@ export class OrderService {
 
     // 微信支付：创建支付单即返回，订单不推进（放弃支付则停在 10，仍可手动取消——拍板④ Hermes 补充）
     if (dto.payMethod === 1) {
-      // 同单历史「待支付」流水先关闭（重开新单，减少悬挂记录）
-      await this.prisma.paymentRecord.updateMany({
-        where: { orderId: order.id, status: 0 },
-        data: { status: 2 },
-      })
       const amount = Math.round((Number(order.amountOrdered) + Number(order.deliveryFee)) * 100) / 100
-      const rec = await this.prisma.paymentRecord.create({
-        data: {
-          orderId: order.id,
-          payNo: randomBytes(16).toString('hex'), // 不可枚举随机（拍板③=A）
-          channel: 'mock',
-          amount,
-        },
-      })
-      // 铁律 3：创建支付流水属金额类关键操作，写审计（2026-09-11 补，闭合 S1）
-      await this.audit.log({
-        operatorId: userId,
-        action: 'ORDER_PAY',
-        entity: 'order',
-        entityId: orderId,
-        before: { payMethod: order.payMethod, status: order.status },
-        after: { payMethod: 1, payNo: rec.payNo, amount, status: OrderStatus.PENDING_CONFIRM, note: '微信支付（模拟通道）待回调' },
+      let payNo = ''
+      // 关旧流水 + 建新单 + 审计 同一事务（2026-09-15 涉钱收口：避免"关了旧单、新单没建成"的悬挂状态）
+      await this.prisma.$transaction(async (tx) => {
+        // 同单历史「待支付」流水先关闭（重开新单，减少悬挂记录）
+        await tx.paymentRecord.updateMany({
+          where: { orderId: order.id, status: 0 },
+          data: { status: 2 },
+        })
+        const rec = await tx.paymentRecord.create({
+          data: {
+            orderId: order.id,
+            payNo: randomBytes(16).toString('hex'), // 不可枚举随机（拍板③=A）
+            channel: 'mock',
+            amount,
+          },
+        })
+        payNo = rec.payNo
+        // 铁律 3：创建支付流水属金额类关键操作，写审计（2026-09-11 补，闭合 S1）
+        await this.audit.log(
+          {
+            operatorId: userId,
+            action: 'ORDER_PAY',
+            entity: 'order',
+            entityId: orderId,
+            before: { payMethod: order.payMethod, status: order.status },
+            after: { payMethod: 1, payNo: rec.payNo, amount, status: OrderStatus.PENDING_CONFIRM, note: '微信支付（模拟通道）待回调' },
+          },
+          tx,
+        )
       })
       return {
         orderId,
         payMethod: 1,
-        payNo: rec.payNo,
-        channel: rec.channel,
+        payNo,
+        channel: 'mock',
         amount,
         status: OrderStatus.PENDING_CONFIRM,
         note: '微信支付（模拟通道）：待支付回调',
@@ -605,51 +613,58 @@ export class OrderService {
 
     const aftersaleIds: number[] = []
 
-    for (const it of dto.items) {
-      const item = await this.prisma.orderItem.findFirst({
-        where: { id: BigInt(it.orderItemId), orderId: order.id },
-      })
-      if (!item) continue
+    // 明细回填 + 售后工单 + 主单推进 + 审计 同一事务（2026-09-15 涉钱收口：
+    // 避免"部分明细已回填/售后单已建、主单没推进"的中间态）
+    await this.prisma.$transaction(async (tx) => {
+      for (const it of dto.items) {
+        const item = await tx.orderItem.findFirst({
+          where: { id: BigInt(it.orderItemId), orderId: order.id },
+        })
+        if (!item) continue
 
-      await this.prisma.orderItem.update({
-        where: { id: item.id },
-        data: {
-          qtyReceived: it.qtyReceived,
-          rejectReason: it.rejectReason,
-        },
-      })
-
-      // 决策 3：拒收差额（验收 − 接受）> 0 时生成售后工单
-      const rejectQty = it.rejectQty ?? 0
-      if (rejectQty > 0) {
-        const aftersale = await this.prisma.aftersaleOrder.create({
+        await tx.orderItem.update({
+          where: { id: item.id },
           data: {
-            orderId: order.id,
-            orderItemId: item.id,
-            type: 1, // 少货（拒收默认归为少货/品质，可按 rejectReason 细分）
-            reason: it.rejectReason,
-            qtyDiff: rejectQty,
-            amountDiff: rejectQty * Number(item.salePrice),
-            status: 0,
+            qtyReceived: it.qtyReceived,
+            rejectReason: it.rejectReason,
           },
         })
-        aftersaleIds.push(Number(aftersale.id))
+
+        // 决策 3：拒收差额（验收 − 接受）> 0 时生成售后工单
+        const rejectQty = it.rejectQty ?? 0
+        if (rejectQty > 0) {
+          const aftersale = await tx.aftersaleOrder.create({
+            data: {
+              orderId: order.id,
+              orderItemId: item.id,
+              type: 1, // 少货（拒收默认归为少货/品质，可按 rejectReason 细分）
+              reason: it.rejectReason,
+              qtyDiff: rejectQty,
+              amountDiff: rejectQty * Number(item.salePrice),
+              status: 0,
+            },
+          })
+          aftersaleIds.push(Number(aftersale.id))
+        }
       }
-    }
 
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: { status: OrderStatus.COMPLETED },
-    })
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.COMPLETED },
+      })
 
-    // 铁律 3：确认收货属状态变更（含拒收差额定责 + 售后工单生成），写审计（2026-09-11 补，闭合 S1）
-    await this.audit.log({
-      operatorId: userId,
-      action: 'ORDER_RECEIVE',
-      entity: 'order',
-      entityId: orderId,
-      before: { status: order.status },
-      after: { status: OrderStatus.COMPLETED, itemCount: dto.items.length, aftersaleIds },
+      // 铁律 3：确认收货属状态变更（含拒收差额定责 + 售后工单生成），写审计（2026-09-11 补，闭合 S1）
+      await this.audit.log(
+        {
+          operatorId: userId,
+          action: 'ORDER_RECEIVE',
+          entity: 'order',
+          entityId: orderId,
+          before: { status: order.status },
+          after: { status: OrderStatus.COMPLETED, itemCount: dto.items.length, aftersaleIds },
+        },
+        tx,
+      )
     })
 
     return { orderId, status: OrderStatus.COMPLETED, aftersaleIds }

@@ -37,7 +37,7 @@
     <!-- ⑤ 今日推荐商品（接口化：home_recommendations KV 商品 id 有序数组，后端按序返回在售商品；空 → 空态，绝无假数据兜底） -->
     <view class="buyer-home-title">
       <text>今日推荐</text>
-      <text class="buyer-home-more" @tap="goTab('/pages/buyer/goods')">更多 ›</text>
+      <view class="buyer-home-more" @tap="goTab('/pages/buyer/goods')">更多 ›</view>
     </view>
     <view class="buyer-home-rec">
       <template v-if="recsLoading">
@@ -275,7 +275,7 @@ onShow(async () => {
   justify-content: space-between;
   align-items: center;
 }
-.buyer-home-more { font-size: 12px; color: #8A9099; font-weight: 400; }
+.buyer-home-more { display: inline; font-size: 12px; color: #8A9099; font-weight: 400; }
 
 /* ── 常用功能宫格 ── */
 .buyer-home-grid {

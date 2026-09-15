@@ -170,40 +170,47 @@ export class AdminFinanceService {
     }
 
     let generated = 0
-    for (const [supplierId, v] of bySupplier) {
-      const net = v.gross - v.fee
-      const avgRate = v.gross > 0 ? v.fee / v.gross : globalRate
-      await this.prisma.settlement.upsert({
-        where: { supplierId_period: { supplierId, period } },
-        update: {
-          grossAmount: Math.round(v.gross * 100) / 100,
-          serviceFeeRate: Math.round(avgRate * 10000) / 10000,
-          serviceFee: Math.round(v.fee * 100) / 100,
-          netAmount: Math.round(net * 100) / 100,
-        },
-        create: {
-          supplierId,
-          period,
-          grossAmount: Math.round(v.gross * 100) / 100,
-          serviceFeeRate: Math.round(avgRate * 10000) / 10000,
-          serviceFee: Math.round(v.fee * 100) / 100,
-          netAmount: Math.round(net * 100) / 100,
-          status: 0,
-        },
-      })
-      generated++
-    }
+    // 全部结算单 upsert + 审计 同一事务（2026-09-15 涉钱收口）：结算必须「要么全成、要么全不成」，
+    // 任一供应商写失败则整批回滚，绝不留下部分供应商已结算、部分未结算的中间态
+    await this.prisma.$transaction(async (tx) => {
+      for (const [supplierId, v] of bySupplier) {
+        const net = v.gross - v.fee
+        const avgRate = v.gross > 0 ? v.fee / v.gross : globalRate
+        await tx.settlement.upsert({
+          where: { supplierId_period: { supplierId, period } },
+          update: {
+            grossAmount: Math.round(v.gross * 100) / 100,
+            serviceFeeRate: Math.round(avgRate * 10000) / 10000,
+            serviceFee: Math.round(v.fee * 100) / 100,
+            netAmount: Math.round(net * 100) / 100,
+          },
+          create: {
+            supplierId,
+            period,
+            grossAmount: Math.round(v.gross * 100) / 100,
+            serviceFeeRate: Math.round(avgRate * 10000) / 10000,
+            serviceFee: Math.round(v.fee * 100) / 100,
+            netAmount: Math.round(net * 100) / 100,
+            status: 0,
+          },
+        })
+        generated++
+      }
 
-    if (operatorId) {
-      await this.audit.log({
-        operatorId,
-        action: 'GENERATE_SETTLEMENT',
-        entity: 'settlement',
-        entityId: 0,
-        before: { period },
-        after: { period, generated, globalRate },
-      })
-    }
+      if (operatorId) {
+        await this.audit.log(
+          {
+            operatorId,
+            action: 'GENERATE_SETTLEMENT',
+            entity: 'settlement',
+            entityId: 0,
+            before: { period },
+            after: { period, generated, globalRate },
+          },
+          tx,
+        )
+      }
+    })
 
     return { period, generated, globalRate }
   }

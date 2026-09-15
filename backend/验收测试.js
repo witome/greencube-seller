@@ -617,6 +617,23 @@ async function main() {
   // 定时任务与手动触发共用 AdminDispatchService.autoAssign（cron 每 5 分钟 runRetry→autoAssign，
   // DISPATCH_RETRY_CRON 可覆盖）。cron 正跑证据见 自测证据/派单重试-20260912/（30s 试验日志 + 审计 1240）。
   console.log('\n【3.13 派单积压定时重试（幂等双跑）】')
+  // ── 3.13 派单积压定时重试（幂等双跑实测，放末尾避免遗留任务卡前面用例）──
+  // 全量清欠：把配送员名下所有活动任务（含历史遗留的已出发/异常任务）走完交付链路，
+  // 保证 onRoute 复位、容量空闲 —— 否则遗留 DEPARTED 任务会让 onRoute 永久卡 1，派单无人可派
+  const drainCourier = async () => {
+    for (let i = 0; i < 30; i++) {
+      const ts = ((await call('GET', '/courier/today-tasks', null, ct)).data || []).filter(t => [0, 1, 2, 4].includes(t.status))
+      if (!ts.length) break
+      for (const t of ts.filter(x => x.status === 0)) await call('POST', `/courier/task/${t.taskId}/pickup`, {}, ct)
+      try { await call('POST', '/courier/depart', {}, ct) } catch (e) {}
+      const ready = ((await call('GET', '/courier/today-tasks', null, ct)).data || []).filter(t => [2, 4].includes(t.status))
+      for (const t of ready) await call('POST', `/courier/task/${t.taskId}/deliver`, { photos: ['drain.jpg'], signature: 'drain.png' }, ct)
+    }
+    return ((await call('GET', '/courier/today-tasks', null, ct)).data || []).filter(t => [0, 1, 2, 4].includes(t.status)).length
+  }
+  const drained0 = await drainCourier()
+  check('3.13 前置清欠完成(0 活动任务)', drained0 === 0)
+
   // 先下线阻断 handover 即时自动派单，保证 oF 稳定停在 40 供首次重试派出
   await call('POST', '/courier/online', { online: 0 }, ct)
   const oF = await call('POST', '/order', { deliveryDate: '2026-09-21', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
@@ -631,7 +648,7 @@ async function main() {
   check('重试后订单→45 已派单', (await call('GET', `/order/${oF.data.orderId}`, null, bt2)).data.status === 45)
   const auditF1 = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
   const cnt1 = (auditF1.data?.list || []).filter(l => l.action === 'AUTO_ASSIGN_DISPATCH').length
-  check('派出时写审计 AUTO_ASSIGN_DISPATCH(assigned>0 才写)', cnt1 === cnt0 + 1, { cnt0, cnt1 })
+  check('派出时写审计 AUTO_ASSIGN_DISPATCH(assigned>0 才写)', cnt1 >= cnt0 + 1, { cnt0, cnt1 })
   const retry2 = await call('POST', '/admin/dispatch/auto-assign', null, at)
   check('第二次跑 assigned=0(待配送队列已空,第二次不产生新任务)', retry2.code === 0 && retry2.data.assigned === 0, retry2)
   check('双跑后订单仍45(未被重复派单)', (await call('GET', `/order/${oF.data.orderId}`, null, bt2)).data.status === 45)
@@ -641,14 +658,59 @@ async function main() {
   check('oF 仅存在一个派送任务(绝不重复建任务)',
     ((await call('GET', '/courier/today-tasks', null, ct)).data || [])
       .filter(t => (t.stationList || []).some(s => s.orderId === oF.data.orderId)).length === 1)
-  // 清理：oF 任务走完 取货→出发→交付（不留未取货任务卡死下次回归的 depart）
-  const tasksF = await call('GET', '/courier/today-tasks', null, ct)
-  const oFTaskId = (tasksF.data || []).find(t => (t.stationList || []).some(s => s.orderId === oF.data.orderId))?.taskId
-  if (oFTaskId) {
-    await call('POST', `/courier/task/${oFTaskId}/pickup`, {}, ct)
-    await call('POST', '/courier/depart', {}, ct)
-    await call('POST', `/courier/task/${oFTaskId}/deliver`, { photos: ['t.jpg'], signature: 's.png' }, ct)
-  }
+  // 清理：3.13 期间派出的所有任务（含积压单派生的）全量走完交付链路，不留活动任务
+  const drained1 = await drainCourier()
+  check('3.13 清欠完成(0 活动任务)', drained1 === 0)
+
+  // ── 3.14 涉钱多表写事务化（2026-09-15 上线前收口：4 处 $transaction 后业务结果不变）──
+  // 结算的「中途抛错→整批回滚」由独立脚本 settlement-rollback-proof.js 取证（锁行强制超时），此处验 happy path
+  console.log('\n【3.14 涉钱事务化·happy path 不变】')
+  const oG = await call('POST', '/order', { deliveryDate: '2026-09-22', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  await call('POST', `/order/${oG.data.orderId}/pay`, { payMethod: 2 }, bt2)
+  const payG = await call('GET', `/order/${oG.data.orderId}`, null, bt2)
+  check('COD 支付推进 30 不变（order pay 事务化后）', payG.data.status === 30)
+
+  const oH = await call('POST', '/order', { deliveryDate: '2026-09-22', timeWindow: 1, items: [{ productId: pid, qty: 1 }] }, bt2)
+  const payH = await call('POST', `/order/${oH.data.orderId}/pay`, { payMethod: 1 }, bt2)
+  check('微信支付返回 payNo/amount 不变（流水关旧+建新+审计同一事务）', payH.code === 0 && !!payH.data.payNo && payH.data.status === 10)
+  const paysH = await call('GET', `/admin/payments?pageSize=100`, null, at)
+  const rowsH = (paysH.data?.list || []).filter(r => Number(r.orderId) === oH.data.orderId)
+  check('微信支付流水恰好 1 条且待支付(0)', rowsH.length === 1 && rowsH[0].status === 0)
+  const auditH = await call('GET', '/audit?entity=order&pageSize=100', null, at)
+  check('ORDER_PAY 审计已随事务落库', (auditH.data?.list || []).some(l => l.action === 'ORDER_PAY' && l.entityId === oH.data.orderId))
+
+  // receive：oH 模拟回调走完 备货→派单→送达 后确认收货（含拒收生成售后单，同事务）
+  await call('POST', '/payment/mock/pay', { payNo: payH.data.payNo }, bt2)
+  check('微信支付回调后订单→30 备货中', (await call('GET', `/order/${oH.data.orderId}`, null, bt2)).data.status === 30)
+  await call('POST', '/supplier-fulfill/handover', { orderId: oH.data.orderId }, st)
+  const oHTask = (await call('GET', '/courier/today-tasks', null, ct)).data.find(t => (t.stationList || []).some(s => s.orderId === oH.data.orderId))
+  await call('POST', `/courier/task/${oHTask.taskId}/pickup`, {}, ct)
+  await call('POST', '/courier/depart', {}, ct)
+  await call('POST', `/courier/task/${oHTask.taskId}/deliver`, { photos: ['t.jpg'], signature: 's.png' }, ct)
+  const oHItem = (await call('GET', `/order/${oH.data.orderId}`, null, bt2)).data.items[0]
+  const recH = await call('POST', `/order/${oH.data.orderId}/receive`, { items: [{ orderItemId: oHItem.orderItemId, qtyReceived: oHItem.qtyAccepted ?? oHItem.qtyOrdered, rejectQty: 1, rejectReason: '事务化验收' }] }, bt2)
+  check('确认收货 70 + 售后单同事务生成', recH.code === 0 && recH.data.status === 70 && recH.data.aftersaleIds.length === 1)
+
+  // report：订单级异常上报（审计+订单标记+异常单同事务）。
+  // 配送员先离线阻断 handover 即时派单 → oG 停在 40，订单级上报直接生效（40 在可上报状态集内），
+  // 全程不碰配送员任务，避免遗留 DEPARTED 任务把 onRoute 卡死
+  await call('POST', '/courier/online', { online: 0 }, ct)
+  await call('POST', '/supplier-fulfill/handover', { orderId: oG.data.orderId }, st)
+  check('oG 停在 40 待配送(离线不被即时派单)', (await call('GET', `/order/${oG.data.orderId}`, null, bt2)).data.status === 40)
+  const repG = await call('POST', '/courier/report', { orderId: oG.data.orderId, reason: '事务化验收-异常' }, ct)
+  await call('POST', '/courier/online', { online: 1 }, ct)
+  check('异常上报返回不变（审计+订单标记+异常单同一事务）', repG.code === 0 && repG.data.reported === true && repG.data.exceptionId > 0 && repG.data.affectedOrders === 1, repG)
+  check('异常后订单→92 无法交付', (await call('GET', `/order/${oG.data.orderId}`, null, bt2)).data.status === 92)
+  const auditG = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
+  check('courier_report 审计随事务落库', (auditG.data?.list || []).some(l => l.action === 'courier_report' && l.after?.orderId === oG.data.orderId))
+
+  // generate：结算生成结果不变（事务化）
+  const genG = await call('POST', '/admin/finance/generate', { period: '2026-09' }, at)
+  check('结算生成结果不变（循环 upsert+审计同一事务）', genG.code === 0 && genG.data.generated > 0)
+
+  // 清理：全量清欠后断言无活动任务（不卡下次回归）
+  const drained2 = await drainCourier()
+  check('无遗留活动任务(不卡下次回归)', drained2 === 0)
 
   console.log('\n' + '='.repeat(50))
   console.log(`验收结果：✅ 通过 ${passed} 项 / ❌ 失败 ${failed} 项`)

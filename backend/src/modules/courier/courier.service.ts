@@ -190,56 +190,65 @@ export class CourierService {
   // ────────────────────────────────────────
   async report(userId: bigint, dto: ReportDto) {
     const courier = await this.getCourier(userId)
-    // 2026-09-12 #14 收口：直写 prisma.auditLog.create → 统一走 AuditService（字段等价；action 值逐字保留 courier_report）
-    await this.audit.log({
-      operatorId: courier.userId,
-      action: 'courier_report',
-      entity: 'delivery_task',
-      entityId: BigInt(dto.taskId ?? dto.orderId ?? 0),
-      after: { orderId: dto.orderId ?? null, taskId: dto.taskId ?? null, reason: dto.reason, photos: dto.photos },
-    })
-
-    // 订单级异常：只标记该订单，不影响同任务其他订单与任务状态
     let affectedOrders = 0
-    if (dto.orderId) {
-      const r = await this.prisma.order.updateMany({
-        where: { id: BigInt(dto.orderId), status: { in: [OrderStatus.ASSIGNED, OrderStatus.WAIT_DELIVERY, OrderStatus.DELIVERING] } },
-        data: { status: OrderStatus.UNDELIVERABLE },
-      })
-      affectedOrders = r.count
-    } else if (dto.taskId) {
-      // 任务级异常（车辆故障等）：标记整个任务 + 所有配送中订单
-      const task = await this.prisma.deliveryTask.findFirst({
-        where: { id: BigInt(dto.taskId), courierId: courier.id },
-      })
-      if (task) {
-        await this.prisma.deliveryTask.updateMany({
-          where: { id: BigInt(dto.taskId), courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED] } },
-          data: { status: TaskStatus.EXCEPTION },
+    let exceptionId = 0
+    // 审计 + 订单/任务异常标记 + 异常工单 同一事务（2026-09-15 涉钱收口：
+    // 避免"审计已记、异常单没建"或"异常单建了、订单没标"的中间态）
+    await this.prisma.$transaction(async (tx) => {
+      // 2026-09-12 #14 收口：直写 prisma.auditLog.create → 统一走 AuditService（字段等价；action 值逐字保留 courier_report）
+      await this.audit.log(
+        {
+          operatorId: courier.userId,
+          action: 'courier_report',
+          entity: 'delivery_task',
+          entityId: BigInt(dto.taskId ?? dto.orderId ?? 0),
+          after: { orderId: dto.orderId ?? null, taskId: dto.taskId ?? null, reason: dto.reason, photos: dto.photos },
+        },
+        tx,
+      )
+
+      // 订单级异常：只标记该订单，不影响同任务其他订单与任务状态
+      if (dto.orderId) {
+        const r = await tx.order.updateMany({
+          where: { id: BigInt(dto.orderId), status: { in: [OrderStatus.ASSIGNED, OrderStatus.WAIT_DELIVERY, OrderStatus.DELIVERING] } },
+          data: { status: OrderStatus.UNDELIVERABLE },
         })
-        const orderIds = this.orderIdsOf(task)
-        if (orderIds.length) {
-          const r = await this.prisma.order.updateMany({
-            where: { id: { in: orderIds.map((id) => BigInt(id)) }, status: OrderStatus.DELIVERING },
-            data: { status: OrderStatus.UNDELIVERABLE },
+        affectedOrders = r.count
+      } else if (dto.taskId) {
+        // 任务级异常（车辆故障等）：标记整个任务 + 所有配送中订单
+        const task = await tx.deliveryTask.findFirst({
+          where: { id: BigInt(dto.taskId), courierId: courier.id },
+        })
+        if (task) {
+          await tx.deliveryTask.updateMany({
+            where: { id: BigInt(dto.taskId), courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED] } },
+            data: { status: TaskStatus.EXCEPTION },
           })
-          affectedOrders = r.count
+          const orderIds = this.orderIdsOf(task)
+          if (orderIds.length) {
+            const r = await tx.order.updateMany({
+              where: { id: { in: orderIds.map((id) => BigInt(id)) }, status: OrderStatus.DELIVERING },
+              data: { status: OrderStatus.UNDELIVERABLE },
+            })
+            affectedOrders = r.count
+          }
         }
       }
-    }
 
-    // 生成异常工单，供运营后台处理
-    const exception = await this.prisma.deliveryException.create({
-      data: {
-        deliveryTaskId: dto.taskId ? BigInt(dto.taskId) : null,
-        courierId: courier.id,
-        orderId: dto.orderId ? BigInt(dto.orderId) : null,
-        reason: dto.reason,
-        status: 0,
-      },
+      // 生成异常工单，供运营后台处理
+      const exception = await tx.deliveryException.create({
+        data: {
+          deliveryTaskId: dto.taskId ? BigInt(dto.taskId) : null,
+          courierId: courier.id,
+          orderId: dto.orderId ? BigInt(dto.orderId) : null,
+          reason: dto.reason,
+          status: 0,
+        },
+      })
+      exceptionId = Number(exception.id)
     })
 
-    return { reported: true, exceptionId: Number(exception.id), affectedOrders }
+    return { reported: true, exceptionId, affectedOrders }
   }
 
   // ────────────────────────────────────────

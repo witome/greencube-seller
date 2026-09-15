@@ -16,9 +16,9 @@
           <text class="buyer-mine-status-b">{{ statusTitle }}</text>
           <text class="buyer-mine-status-s">{{ statusSub }}</text>
         </view>
-        <text v-if="accountStatus === null" class="buyer-mine-status-link" @tap="go('/pages/buyer/register')">去注册 ›</text>
-        <text v-else-if="accountStatus === 1" class="buyer-mine-status-link" @tap="go('/pages/buyer/pending-verify')">查看进度 ›</text>
-        <text v-else-if="accountStatus === 3" class="buyer-mine-status-link" @tap="go('/pages/buyer/verify-rejected')">去申诉 ›</text>
+        <view v-if="accountStatus === null" class="buyer-mine-status-link" @tap="go('/pages/buyer/register')">去注册 ›</view>
+        <view v-else-if="accountStatus === 1" class="buyer-mine-status-link" @tap="go('/pages/buyer/pending-verify')">查看进度 ›</view>
+        <view v-else-if="accountStatus === 3" class="buyer-mine-status-link" @tap="go('/pages/buyer/verify-rejected')">去申诉 ›</view>
       </view>
 
       <!-- ② 餐馆资料卡 -->
@@ -31,7 +31,7 @@
             <text v-if="accountStatus === 2" class="buyer-mine-tag buyer-mine-tag-ok">正常</text>
           </view>
         </view>
-        <text v-if="canSwitchRole" class="buyer-mine-switch" @tap="onSwitchRole">切换身份 ›</text>
+        <view v-if="canSwitchRole" class="buyer-mine-switch" @tap="onSwitchRole">切换身份 ›</view>
       </view>
 
       <!-- ③ 数据概览（三栏） -->
@@ -264,7 +264,7 @@ onShow(() => {
 .buyer-mine-status-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .buyer-mine-status-b { font-weight: 700; }
 .buyer-mine-status-s { font-size: 11px; opacity: .9; margin-top: 1px; }
-.buyer-mine-status-link { font-weight: 700; white-space: nowrap; }
+.buyer-mine-status-link { display: inline; font-weight: 700; white-space: nowrap; }
 .buyer-mine-status-ok { background: linear-gradient(90deg, #E6F9F0, #F4FFF8); border: 1px solid #C9F0DD; color: #00B96B; }
 .buyer-mine-status-warn { background: #FFF8EC; border: 1px solid #FFE4BA; color: #B26A00; }
 .buyer-mine-status-err { background: #FFF0F0; border: 1px solid #FFD6D6; color: #FA5151; }
@@ -284,7 +284,7 @@ onShow(() => {
 .buyer-mine-shop-sub { font-size: 11px; color: #8A9099; margin-top: 2px; display: flex; align-items: center; gap: 4px; }
 .buyer-mine-tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
 .buyer-mine-tag-ok { background: #E6F9F0; color: #00B96B; }
-.buyer-mine-switch { font-size: 11px; color: #00B96B; white-space: nowrap; }
+.buyer-mine-switch { display: inline; font-size: 11px; color: #00B96B; white-space: nowrap; }
 
 /* ── ③ 数据概览（三栏） ── */
 .buyer-mine-stat-row { display: flex; gap: 8px; margin-bottom: 10px; }

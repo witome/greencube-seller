@@ -1,5 +1,5 @@
 <template>
-  <view class="drs-wrap">
+  <view v-if="isDev" class="drs-wrap">
     <view class="drs-btn" @tap.stop="panelShow = !panelShow">🎭</view>
     <view v-if="panelShow" class="drs-panel">
       <view class="drs-panel-title">切换测试角色</view>
@@ -14,6 +14,10 @@
 <script setup>
 import { ref } from 'vue'
 import { authApi } from '@/api/modules'
+
+// 调试浮窗只在开发环境渲染；process.env.NODE_ENV 编译期替换为常量，
+// 生产构建（NODE_ENV=production）时 isDev=false，整块被编译器摇树移除，不跟正式包漏出去
+const isDev = process.env.NODE_ENV !== 'production'
 
 const panelShow = ref(false)
 

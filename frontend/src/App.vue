@@ -25,6 +25,8 @@ async function switchRole(role, path) {
 }
 
 function injectDevRoleSwitcher() {
+  // 调试浮窗只在开发环境渲染；生产构建（NODE_ENV=production）直接跳过，避免跟着正式包漏出去
+  if (process.env.NODE_ENV === 'production') return
   if (typeof document === 'undefined') return
   if (document.getElementById('dev-role-switcher')) return
 
@@ -102,8 +104,12 @@ export default {
         }
       }
       // 登录 code：mock 阶段用固定 devRole（保证 openid 稳定，多端共用同一测试身份）
-      // 切真实登录时：把 USE_MOCK_LOGIN 改 false + 后端 .env WX_MOCK_LOGIN=0
-      const USE_MOCK_LOGIN = true
+      // 开关走构建配置：VITE_USE_MOCK_LOGIN 显式配置优先；未配置时开发默认开、生产构建默认关
+      // → 打正式包自动切真实登录，不靠人记得改代码（后端 .env WX_MOCK_LOGIN 仍需独立配置）
+      const USE_MOCK_LOGIN =
+        import.meta.env.VITE_USE_MOCK_LOGIN !== undefined
+          ? String(import.meta.env.VITE_USE_MOCK_LOGIN) === 'true'
+          : process.env.NODE_ENV !== 'production'
       let code = uni.getStorageSync('devRole') || 'buyer'
       // #ifdef MP-WEIXIN
       if (!USE_MOCK_LOGIN) {
