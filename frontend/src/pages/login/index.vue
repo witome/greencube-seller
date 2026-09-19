@@ -42,6 +42,7 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi } from '@/api/modules'
 import { getLoginCode } from '@/utils/wx-login'
+import { restorePreferredRole } from '@/utils/preferred-role'
 
 const logging = ref(false)
 
@@ -63,6 +64,8 @@ const doLogin = async () => {
     // 登录 code 走全仓唯一入口（mock 用 devRole / 真实模式调 uni.login()）
     const code = await getLoginCode()
     const data = await authApi.login(code)
+    // 恢复用户上次选的身份（真实登录下后端只能回默认身份，见 utils/preferred-role.js）
+    await restorePreferredRole(data)
     uni.setStorageSync('token', data.token)
     uni.setStorageSync('currentRole', data.currentRole)
     uni.setStorageSync('accountStatus', data.accountStatus)
@@ -90,6 +93,7 @@ const goRegister = async () => {
     // mock 模式（仅开发）：fresh=true 用 reg_+时间戳模拟全新用户，便于反复测试注册流程。
     const code = await getLoginCode({ fresh: true })
     const data = await authApi.login(code)
+    await restorePreferredRole(data)
     uni.setStorageSync('token', data.token)
     uni.setStorageSync('currentRole', data.currentRole)
     uni.setStorageSync('accountStatus', data.accountStatus)

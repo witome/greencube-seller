@@ -1,6 +1,7 @@
 <script>
 import { authApi } from '@/api/modules'
 import { getLoginCode } from '@/utils/wx-login'
+import { restorePreferredRole, rememberPreferredRole } from '@/utils/preferred-role'
 
 // 调试用角色映射（dev mock 登录 code，后端会加 dev_ 前缀：demo_supplier → dev_demo_supplier）
 const DEV_ROLES = [
@@ -17,6 +18,7 @@ async function switchRole(role, path) {
     uni.setStorageSync('token', data.token)
     uni.setStorageSync('currentRole', data.currentRole)
     uni.setStorageSync('accountStatus', data.accountStatus)
+    rememberPreferredRole(data.currentRole) // dev 浮窗切换与正式切换行为一致
     uni.showToast({ title: '已切换角色', icon: 'none' })
     setTimeout(() => uni.reLaunch({ url: path }), 200)
   } catch (e) {
@@ -108,6 +110,8 @@ export default {
       const code = await getLoginCode()
       try {
         const data = await authApi.login(code)
+        // 恢复用户上次选的身份（真实登录下后端 pickRole 无法感知意图，会回默认采购方）
+        await restorePreferredRole(data)
         uni.setStorageSync('token', data.token)
         uni.setStorageSync('currentRole', data.currentRole)
         uni.setStorageSync('accountStatus', data.accountStatus)

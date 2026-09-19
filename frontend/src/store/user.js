@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { authApi } from '@/api/modules'
+import { rememberPreferredRole, forgetPreferredRole } from '@/utils/preferred-role'
 
 /**
  * 用户与身份状态
@@ -42,6 +43,8 @@ export const useUserStore = defineStore('user', {
       this.currentRole = data.currentRole || role
       uni.setStorageSync('token', data.token)
       uni.setStorageSync('currentRole', this.currentRole)
+      // 记住用户选的身份：下次重新进入小程序登录时自动恢复（修复重进被打回采购方的 bug）
+      rememberPreferredRole(role)
       clearBusinessCache()
       const home = {
         purchaser: '/pages/buyer/home',
@@ -51,6 +54,7 @@ export const useUserStore = defineStore('user', {
       uni.reLaunch({ url: home })
     },
     logout() {
+      forgetPreferredRole()
       this.$reset()
       uni.reLaunch({ url: '/pages/buyer/home' })
     },

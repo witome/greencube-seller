@@ -99,6 +99,7 @@ import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
 import { useUserStore } from '@/store/user'
+import { forgetPreferredRole } from '@/utils/preferred-role'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
 const profile = ref(null)
@@ -189,6 +190,7 @@ const logout = () => {
   uni.removeStorageSync('currentRole')
   uni.removeStorageSync('accountStatus')
   uni.removeStorageSync('devRole')
+  forgetPreferredRole()
   uni.reLaunch({ url: '/pages/login/index' })
 }
 

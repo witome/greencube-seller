@@ -38,6 +38,7 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi } from '@/api/modules'
 import { useUserStore } from '@/store/user'
+import { forgetPreferredRole } from '@/utils/preferred-role'
 import CustomTabBar from '@/components/CustomTabBar.vue'
 
 const profile = ref(null)
@@ -73,6 +74,7 @@ const switchRole = async (r) => {
 const logout = () => {
   uni.removeStorageSync('token'); uni.removeStorageSync('currentRole')
   uni.removeStorageSync('accountStatus'); uni.removeStorageSync('devRole')
+  forgetPreferredRole()
   uni.reLaunch({ url: '/pages/login/index' })
 }
 
