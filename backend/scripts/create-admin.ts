@@ -40,11 +40,12 @@ function askHidden(query: string): Promise<string> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true })
     // 覆盖 readline 内部回显：初始提示原样输出，其余字符一律打 *
+    const out = process.stdout
     ;(rl as any)._writeToOutput = function (s: string) {
       if (typeof s !== 'string') return
-      if (s.startsWith(query)) rl.output.write(s)
-      else if (s === '\n' || s === '\r' || s === '\r\n') rl.output.write('\n')
-      else rl.output.write('*')
+      if (s.startsWith(query)) out.write(s)
+      else if (s === '\n' || s === '\r' || s === '\r\n') out.write('\n')
+      else out.write('*')
     }
     rl.question(query, (answer) => {
       rl.close()
@@ -92,7 +93,7 @@ async function main() {
 
   if (existing.length === 1) {
     const user = existing[0]
-    const roles: string[] = Array.isArray(user.roles) ? user.roles : []
+    const roles: string[] = Array.isArray(user.roles) ? (user.roles as string[]) : []
     let addedAdmin = false
     if (!roles.includes(Role.ADMIN)) {
       roles.push(Role.ADMIN)
