@@ -10,6 +10,7 @@ const routes = [
     children: [
       { path: 'dashboard', name: 'dashboard', component: () => import('../views/Dashboard.vue'), meta: { title: '工作台' } },
       { path: 'buyers', name: 'buyers', component: () => import('../views/buyers/BuyerList.vue'), meta: { title: '采购方管理' } },
+      { path: 'appeals', name: 'appeals', component: () => import('../views/buyers/Appeals.vue'), meta: { title: '申诉处理' } },
       { path: 'goods', name: 'goods', component: () => import('../views/goods/GoodsAudit.vue'), meta: { title: '商品审核' } },
       { path: 'goods-manage', name: 'goods-manage', component: () => import('../views/goods/GoodsManage.vue'), meta: { title: '商品管理' } },
       { path: 'categories', name: 'categories', component: () => import('../views/goods/Categories.vue'), meta: { title: '分类管理' } },

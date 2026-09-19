@@ -13,6 +13,9 @@ export const buyerAdminApi = {
   getBuyerVerifyDetail: (id) => request.get(`/admin/buyers/${id}/verify-detail`),
   submitVerification: (id, data) => request.post(`/admin/buyers/${id}/verify`, data),
   reviewAppeal: (id, data) => request.post(`/admin/buyers/${id}/appeal-review`, data),
+  // 申诉记录列表（决策⑥另一半，2026-09-19 卡G：只读接口，处理走 reviewAppeal）
+  // 后端仅支持 status/page/pageSize 筛选（无日期入参，日期在前端过滤）
+  getAppeals: (params) => request.get('/admin/appeals', { params }),
   updateBuyer: (id, data) => request.put(`/admin/buyers/${id}`, data),
 }
 

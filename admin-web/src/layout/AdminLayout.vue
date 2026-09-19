@@ -15,6 +15,9 @@
         <el-menu-item index="/buyers">
           <el-icon><User /></el-icon><span>采购方管理</span>
         </el-menu-item>
+        <el-menu-item index="/appeals">
+          <el-icon><ChatDotRound /></el-icon><span>申诉处理</span>
+        </el-menu-item>
         <el-menu-item index="/suppliers">
           <el-icon><Shop /></el-icon><span>供应商管理</span>
         </el-menu-item>
