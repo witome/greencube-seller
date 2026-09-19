@@ -75,6 +75,7 @@ model Purchaser {
 
   user User @relation(fields: [userId], references: [id])
   verificationLogs VerificationLog[]
+  appealRecords    AppealRecord[]
   orders           Order[]
 
   @@index([accountStatus])
@@ -106,6 +107,36 @@ model VerificationLog {
 
   @@index([purchaserId])
   @@map("verification_log")
+}
+
+/// 申诉记录（决策 6 · 2026-09-19 大辉拍板：申诉内容与附件必须入库）
+/// 一条申诉一行。原实现只把 account_status 改回待审核、把正文与附件直接丢掉，
+/// 运营根本看不到申诉内容；此表为申诉的唯一权威留存。
+model AppealRecord {
+  id          BigInt   @id @default(autoincrement())
+  /// 采购方档案 id（权限归属；与 verification_log 等既有表同口径）
+  purchaserId BigInt   @map("purchaser_id")
+  /// 提交申诉的账号 user_id（提出人；purchaser.userId 唯一，二者 1:1）
+  userId      BigInt   @map("user_id")
+  /// 申诉正文（DTO 限 500 字，此处 TEXT 兜底）
+  text        String   @db.Text
+  /// 附件 URL 数组（小程序端当前不传，为「拍照留证」卡预留）
+  attachments Json?
+  /// 提交时刻的驳回原因快照（取自 purchaser.reject_reason_code / reject_reason_text）
+  reasonCode   Int?    @map("reason_code") @db.TinyInt
+  rejectReason String? @map("reject_reason") @db.Text
+  /// 0 待处理 / 1 已处理（运营申诉复核后置 1）
+  status      Int      @default(0) @db.TinyInt
+  createdAt   DateTime @default(now()) @map("created_at")
+  /// 处理留痕（运营/业务员 user_id + 处理时间）
+  handledBy   BigInt?   @map("handled_by")
+  handledAt   DateTime? @map("handled_at")
+
+  purchaser Purchaser @relation(fields: [purchaserId], references: [id])
+
+  @@index([purchaserId])
+  @@index([status, createdAt])
+  @@map("appeal_record")
 }
 
 model Supplier {

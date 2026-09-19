@@ -171,18 +171,37 @@ export class AdminUserService {
 
   // ────────────────────────────────────────
   // 申诉复核（通过 → active / 驳回 → 终态冻结 60 天）
+  // 决策 6（2026-09-19）：同时给 appeal_record 打处理留痕（status=1 + handled_by/handled_at）
   // ────────────────────────────────────────
   async reviewAppeal(id: number, operatorId: bigint, dto: AppealReviewDto) {
     const p = await this.prisma.purchaser.findUnique({ where: { id: BigInt(id) } })
     if (!p) throw new BizException(ErrorCode.NOT_FOUND, '采购方不存在')
 
     const nextStatus = dto.approved ? AccountStatus.ACTIVE : AccountStatus.REJECTED_FINAL
-    await this.prisma.purchaser.update({
-      where: { id: p.id },
-      data: { accountStatus: nextStatus, verifiedBy: operatorId, verifiedAt: new Date() },
+    const now = new Date()
+
+    // 事务：采购方状态 + 申诉记录处理留痕 要么都成、要么都不成
+    await this.prisma.$transaction(async (tx) => {
+      await tx.purchaser.update({
+        where: { id: p.id },
+        data: { accountStatus: nextStatus, verifiedBy: operatorId, verifiedAt: now },
+      })
+
+      // 该采购方最近一条「待处理」申诉置为已处理（本次复核即对它的处理）
+      const pendingAppeal = await tx.appealRecord.findFirst({
+        where: { purchaserId: p.id, status: 0 },
+        orderBy: { createdAt: 'desc' },
+      })
+      if (pendingAppeal) {
+        await tx.appealRecord.update({
+          where: { id: pendingAppeal.id },
+          data: { status: 1, handledBy: operatorId, handledAt: now },
+        })
+      }
     })
 
     // 铁律 3：申诉复核属关键操作，全量写审计（2026-09-10 补，修复单缺陷 4）
+    // ⚠️ 审计 payload 保持原样不动：申诉处理留痕落在 appeal_record 的 handled_by/handled_at 上
     await this.audit.log({
       operatorId,
       action: 'REVIEW_BUYER_APPEAL',
@@ -193,6 +212,55 @@ export class AdminUserService {
     })
 
     return { purchaserId: Number(p.id), accountStatus: nextStatus }
+  }
+
+  // ────────────────────────────────────────
+  // 申诉记录列表（运营/业务员；决策 6 · 2026-09-19 拍板）
+  // 只读接口，不写审计（与 pendingBuyers / verifyDetail 等同口径）。
+  // 按状态 + 时间倒序，带申诉正文与附件，供运营后台查看与处理
+  // 权限：@Roles(ADMIN, BUSINESS_AGENT) —— 业务员是运营子账号，申诉属采购方审核范畴
+  // ────────────────────────────────────────
+  async appeals(query: { status?: string; page?: string; pageSize?: string }) {
+    const page = Math.max(1, parseInt(query.page || '1'))
+    const pageSize = Math.min(50, Math.max(1, parseInt(query.pageSize || '20')))
+
+    const where: any = {}
+    if (query.status !== undefined && query.status !== '') where.status = parseInt(query.status)
+
+    const [total, rows] = await Promise.all([
+      this.prisma.appealRecord.count({ where }),
+      this.prisma.appealRecord.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { purchaser: true },
+      }),
+    ])
+
+    return {
+      total,
+      list: rows.map((r) => ({
+        appealId: Number(r.id),
+        purchaserId: Number(r.purchaserId),
+        userId: Number(r.userId),
+        shopName: r.purchaser?.shopName ?? null,
+        contact: r.purchaser?.contact ?? null,
+        phone: r.purchaser?.phone ?? null,
+        accountStatus: r.purchaser?.accountStatus ?? null,
+        // 申诉正文 + 附件（决策 6 的核心：运营必须看得到）
+        text: r.text,
+        attachments: Array.isArray(r.attachments) ? r.attachments : [],
+        // 提交时刻的驳回原因快照
+        reasonCode: r.reasonCode != null ? Number(r.reasonCode) : null,
+        rejectReason: r.rejectReason,
+        status: r.status,
+        statusText: r.status === 1 ? '已处理' : '待处理',
+        createdAt: r.createdAt.toISOString(),
+        handledBy: r.handledBy != null ? Number(r.handledBy) : null,
+        handledAt: r.handledAt ? r.handledAt.toISOString() : null,
+      })),
+    }
   }
 
   // ────────────────────────────────────────

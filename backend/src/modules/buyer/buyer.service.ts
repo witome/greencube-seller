@@ -193,6 +193,9 @@ export class BuyerService {
 
   // ────────────────────────────────────────
   // 提交申诉（30 天内仅 1 次）
+  // 决策 6（2026-09-19 大辉拍板）：申诉正文与附件**必须入库**。
+  // 原实现只改状态 + 计数，把 dto.text / dto.attachments 丢掉并返回假 id 0，
+  // 运营看不到申诉内容 —— 现落 appeal_record 一条一行，返回真实 id。
   // ────────────────────────────────────────
   async appeal(userId: bigint, dto: AppealDto) {
     const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
@@ -203,16 +206,79 @@ export class BuyerService {
     }
     if (purchaser.appealCount30d >= 1) throw new BizException(ErrorCode.APPEAL_LIMIT)
 
-    // 记录申诉内容（可写入备注字段或单独表；此处简化：留痕到 rejectReasonText 前的 audit）
-    await this.prisma.purchaser.update({
-      where: { id: purchaser.id },
-      data: {
+    // 事务：申诉记录落库 + 状态改回待审核 + 30 天计数 +1，要么都成、要么都不成
+    const appeal = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.appealRecord.create({
+        data: {
+          purchaserId: purchaser.id,
+          userId,
+          text: dto.text,
+          // 附件可选：小程序端当前不传（附件入口已按上一张卡移除），为「拍照留证」卡预留
+          attachments: dto.attachments ?? undefined,
+          // 提交时刻的驳回原因快照（取自被驳回时的落库值，供运营对照申诉内容判断）
+          reasonCode: purchaser.rejectReasonCode ?? null,
+          rejectReason: purchaser.rejectReasonText ?? null,
+          status: 0,
+        },
+      })
+
+      await tx.purchaser.update({
+        where: { id: purchaser.id },
+        data: {
+          accountStatus: AccountStatus.PENDING,
+          appealCount30d: { increment: 1 },
+        },
+      })
+
+      return created
+    })
+
+    // 铁律 3：申诉受理＝准入状态变更（驳回→待审核），写审计（action 全大写，勿新增小写）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'BUYER_APPEAL_SUBMIT',
+      entity: 'purchaser',
+      entityId: purchaser.id,
+      before: {
+        accountStatus: purchaser.accountStatus,
+        appealCount30d: purchaser.appealCount30d,
+      },
+      after: {
         accountStatus: AccountStatus.PENDING,
-        appealCount30d: { increment: 1 },
+        appealId: Number(appeal.id),
+        textLength: (dto.text ?? '').length,
+        attachmentCount: (dto.attachments ?? []).length,
       },
     })
 
-    return { appealId: 0, accountStatus: AccountStatus.PENDING }
+    return { appealId: Number(appeal.id), accountStatus: AccountStatus.PENDING }
+  }
+
+  // ────────────────────────────────────────
+  // 我的申诉记录（决策 6 · 采购方只能看自己的）
+  // 只按 token 的 userId 取自己的 purchaser，再按 purchaserId 过滤；
+  // 代码里没有任何 targetId/purchaserId 入参，杜绝越权读别人的申诉
+  // ────────────────────────────────────────
+  async myAppeals(userId: bigint) {
+    const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
+    if (!purchaser) throw new BizException(ErrorCode.NOT_FOUND, '未找到采购方档案')
+
+    const rows = await this.prisma.appealRecord.findMany({
+      where: { purchaserId: purchaser.id },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    return rows.map((r) => ({
+      appealId: Number(r.id),
+      text: r.text,
+      attachments: Array.isArray(r.attachments) ? r.attachments : [],
+      reasonCode: r.reasonCode != null ? Number(r.reasonCode) : null,
+      rejectReason: r.rejectReason,
+      status: r.status,
+      statusText: r.status === 1 ? '已处理' : '待处理',
+      createdAt: r.createdAt.toISOString(),
+      handledAt: r.handledAt ? r.handledAt.toISOString() : null,
+    }))
   }
 
   // ────────────────────────────────────────

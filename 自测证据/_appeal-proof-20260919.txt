@@ -1,0 +1,156 @@
+============================================================
+卡E 取证 · 申诉入库 / 运营可查 / 权限反例
+TS=1789804370
+============================================================
+
+────────── 0. 准备数据：注册采购方 → 运营驳回为 REJECTED(3) ──────────
+[0.1] 采购方 mock 登录成功 token = eyJhbGciOiJIUzI1NiIsInR5…
+[0.2] 注册返回：{"code":0,"msg":"ok","data":{"purchaserId":307,"accountStatus":1,"estimatedHours":24}}
+      → purchaserId = 307
+[0.3] 运营驳回：{"code":0,"msg":"ok","data":{"purchaserId":307,"accountStatus":3,"verificationId":0}}
+
+────────── 1. curl 提交申诉（不带附件） ──────────
+curl --noproxy '*' -X POST http://localhost:3001/api/v1/buyer/appeal -H 'Authorization: Bearer <buyer>' \
+     -H 'Content-Type: application/json' -d @body_appeal.json
+body_appeal.json = {"text":"卡E取证：我们执照当年年检已完成，附件我随后补，请运营再核一次。TS=1789804370"}
+→ 返回：{"code":0,"msg":"ok","data":{"appealId":5,"accountStatus":1}}
+→ appealId = 5   （原实现恒为 0，现为真实自增 id）
+
+────────── 2. SQL 直查 appeal_record —— 证明正文真进了库（含中文原样） ──────────
+[
+  {
+    "id": 5,
+    "purchaser_id": 307,
+    "user_id": 557,
+    "text": "卡E取证：我们执照当年年检已完成，附件我随后补，请运营再核一次。TS=1789804370",
+    "attachments": null,
+    "reason_code": 1,
+    "reject_reason": "营业执照不符（卡E 申诉取证）",
+    "status": 0,
+    "created_at": "2026-09-19T07:52:56.962Z",
+    "handled_by": null,
+    "handled_at": null
+  }
+]
+
+────────── 3. 附件可存性：另造一个被驳回采购方，带 attachments 提交 ──────────
+→ 返回：{"code":0,"msg":"ok","data":{"appealId":6,"accountStatus":1}}
+[
+  {
+    "id": 6,
+    "attachments": [
+      "https://example.com/license-2026.jpg",
+      "https://example.com/permit-2026.jpg"
+    ],
+    "status": 0
+  }
+]
+
+────────── 4. 运营查询：GET /admin/appeals?status=0 ──────────
+curl --noproxy '*' -s 'http://localhost:3001/api/v1/admin/appeals?status=0&pageSize=20' -H 'Authorization: Bearer <admin>'
+→ 返回：{"code":0,"msg":"ok","data":{"total":2,"list":[{"appealId":6,"purchaserId":308,"userId":558,"shopName":"申诉附件取证餐馆1789804370","contact":"取证员二","phone":"13889804370","accountStatus":1,"text":"附件取证：补了执照年检页照片。TS=1789804370","attachments":["https://example.com/license-2026.jpg","https://example.com/permit-2026.jpg"],"reasonCode":6,"rejectReason":"资料不全（附件取证）","status":0,"statusText":"待处理","createdAt":"2026-09-19T07:53:02.784Z","handledBy":null,"handledAt":null},{"appealId":5,"purchaserId":307,"userId":557,"shopName":"申诉取证餐馆1789804370","contact":"取证员","phone":"13989804370","accountStatus":1,"text":"卡E取证：我们执照当年年检已完成，附件我随后补，请运营再核一次。TS=1789804370","attachments":[],"reasonCode":1,"rejectReason":"营业执照不符（卡E 申诉取证）","status":0,"statusText":"待处理","createdAt":"2026-09-19T07:52:56.962Z","handledBy":null,"handledAt":null}]}}
+
+[4.1] 命中刚提交的 appealId=5 / 6（运营确实看得到正文与附件）
+[
+  {
+    "appealId": 6,
+    "purchaserId": 308,
+    "userId": 558,
+    "shopName": "申诉附件取证餐馆1789804370",
+    "contact": "取证员二",
+    "phone": "13889804370",
+    "accountStatus": 1,
+    "text": "附件取证：补了执照年检页照片。TS=1789804370",
+    "attachments": [
+      "https://example.com/license-2026.jpg",
+      "https://example.com/permit-2026.jpg"
+    ],
+    "reasonCode": 6,
+    "rejectReason": "资料不全（附件取证）",
+    "status": 0,
+    "statusText": "待处理",
+    "createdAt": "2026-09-19T07:53:02.784Z",
+    "handledBy": null,
+    "handledAt": null
+  },
+  {
+    "appealId": 5,
+    "purchaserId": 307,
+    "userId": 557,
+    "shopName": "申诉取证餐馆1789804370",
+    "contact": "取证员",
+    "phone": "13989804370",
+    "accountStatus": 1,
+    "text": "卡E取证：我们执照当年年检已完成，附件我随后补，请运营再核一次。TS=1789804370",
+    "attachments": [],
+    "reasonCode": 1,
+    "rejectReason": "营业执照不符（卡E 申诉取证）",
+    "status": 0,
+    "statusText": "待处理",
+    "createdAt": "2026-09-19T07:52:56.962Z",
+    "handledBy": null,
+    "handledAt": null
+  }
+]
+
+────────── 5. 权限反例：采购方 token 调 /admin/appeals（期望 2002 无权限） ──────────
+curl --noproxy '*' -s 'http://localhost:3001/api/v1/admin/appeals' -H 'Authorization: Bearer <buyer>'
+→ 返回：{"code":2002,"msg":"当前身份无此权限","data":null}
+
+[5.1] 采购方只能看自己的：GET /buyer/appeals（只返回自己那 1 条）
+→ 返回：{"code":0,"msg":"ok","data":[{"appealId":5,"text":"卡E取证：我们执照当年年检已完成，附件我随后补，请运营再核一次。TS=1789804370","attachments":[],"reasonCode":1,"rejectReason":"营业执照不符（卡E 申诉取证）","status":0,"statusText":"待处理","createdAt":"2026-09-19T07:52:56.962Z","handledAt":null}]}
+
+[5.2] 交叉验证：采购方 A 的 token 看不到采购方 B 的申诉
+A 名下申诉 id 列表 = [5]
+B 的 appealId=6 是否出现在 A 的列表里 = false
+
+────────── 6. 运营受理申诉 → appeal_record 打处理留痕 ──────────
+curl --noproxy '*' -X POST http://localhost:3001/api/v1/admin/buyers/307/appeal-review -H 'Authorization: Bearer <admin>' -d '{"approved":true}'
+→ 返回：{"code":0,"msg":"ok","data":{"purchaserId":307,"accountStatus":2}}
+[
+  {
+    "id": 5,
+    "status": 1,
+    "handled_by": 4,
+    "handled_at": "2026-09-19T07:53:07.683Z"
+  }
+]
+
+────────── 7. 审计：申诉受理/处理都写 audit_log（action 全大写） ──────────
+[
+  {
+    "id": 5064,
+    "operator_id": 4,
+    "action": "REVIEW_BUYER_APPEAL",
+    "entity": "buyer",
+    "entity_id": 307
+  },
+  {
+    "id": 5063,
+    "operator_id": 558,
+    "action": "BUYER_APPEAL_SUBMIT",
+    "entity": "purchaser",
+    "entity_id": 308
+  },
+  {
+    "id": 5061,
+    "operator_id": 557,
+    "action": "BUYER_APPEAL_SUBMIT",
+    "entity": "purchaser",
+    "entity_id": 307
+  },
+  {
+    "id": 4981,
+    "operator_id": 4,
+    "action": "REVIEW_BUYER_APPEAL",
+    "entity": "buyer",
+    "entity_id": 302
+  }
+]
+
+────────── 8. 全表校对：本次新增后是否仍只有一个小写 action ──────────
+[]
+
+============================================================
+取证完毕。原始响应 JSON 落在：C:\Users\Administrator\AppData\Local\Temp/appeal-proof/
+============================================================

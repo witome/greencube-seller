@@ -34,6 +34,14 @@ export class BuyerController {
     return this.service.appeal(userId, dto)
   }
 
+  /// 我的申诉记录（决策 6 · 2026-09-19：采购方只能看自己的）
+  /// 与 /buyer/appeal、/buyer/pending 同属「账号激活前」链路，故用同一组 ALL_ROLES
+  @Get('appeals')
+  @Roles(Role.PURCHASER, Role.SUPPLIER, Role.COURIER, Role.ADMIN, Role.BUSINESS_AGENT)
+  async myAppeals(@CurrentUser('userId') userId: bigint) {
+    return this.service.myAppeals(userId)
+  }
+
   /// 催办
   @Post('urge-verify')
   @Roles(Role.PURCHASER, Role.SUPPLIER, Role.COURIER, Role.ADMIN, Role.BUSINESS_AGENT)

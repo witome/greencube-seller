@@ -51,6 +51,14 @@ export class AdminUserController {
     return this.service.reviewAppeal(Number(id), userId, dto)
   }
 
+  /// 申诉记录列表（决策 6 · 2026-09-19）：运营/业务员查看申诉正文与附件
+  /// 只读；采购方走 GET /buyer/appeals 只能看自己的
+  @Get('appeals')
+  @Roles(Role.ADMIN, Role.BUSINESS_AGENT)
+  async appeals(@Query() query: any) {
+    return this.service.appeals(query)
+  }
+
   /// 分配业务员
   @Post('buyers/:id/assign')
   @Roles(Role.ADMIN, Role.BUSINESS_AGENT)
