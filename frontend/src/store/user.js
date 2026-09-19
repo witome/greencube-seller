@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { authApi } from '@/api/modules'
 import { rememberPreferredRole, forgetPreferredRole } from '@/utils/preferred-role'
+import { stopAllPollers } from '@/utils/poller-registry'
 
 /**
  * 用户与身份状态
@@ -51,10 +52,14 @@ export const useUserStore = defineStore('user', {
         supplier: '/subpkg-supplier/pages/home',
         courier: '/subpkg-courier/pages/home',
       }[role]
+      // 先强制停掉所有轮询再 reLaunch（2026-09-19 拍板卡）：reLaunch 不一定触发旧页
+      // onHide，旧页轮询会拿着新身份 token 继续调旧角色接口 → 守卫拒 → 反复弹「当前身份无此权限」
+      stopAllPollers()
       uni.reLaunch({ url: home })
     },
     logout() {
       forgetPreferredRole()
+      stopAllPollers() // 同 switchRole：退出登录前先停所有轮询，防注销后仍带旧 token 轮询
       this.$reset()
       uni.reLaunch({ url: '/pages/buyer/home' })
     },

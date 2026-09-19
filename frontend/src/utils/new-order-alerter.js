@@ -20,8 +20,9 @@
  * - 音频文件：/static/audio/new-order-alert.wav（程序生成的叮咚提示音；真人语音版
  *   「您有一笔新订单，请及时处理」可直接替换同路径文件，代码无需改动）
  */
-import { onShow, onHide } from '@dcloudio/uni-app'
+import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { pickFreshIds } from './new-order-diff'
+import { registerPoller, isPermissionError, toastOnce } from './poller-registry'
 
 const POLL_MS = 30000 // 拍板：30 秒轮询
 const AUDIO_PATH = '/static/audio/new-order-alert.wav'
@@ -59,7 +60,14 @@ export function useNewOrderAlerter(fetchIds, opts = {}) {
         play()
       }
     } catch (e) {
-      // 轮询失败静默，下轮再试
+      // 权限类错误（2001 未登录 / 2002 当前身份无此权限 / 4001）→ 立即自停：
+      // 场景是「已切到其它身份但本页面轮询还活着」，继续轮只会反复弹权限提示
+      if (isPermissionError(e)) {
+        stop()
+        toastOnce(`alerter:${tag}`, '身份已切换，提醒已停止')
+        return
+      }
+      // 其余失败（网络抖动等）静默，下轮再试
     }
   }
 
@@ -73,12 +81,18 @@ export function useNewOrderAlerter(fetchIds, opts = {}) {
     if (timer) {
       clearInterval(timer)
       timer = null
-      console.log(`[new-order-alerter:${tag}] 轮询已停止(onHide)`)
+      console.log(`[new-order-alerter:${tag}] 轮询已停止`)
     }
+    unregister()
   }
 
+  // 全局登记：切换身份/退出登录时由 stopAllPollers() 强制停（reLaunch 不一定触发 onHide）
+  const unregister = registerPoller(`alerter:${tag}`, stop)
+
+  // onHide 停/onShow 启 + onUnload 兜底销毁（页面实例销毁时定时器必须清，防后台空转）
   onShow(start)
   onHide(stop)
+  onUnload(stop)
 
   return { start, stop }
 }

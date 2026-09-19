@@ -2,6 +2,7 @@
 import { authApi } from '@/api/modules'
 import { getLoginCode } from '@/utils/wx-login'
 import { restorePreferredRole, rememberPreferredRole } from '@/utils/preferred-role'
+import { stopAllPollers } from '@/utils/poller-registry'
 
 // 调试用角色映射（dev mock 登录 code，后端会加 dev_ 前缀：demo_supplier → dev_demo_supplier）
 const DEV_ROLES = [
@@ -20,6 +21,8 @@ async function switchRole(role, path) {
     uni.setStorageSync('accountStatus', data.accountStatus)
     rememberPreferredRole(data.currentRole) // dev 浮窗切换与正式切换行为一致
     uni.showToast({ title: '已切换角色', icon: 'none' })
+    // dev 浮窗与 store.switchRole 同规：先停所有轮询再 reLaunch（防旧页轮询带新 token 调旧角色接口）
+    stopAllPollers()
     setTimeout(() => uni.reLaunch({ url: path }), 200)
   } catch (e) {
     console.warn('切换角色失败', e)

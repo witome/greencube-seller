@@ -1,4 +1,5 @@
 import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
+import { registerPoller, isPermissionError, toastOnce } from './poller-registry'
 
 /**
  * 审核状态自动同步 —— 三角色（采购方/供应商/配送员）唯一共享实现（2026-09-19 拍板卡） *
@@ -43,6 +44,10 @@ export function setupAuditSync({ fetchStatus, onRefresh, onApproved, onRejected,
   let timer = null
   let leaving = false // 已触发跃迁/外部叫停：后续轮询不再处理
 
+  const stopTimer = () => {
+    if (timer) { clearInterval(timer); timer = null }
+  }
+
   const refresh = async () => {
     if (leaving) return
     try {
@@ -63,9 +68,24 @@ export function setupAuditSync({ fetchStatus, onRefresh, onApproved, onRejected,
       }
       onRefresh && onRefresh(data)
     } catch (e) {
+      // 权限类错误（2001 未登录 / 2002 当前身份无此权限 / 4001）→ 立即自停：
+      // 场景是「已切到其它身份但本页面轮询还活着」，继续轮只会反复弹权限提示
+      if (isPermissionError(e)) {
+        leaving = true
+        stopTimer()
+        unregister()
+        toastOnce(`audit-sync:${role}`, '身份已切换，审核状态同步已停止')
+        return
+      }
       // 接口不可用/无档案：保持页面静态兜底，等下一轮
     }
   }
+
+  // 全局登记：切换身份/退出登录时由 stopAllPollers() 强制停（reLaunch 不一定触发 onHide/onUnload）
+  const unregister = registerPoller(`audit-sync:${role}`, () => {
+    leaving = true
+    stopTimer()
+  })
 
   // onShow 拉一次 + 轻轮询（onHide/onUnload 必须清定时器，防后台空转与重复请求）
   onShow(() => {
@@ -73,12 +93,8 @@ export function setupAuditSync({ fetchStatus, onRefresh, onApproved, onRejected,
     refresh()
     if (!timer) timer = setInterval(refresh, intervalMs)
   })
-  onHide(() => {
-    if (timer) { clearInterval(timer); timer = null }
-  })
-  onUnload(() => {
-    if (timer) { clearInterval(timer); timer = null }
-  })
+  onHide(stopTimer)
+  onUnload(stopTimer)
 
   return {
     refresh,

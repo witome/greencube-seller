@@ -22,6 +22,10 @@ export const BASE_HOST = BASE_URL.replace(/\/api\/v1$/, '')
 // 把上传返回的相对路径（/uploads/xxx）拼成完整可访问 URL
 export const fullUrl = (path) => (path ? (path.startsWith('http') ? path : BASE_HOST + path) : '')
 
+// 同文案 toast 去重状态（3 秒窗口，见业务错误分支注释）
+let lastToastMsg = ''
+let lastToastAt = 0
+
 function request({ url, method = 'GET', data, header = {} }) {
   return new Promise((resolve, reject) => {
     const doRequest = () => {
@@ -49,7 +53,14 @@ function request({ url, method = 'GET', data, header = {} }) {
 
           // 业务错误（HTTP 200 + code≠0）
           if (body.code !== 0 && body.code !== undefined) {
-            uni.showToast({ title: body.msg || '操作失败', icon: 'none' })
+            // 同一错误 3 秒内不重复弹（2026-09-19 拍板卡）：轮询并发命中同一权限错误时
+            // 会连弹「当前身份无此权限」；轮询器已自停兜根因，这里只做展示层去重
+            const now = Date.now()
+            if (body.msg !== lastToastMsg || now - lastToastAt > 3000) {
+              uni.showToast({ title: body.msg || '操作失败', icon: 'none' })
+            }
+            lastToastMsg = body.msg
+            lastToastAt = now
             reject(body)
             return
           }

@@ -14,6 +14,7 @@
 <script setup>
 import { ref } from 'vue'
 import { authApi } from '@/api/modules'
+import { stopAllPollers } from '@/utils/poller-registry'
 
 // 调试浮窗只在开发环境渲染；process.env.NODE_ENV 编译期替换为常量，
 // 生产构建（NODE_ENV=production）时 isDev=false，整块被编译器摇树移除，不跟正式包漏出去
@@ -35,6 +36,8 @@ const switchTo = async (r) => {
     uni.setStorageSync('token', data.token)
     uni.setStorageSync('currentRole', data.currentRole)
     uni.setStorageSync('accountStatus', data.accountStatus)
+    // 与 store.switchRole 同规：先停所有轮询再 reLaunch（防旧页轮询带新 token 调旧角色接口）
+    stopAllPollers()
     uni.reLaunch({ url: r.path })
   } catch (e) {
     uni.showToast({ title: '切换失败：请确认后端已启动', icon: 'none' })
