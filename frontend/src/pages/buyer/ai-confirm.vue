@@ -218,6 +218,7 @@ const submit = async () => {
       timeWindow: timeWindow.value,
       remark: remark.value || undefined,
       items: items.value.map((it) => ({ productId: it.productId, qty: it.qty })),
+      source: 2, // 2=AI 客服代下单（普通自选下单路径不传，后端默认 1）
     })
     uni.removeStorageSync('aiDraft')
     uni.redirectTo({ url: `/pages/buyer/order-detail?id=${order.orderId}` })

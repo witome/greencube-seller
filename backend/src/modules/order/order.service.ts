@@ -67,7 +67,8 @@ export class OrderService {
           status: OrderStatus.PENDING_CONFIRM,
           amountOrdered: amountOrderedRounded,
           deliveryFee,
-          source: 1,
+          // 订单来源：1 小程序自选（默认）/ 2 AI 客服代下单（dto 可选传入，仅这两值，DTO 已校验）
+          source: dto.source ?? 1,
           items: {
             create: dto.items.map((it) => ({
               productId: BigInt(it.productId),

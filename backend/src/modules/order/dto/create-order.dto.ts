@@ -36,6 +36,10 @@ export class CreateOrderDto {
   @IsIn([0, 1], { message: '加急标记非法' })
   urgent?: number // 0 普通 / 1 加急
 
+  @IsOptional()
+  @IsIn([1, 2], { message: '订单来源非法' })
+  source?: number // 1 小程序自选（默认）/ 2 AI 客服代下单；不传=1
+
   @IsArray()
   @ArrayMinSize(1, { message: '至少一个商品' })
   @ValidateNested({ each: true })
