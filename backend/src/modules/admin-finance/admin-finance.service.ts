@@ -344,7 +344,7 @@ export class AdminFinanceService {
   ///       未核单称重的兜底 = amountOrdered + deliveryFee）
   /// 5. 应付供应商（参考值）= Σ qtyAccepted × supplyPrice（仅两项均有值的明细；
   ///    正式结算单仍按月由既有 generate 逻辑生成，此处不参与）
-  /// 6. 毛利粗算 = 实收 − 应付供应商参考值（含运费收入，未扣配送成本/平台服务费/退款）
+  /// 6. 毛利粗算 = 应收 − 应付供应商参考值（不随收款进度变化；未扣配送成本/平台服务费/退款）
   async dailyReconciliation(query: { date?: string }) {
     const dateStr =
       query.date && /^\d{4}-\d{2}-\d{2}$/.test(query.date)
@@ -370,7 +370,9 @@ export class AdminFinanceService {
       where: { id: { in: courierIds.map((id) => BigInt(id)) } },
       include: { user: true },
     })
-    const nameMap = new Map(couriers.map((c) => [Number(c.id), c.user?.phone || `配送员#${c.id}`]))
+    const nameMap = new Map(couriers.map((c) => [Number(c.id), c.user?.name || c.user?.phone || `配送员#${c.id}`]))
+    // 姓名显示口径（2026-09-19 拍板修正）：原实现只取 user.phone，后台「配送员」列全显示手机号；
+    // 改为 user.name 优先 → name 为空回退 user.phone → 都没有显示 配送员#<courierId>
     const courierOfOrder = new Map<number, { courierId: number; courierName: string }>()
     for (const t of tasks) {
       const stations = Array.isArray(t.stationList) ? (t.stationList as any[]) : []
@@ -472,7 +474,10 @@ export class AdminFinanceService {
     summary.received = r2(summary.received)
     summary.unpaid = r2(summary.unpaid)
     summary.supplierPayable = r2(summary.supplierPayable)
-    summary.grossProfit = r2(summary.received - summary.supplierPayable)
+    // 毛利粗算口径（2026-09-19 拍板修正）：原口径 = 实收 − 应付供应商，当天款没收回必然是
+    // 负数（线上实测 -84.84），容易被误读成亏钱；改为 应收 − 应付供应商参考值 =
+    // 这门生意本身的毛利，不随收款进度变化。未扣配送成本/平台服务费/退款。
+    summary.grossProfit = r2(summary.receivable - summary.supplierPayable)
 
     const finishAgg = (m: Map<string, any>) =>
       [...m.values()].map((x) => ({

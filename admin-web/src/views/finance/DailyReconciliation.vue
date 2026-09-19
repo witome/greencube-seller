@@ -45,17 +45,19 @@
         <div class="admin-dailyrec-card-sub">Σ 验收数量 × 供货价 · 正式结算仍按月</div>
       </div>
       <div class="admin-dailyrec-card">
-        <div class="admin-dailyrec-card-lbl">毛利粗算</div>
+        <!-- 毛利粗算口径（2026-09-19 拍板修正）：原口径=实收−应付供应商，当天款没收回必然为负
+             （线上实测 -84.84），易误读成亏钱；改为 应收−应付供应商，不随收款进度变化 -->
+        <div class="admin-dailyrec-card-lbl">毛利粗算（应收 − 应付供应商）</div>
         <div class="admin-dailyrec-card-num" :class="(data?.summary?.grossProfit ?? 0) >= 0 ? 'admin-dailyrec-num-green' : 'admin-dailyrec-num-red'">
           ¥{{ fmt(data?.summary?.grossProfit) }}
         </div>
-        <div class="admin-dailyrec-card-sub">实收 − 应付供应商参考值</div>
+        <div class="admin-dailyrec-card-sub">未扣配送成本/平台服务费/退款</div>
       </div>
     </div>
 
     <!-- 口径说明 -->
     <el-alert type="info" :closable="false" show-icon class="admin-dailyrec-notice"
-      title="口径说明：应收 = amountFinal（未核单时回退 amountOrdered + 运费）；实收 = 微信已支付流水 + 货到付款有收款凭证的订单；应付供应商与毛利为参考值，正式结算以按月结算单为准。"
+      title="口径说明：应收 = amountFinal（未核单时回退 amountOrdered + 运费）；实收 = 微信已支付流水 + 货到付款有收款凭证的订单；毛利粗算 = 应收 − 应付供应商参考值（未扣配送成本/平台服务费/退款）；应付供应商与毛利为参考值，正式结算以按月结算单为准。"
     />
 
     <!-- 未收款清单（最重要） -->
@@ -89,7 +91,7 @@
       <template #header><span>按配送员汇总</span></template>
       <el-table :data="data?.byCourier ?? []" v-loading="loading" stripe>
         <el-table-column prop="courierName" label="配送员" min-width="130" />
-        <el-table-column prop="orderCount" label="送了几天单" width="110">
+        <el-table-column prop="orderCount" label="送了几单" width="110">
           <template #default="{ row }">{{ row.orderCount }} 单</template>
         </el-table-column>
         <el-table-column label="应收" width="120">
