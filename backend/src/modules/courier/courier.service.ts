@@ -233,7 +233,23 @@ export class CourierService {
       after: { taskStatus: TaskStatus.DONE, deliveredOrders: orderIds.length, orderIds },
     })
 
-    return { taskId, status: TaskStatus.DONE, deliveredOrders: orderIds.length, resumed: remaining === 0 }
+    // 交付确认后待收款的 COD 订单（2026-09-19 拍板卡）：供前端自动跳收款页
+    // 「COD 已收款」以既有 order.payProof 为准（payProof 接口落库，核销口径不变，不新增 schema）
+    // 仅统计本任务内已送达(60)、payMethod=2 且尚无收款凭证的订单，按站点顺序排列
+    const taskOrders = await this.prisma.order.findMany({
+      where: { id: { in: orderIds.map((oid) => BigInt(oid)) } },
+      include: { purchaser: { select: { shopName: true } } },
+    })
+    const codOrders = orderIds
+      .map((oid) => taskOrders.find((o) => Number(o.id) === oid))
+      .filter((o) => o && o.payMethod === 2 && o.payProof == null && o.status === OrderStatus.DELIVERED)
+      .map((o) => ({
+        orderId: Number(o!.id),
+        shopName: o!.purchaser?.shopName || '',
+        amount: Number(o!.amountFinal ?? o!.amountOrdered ?? 0),
+      }))
+
+    return { taskId, status: TaskStatus.DONE, deliveredOrders: orderIds.length, resumed: remaining === 0, codOrders }
   }
 
   // ────────────────────────────────────────

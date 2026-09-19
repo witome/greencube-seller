@@ -28,8 +28,10 @@
 
     <!-- 底部操作 -->
     <view class="row-btns">
+      <view v-if="codFlow && remaining > 0" class="queue-tip">📋 本单收完后还有 {{ remaining }} 单待收款</view>
       <view class="pbtn primary" :class="{ disabled: submitting }" @tap="takePayProof">📷 付款拍照</view>
       <view v-if="proofPhotos.length" class="pbtn success" :class="{ disabled: submitting }" @tap="submitProof">提交凭证，完成收款</view>
+      <view v-if="codFlow" class="pbtn plain" :class="{ disabled: submitting }" @tap="skipThis">跳过此单，继续处理</view>
     </view>
   </view>
 </template>
@@ -45,6 +47,35 @@ const shopName = ref('')
 const payQr = ref('')
 const proofPhotos = ref([])
 const submitting = ref(false)
+// 交付流程自动进入时（deliver.vue 写入 codQueue，空数组也是标记），收完/跳过后接力下一单；
+// 从任务列表手动进入时无此标记，保持原有 navigateBack 行为
+const codFlow = ref(false)
+const remaining = ref(0)
+
+/** 收完或跳过当前单后的流转：还有下一单 → redirectTo 接力；收完/跳完 → 回首页提示；任务列表入口 → 原样返回 */
+const advance = (submitted) => {
+  const queue = uni.getStorageSync('codQueue') || []
+  if (queue.length) {
+    const next = queue.shift()
+    uni.setStorageSync('codQueue', queue)
+    remaining.value = queue.length
+    uni.redirectTo({ url: `/subpkg-courier/pages/cod-pay?orderId=${next.orderId}&shopName=${encodeURIComponent(next.shopName || '')}` })
+    return
+  }
+  uni.removeStorageSync('codQueue')
+  if (!codFlow.value) { uni.navigateBack(); return }
+  if (submitted) {
+    uni.showToast({ title: '收款凭证已提交', icon: 'success' })
+  } else {
+    uni.showToast({ title: '已跳过，可稍后在任务列表收款', icon: 'none' })
+  }
+  setTimeout(() => uni.reLaunch({ url: '/subpkg-courier/pages/home' }), 600)
+}
+
+const skipThis = () => {
+  if (submitting.value) return
+  advance(false)
+}
 
 // 拍照 → 转 base64 → 上传
 const takePayProof = () => {
@@ -72,8 +103,7 @@ const submitProof = async () => {
   submitting.value = true
   try {
     await courierApi.submitPayProof(Number(orderId.value), proofPhotos.value)
-    uni.showToast({ title: '收款凭证已提交', icon: 'success' })
-    setTimeout(() => uni.navigateBack(), 600)
+    advance(true) // 凭证已落库（payProof），流转到下一单或收尾
   } catch (e) {
     // 错误已由 request.js 统一提示
   } finally {
@@ -100,6 +130,9 @@ const fileToBase64 = (path) => {
 onLoad(async (opts) => {
   orderId.value = opts.orderId || ''
   shopName.value = opts.shopName ? decodeURIComponent(opts.shopName) : ''
+  const queue = uni.getStorageSync('codQueue')
+  codFlow.value = Array.isArray(queue) // deliver.vue 交付流程写入（空数组也是标记）
+  remaining.value = codFlow.value ? queue.length : 0
   try {
     const res = await courierApi.getPayQr()
     payQr.value = res.url || ''
@@ -128,4 +161,6 @@ onLoad(async (opts) => {
 .pbtn.primary { background: $color-primary; color: #fff; }
 .pbtn.success { background: #3b7cff; color: #fff; }
 .disabled { opacity: 0.6; }
+.queue-tip { font-size: 12px; color: $text-second; text-align: center; padding: 2px 0; }
+.pbtn.plain { background: #f2f3f5; color: $text-second; }
 </style>

@@ -103,9 +103,22 @@ onShow(() => {
 
 const confirm = async () => {
   if (!taskId.value) { uni.showToast({ title: '暂无进行中任务', icon: 'none' }); return }
-  await courierApi.deliverConfirm(Number(taskId.value), { photos: photos.value, remark: remark.value })
-  uni.showToast({ title: '交付完成', icon: 'success' })
-  setTimeout(() => uni.reLaunch({ url: '/subpkg-courier/pages/home' }), 600)
+  const res = await courierApi.deliverConfirm(Number(taskId.value), { photos: photos.value, remark: remark.value })
+  // 货到付款自动进收款页（2026-09-19 拍板卡）：后端返回本任务内已送达、payMethod=2
+  // 且尚无收款凭证(payProof)的订单。多个 COD 单逐个收（队列存 storage，cod-pay 接力）；
+  // 微信支付订单照常回首页不受影响。
+  const codOrders = res?.codOrders || []
+  if (codOrders.length) {
+    // 队列 = 除首单外的剩余待收款单（空数组也写入：向 cod-pay 标记「来自交付流程」）
+    uni.setStorageSync('codQueue', codOrders.slice(1))
+    const first = codOrders[0]
+    uni.showToast({ title: codOrders.length > 1 ? `交付完成，还有 ${codOrders.length} 单待收款` : '交付完成，请收款', icon: 'none' })
+    setTimeout(() => uni.redirectTo({ url: `/subpkg-courier/pages/cod-pay?orderId=${first.orderId}&shopName=${encodeURIComponent(first.shopName || '')}` }), 600)
+  } else {
+    uni.removeStorageSync('codQueue')
+    uni.showToast({ title: '交付完成', icon: 'success' })
+    setTimeout(() => uni.reLaunch({ url: '/subpkg-courier/pages/home' }), 600)
+  }
 }
 
 onLoad(async (opts) => {
