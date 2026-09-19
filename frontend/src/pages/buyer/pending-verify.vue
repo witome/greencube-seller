@@ -55,6 +55,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 
 // 分角色文案：注册身份不同，审核中页面内容不同
@@ -112,7 +113,7 @@ const previewGoods = () => {
   }
 }
 
-// ── D1：审核进度真实化（GET /buyer/pending：accountStatus/submittedAt/overdue/steps/rejectInfo）──
+// ── D1 + 自动同步（本卡）：GET /buyer/pending 拉进度；accountStatus 变化时自动流转 ──
 // 仅采购方注册流程有此接口；supplier/courier 注册调用会 404，此时保持静态文案兜底
 const steps = ref([
   { key: 'submit', label: '资料提交', status: 'done', time: null },
@@ -121,6 +122,8 @@ const steps = ref([
 ])
 const overdue = ref(false)
 const rejectInfo = ref('')
+let pollTimer = null
+let leaving = false // 已触发跳转，后续轮询不再处理
 const fmtTime = (iso) => {
   if (!iso) return ''
   const d = new Date(iso)
@@ -132,9 +135,39 @@ const stepTime = (s) => {
   if (s.status === 'rejected') return '未通过，见上方说明'
   return '待前序完成'
 }
-onMounted(async () => {
+
+// 状态跃迁处理：返回 true 表示已流转（调用方停止后续渲染逻辑）
+const handleStatus = (accountStatus) => {
+  if (leaving) return true
+  if (accountStatus === 2) {
+    // 已激活：同步本地缓存（mine.vue/App 守卫用）→ toast → 进对应角色首页
+    leaving = true
+    uni.setStorageSync('accountStatus', 2)
+    uni.showToast({ title: '审核已通过', icon: 'success' })
+    const role = uni.getStorageSync('registeredRole') || uni.getStorageSync('currentRole') || 'purchaser'
+    const homeMap = {
+      purchaser: '/pages/buyer/home',
+      supplier: '/subpkg-supplier/pages/home',
+      courier: '/subpkg-courier/pages/home',
+    }
+    setTimeout(() => uni.reLaunch({ url: homeMap[role] || '/pages/buyer/home' }), 800)
+    return true
+  }
+  if (accountStatus === 3) {
+    // 未通过：走已有驳回/申诉路径（redirectTo，避免返回键回到审核中页）
+    leaving = true
+    uni.redirectTo({ url: '/pages/buyer/verify-rejected' })
+    return true
+  }
+  return false
+}
+
+// 拉取最新审核状态：刷新步骤条 + 处理跃迁（onShow / 轮询共用）
+const refresh = async () => {
+  if (leaving) return
   try {
     const data = await buyerApi.getPending()
+    if (handleStatus(data?.accountStatus)) return
     if (data && Array.isArray(data.steps) && data.steps.length) {
       steps.value = data.steps
       overdue.value = !!data.overdue
@@ -143,6 +176,20 @@ onMounted(async () => {
   } catch (e) {
     // 非 purchase 档案 / 接口不可用：保持静态文案兜底
   }
+}
+
+// onShow 拉一次 + 每 25 秒轻轮询（后台审核通过后用户停留本页即可自动进入）
+// onHide/onUnload 必须清定时器，防止后台空转与重复请求
+onShow(() => {
+  leaving = false
+  refresh()
+  if (!pollTimer) pollTimer = setInterval(refresh, 25000)
+})
+onHide(() => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+})
+onUnload(() => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 })
 </script>
 

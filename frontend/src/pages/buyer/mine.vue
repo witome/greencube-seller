@@ -95,7 +95,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
 import { useUserStore } from '@/store/user'
@@ -229,16 +229,24 @@ const loadAftersaleCount = async () => {
   }
 }
 
-onMounted(async () => {
+// 状态自动同步：onShow 每次都重新拉 profile（不再依赖登录时写进 storage 的旧值）。
+// 后台审核通过后，用户回到「我的」页文案/入口即随之更新；1→2 跃迁时补加载业务数据并提示。
+const syncProfile = async () => {
+  const prev = accountStatus.value
   await loadProfile()
   if (accountStatus.value === 2) {
     loadStats()
     loadAftersaleCount()
+    if (prev !== null && prev !== 2) {
+      uni.setStorageSync('accountStatus', 2)
+      uni.showToast({ title: '审核已通过', icon: 'success' })
+    }
   }
-})
+}
 
 onShow(() => {
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  syncProfile()
 })
 </script>
 
