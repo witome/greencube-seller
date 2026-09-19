@@ -17,6 +17,14 @@ export class SupplierController {
     return this.service.getSelfProfile(userId)
   }
 
+  /// 审核状态查询（审核中页轮询用；角色放行与 /buyer/pending 同款宽松口径——
+  /// 注册后旧 token 的 roles 可能为空，靠 userId 行级隔离保证只读自己）
+  @Get('pending')
+  @Roles(Role.SUPPLIER, Role.PURCHASER, Role.COURIER, Role.ADMIN, Role.BUSINESS_AGENT)
+  async pending(@CurrentUser('userId') userId: bigint) {
+    return this.service.pending(userId)
+  }
+
   /// 店铺资料修改（档口名/地址/联系人/电话；资质与状态不可改，见 DTO 注释）
   @Put('profile')
   @Roles(Role.SUPPLIER)

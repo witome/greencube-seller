@@ -27,6 +27,57 @@ export class CourierService {
   }
 
   // ────────────────────────────────────────
+  // 审核状态查询（2026-09-19 拍板卡）：供小程序「审核中」页 onShow/轮询
+  // 返回结构与 /buyer/pending 完全一致（accountStatus/submittedAt/overdue/steps/rejectInfo）
+  // 状态口径：0 待审核(申请制注册显式写入) / 1 正常(=通过) / 2 停用 / 9 黑名单
+  // ⚠️ trialStatus 是试跑期标记（前 7 单），与审核无关，不参与本接口
+  // 只按 token 的 userId 取自己的档案，只读接口不审计；不复用 getCourier（其拒绝非 1 状态）
+  // ────────────────────────────────────────
+  async pending(userId: bigint) {
+    const courier = await this.prisma.courier.findUnique({ where: { userId } })
+    if (!courier) throw new BizException(ErrorCode.NOT_FOUND, '未找到配送员档案')
+
+    const submittedAt = courier.createdAt
+    const overdue = Date.now() - submittedAt.getTime() > 24 * 3600 * 1000
+
+    let steps
+    if (courier.status === 0) {
+      steps = [
+        { key: 'submit', label: '资料提交', status: 'done', time: submittedAt.toISOString() },
+        { key: 'verify', label: '运营核实中', status: 'active', time: null },
+        { key: 'active', label: '审核通过', status: 'todo', time: null },
+      ]
+    } else if (courier.status === 2 || courier.status === 9) {
+      steps = [
+        { key: 'submit', label: '资料提交', status: 'done', time: submittedAt.toISOString() },
+        { key: 'verify', label: '运营核实', status: 'done', time: null },
+        { key: 'active', label: '审核通过', status: 'rejected', time: null },
+      ]
+    } else {
+      steps = [
+        { key: 'submit', label: '资料提交', status: 'done', time: submittedAt.toISOString() },
+        { key: 'verify', label: '运营核实', status: 'done', time: null },
+        { key: 'active', label: '审核通过', status: 'done', time: null },
+      ]
+    }
+
+    const rejectInfo =
+      courier.status === 2
+        ? { reason: '配送员账号已停用，请联系运营', reasonCode: 'COURIER_SUSPENDED' }
+        : courier.status === 9
+          ? { reason: '账号已被列入黑名单，如有疑问请联系运营', reasonCode: 'COURIER_BLACKLIST' }
+          : null
+
+    return {
+      accountStatus: courier.status,
+      submittedAt: submittedAt.toISOString(),
+      overdue,
+      steps,
+      rejectInfo,
+    }
+  }
+
+  // ────────────────────────────────────────
   // 今日任务：进行中（待取货/配送中）+ 今日已完成
   // ⚠️ 铁律：配送员接口永不返回任何金额字段
   // ────────────────────────────────────────

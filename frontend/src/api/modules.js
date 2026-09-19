@@ -17,6 +17,13 @@ export const registerApi = {
   courier: (data) => post('/register/courier', data),
 }
 
+/* ── 审核状态查询（三角色返回结构一致：accountStatus/submittedAt/overdue/steps/rejectInfo；值含义见 utils/audit-sync.js）── */
+export const auditApi = {
+  purchaser: () => get('/buyer/pending'),
+  supplier: () => get('/supplier/pending'),
+  courier: () => get('/courier/pending'),
+}
+
 /* ── 采购方端 ── */
 export const buyerApi = {
   // 注册与审核（详见主计划 4.1）

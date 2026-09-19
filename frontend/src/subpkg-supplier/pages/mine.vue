@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi } from '@/api/modules'
 import { useUserStore } from '@/store/user'
@@ -53,7 +53,14 @@ const supplierTabs = [
   { path: '/subpkg-supplier/pages/mine', icon: '👤', label: '我的' },
 ]
 
-onShow(() => {
+// 状态自动同步：onShow 每次都重新拉 profile（不再依赖登录时的旧缓存）；
+// 审核通过（0 待审核 → 1 合作中）跃迁时提示——完整的轮询+自动进入见审核中页（audit-sync composable）
+onShow(async () => {
+  const prev = profile.value?.supplier?.status
+  try { profile.value = await authApi.getProfile() } catch (e) {}
+  if (prev === 0 && profile.value?.supplier?.status === 1) {
+    uni.showToast({ title: '审核已通过', icon: 'success' })
+  }
 })
 
 const switchRole = async (r) => {
@@ -69,8 +76,6 @@ const logout = () => {
   uni.removeStorageSync('accountStatus'); uni.removeStorageSync('devRole')
   uni.reLaunch({ url: '/pages/login/index' })
 }
-
-onMounted(async () => { try { profile.value = await authApi.getProfile() } catch (e) {} })
 </script>
 
 <style lang="scss" scoped>

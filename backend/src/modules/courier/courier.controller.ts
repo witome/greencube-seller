@@ -18,6 +18,14 @@ export class CourierController {
     return this.service.todayTasks(userId)
   }
 
+  /// 审核状态查询（审核中页轮询用；角色放行与 /buyer/pending 同款宽松口径——
+  /// 注册后旧 token 的 roles 可能为空，靠 userId 行级隔离保证只读自己）
+  @Get('pending')
+  @Roles(Role.COURIER, Role.PURCHASER, Role.SUPPLIER, Role.ADMIN, Role.BUSINESS_AGENT)
+  async pending(@CurrentUser('userId') userId: bigint) {
+    return this.service.pending(userId)
+  }
+
   /// 任务订单总金额（交付确认时供配送员与采购方核对）
   @Get('task/:taskId/amount')
   @Roles(Role.COURIER)

@@ -95,4 +95,50 @@ export class SupplierService {
     })
     return { supplierId: Number(s.id), updated: true }
   }
+
+  // ────────────────────────────────────────
+  // 审核状态查询（2026-09-19 拍板卡）：供小程序「审核中」页 onShow/轮询
+  // 返回结构与 /buyer/pending 完全一致（accountStatus/submittedAt/overdue/steps/rejectInfo）
+  // 状态口径：0 待审核 / 1 合作中(=通过) / 2 停合作(=未通过/停用)
+  // 只按 token 的 userId 取自己的档案，只读接口不审计
+  // ────────────────────────────────────────
+  async pending(userId: bigint) {
+    const supplier = await this.prisma.supplier.findUnique({ where: { userId } })
+    if (!supplier) throw new BizException(ErrorCode.NOT_FOUND, '未找到供应商档案')
+
+    const submittedAt = supplier.createdAt
+    const overdue = Date.now() - submittedAt.getTime() > 24 * 3600 * 1000
+
+    let steps
+    if (supplier.status === 0) {
+      steps = [
+        { key: 'submit', label: '资料提交', status: 'done', time: submittedAt.toISOString() },
+        { key: 'verify', label: '运营核实中', status: 'active', time: null },
+        { key: 'active', label: '审核通过', status: 'todo', time: null },
+      ]
+    } else if (supplier.status === 2) {
+      steps = [
+        { key: 'submit', label: '资料提交', status: 'done', time: submittedAt.toISOString() },
+        { key: 'verify', label: '运营核实', status: 'done', time: null },
+        { key: 'active', label: '审核通过', status: 'rejected', time: null },
+      ]
+    } else {
+      steps = [
+        { key: 'submit', label: '资料提交', status: 'done', time: submittedAt.toISOString() },
+        { key: 'verify', label: '运营核实', status: 'done', time: null },
+        { key: 'active', label: '审核通过', status: 'done', time: null },
+      ]
+    }
+
+    return {
+      accountStatus: supplier.status,
+      submittedAt: submittedAt.toISOString(),
+      overdue,
+      steps,
+      rejectInfo:
+        supplier.status === 2
+          ? { reason: '档口账号已停用合作，请联系运营', reasonCode: 'SUPPLIER_SUSPENDED' }
+          : null,
+    }
+  }
 }

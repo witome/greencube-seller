@@ -55,8 +55,8 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
-import { buyerApi } from '@/api/modules'
+import { buyerApi, auditApi } from '@/api/modules'
+import { setupAuditSync, goRoleHome } from '@/utils/audit-sync'
 
 // 分角色文案：注册身份不同，审核中页面内容不同
 const roleConfig = {
@@ -90,9 +90,13 @@ const roleConfig = {
 }
 
 const cfg = computed(() => {
-  const role = uni.getStorageSync('registeredRole') || 'purchaser'
+  const role = uni.getStorageSync('registeredRole') || uni.getStorageSync('currentRole') || 'purchaser'
   return roleConfig[role] || roleConfig.purchaser
 })
+
+// 当前审核角色：注册时写入 registeredRole 优先；直接登录（未走注册）时用 currentRole 兜底
+const currentRole = () =>
+  uni.getStorageSync('registeredRole') || uni.getStorageSync('currentRole') || 'purchaser'
 
 // 催办：走统一 request 封装（后端 POST /buyer/urge-verify → { urged, nextFollowHours }）
 // 成功才提示已催办（附真实跟进时长）；失败如实提示——不允许任何「失败弹成功」分支
@@ -113,8 +117,9 @@ const previewGoods = () => {
   }
 }
 
-// ── D1 + 自动同步（本卡）：GET /buyer/pending 拉进度；accountStatus 变化时自动流转 ──
-// 仅采购方注册流程有此接口；supplier/courier 注册调用会 404，此时保持静态文案兜底
+// ── 审核状态自动同步：三角色共用 composable（utils/audit-sync.js）──
+// 按角色选接口：采购方 /buyer/pending；供应商 /supplier/pending；配送员 /courier/pending（返回结构一致）
+// 状态值映射（通过/驳回）集中在 audit-sync.js；onShow 拉一次 + 25 秒轻轮询 + 跃迁自动进入
 const steps = ref([
   { key: 'submit', label: '资料提交', status: 'done', time: null },
   { key: 'verify', label: '运营核实中', status: 'active', time: null },
@@ -122,8 +127,6 @@ const steps = ref([
 ])
 const overdue = ref(false)
 const rejectInfo = ref('')
-let pollTimer = null
-let leaving = false // 已触发跳转，后续轮询不再处理
 const fmtTime = (iso) => {
   if (!iso) return ''
   const d = new Date(iso)
@@ -136,60 +139,43 @@ const stepTime = (s) => {
   return '待前序完成'
 }
 
-// 状态跃迁处理：返回 true 表示已流转（调用方停止后续渲染逻辑）
-const handleStatus = (accountStatus) => {
-  if (leaving) return true
-  if (accountStatus === 2) {
-    // 已激活：同步本地缓存（mine.vue/App 守卫用）→ toast → 进对应角色首页
-    leaving = true
-    uni.setStorageSync('accountStatus', 2)
+const fetchByRole = () => {
+  const r = currentRole()
+  if (r === 'supplier') return auditApi.supplier()
+  if (r === 'courier') return auditApi.courier()
+  return auditApi.purchaser()
+}
+
+// 每次成功拉取（未跃迁）：刷新步骤条/超时/驳回原因（rejectInfo 兼容对象 → 只展示 reason 文案）
+const applyData = (data) => {
+  if (data && Array.isArray(data.steps) && data.steps.length) {
+    steps.value = data.steps
+    overdue.value = !!data.overdue
+    const ri = data.rejectInfo
+    rejectInfo.value = ri && typeof ri === 'object' ? ri.reason || '' : ri || ''
+  }
+}
+
+setupAuditSync({
+  role: currentRole(),
+  fetchStatus: fetchByRole,
+  onRefresh: applyData,
+  onApproved: (data) => {
+    // 已通过：同步本地缓存（各 mine/App 守卫用）→ toast → 进对应角色首页
+    uni.setStorageSync('accountStatus', data.accountStatus)
     uni.showToast({ title: '审核已通过', icon: 'success' })
-    const role = uni.getStorageSync('registeredRole') || uni.getStorageSync('currentRole') || 'purchaser'
-    const homeMap = {
-      purchaser: '/pages/buyer/home',
-      supplier: '/subpkg-supplier/pages/home',
-      courier: '/subpkg-courier/pages/home',
+    const role = currentRole()
+    setTimeout(() => goRoleHome(role), 800)
+  },
+  onRejected: (data) => {
+    // 未通过：采购方走已有驳回/申诉页（redirectTo 避免返回键回到审核中页）；
+    // 供应商/配送员无独立驳回页：步骤条已呈 rejected + 驳回原因已上屏，toast 提示后停留本页
+    if (currentRole() === 'purchaser') {
+      uni.redirectTo({ url: '/pages/buyer/verify-rejected' })
+    } else {
+      uni.showToast({ title: '审核未通过，请联系运营', icon: 'none' })
     }
-    setTimeout(() => uni.reLaunch({ url: homeMap[role] || '/pages/buyer/home' }), 800)
-    return true
-  }
-  if (accountStatus === 3) {
-    // 未通过：走已有驳回/申诉路径（redirectTo，避免返回键回到审核中页）
-    leaving = true
-    uni.redirectTo({ url: '/pages/buyer/verify-rejected' })
-    return true
-  }
-  return false
-}
-
-// 拉取最新审核状态：刷新步骤条 + 处理跃迁（onShow / 轮询共用）
-const refresh = async () => {
-  if (leaving) return
-  try {
-    const data = await buyerApi.getPending()
-    if (handleStatus(data?.accountStatus)) return
-    if (data && Array.isArray(data.steps) && data.steps.length) {
-      steps.value = data.steps
-      overdue.value = !!data.overdue
-      rejectInfo.value = data.rejectInfo || ''
-    }
-  } catch (e) {
-    // 非 purchase 档案 / 接口不可用：保持静态文案兜底
-  }
-}
-
-// onShow 拉一次 + 每 25 秒轻轮询（后台审核通过后用户停留本页即可自动进入）
-// onHide/onUnload 必须清定时器，防止后台空转与重复请求
-onShow(() => {
-  leaving = false
-  refresh()
-  if (!pollTimer) pollTimer = setInterval(refresh, 25000)
-})
-onHide(() => {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
-})
-onUnload(() => {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  },
 })
 </script>
 
