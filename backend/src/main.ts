@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core'
 import { NestExpressApplication } from '@nestjs/platform-express'
 import { ValidationPipe, VersioningType } from '@nestjs/common'
 import { JwtModule } from '@nestjs/jwt'
+import { json, urlencoded } from 'express'
 import { join } from 'path'
 import { AppModule } from './app.module'
 
@@ -16,7 +17,14 @@ function assertSecureSecrets() {
 async function bootstrap() {
   assertSecureSecrets()
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule)
+  // JSON body 上限 5MB：图片走 base64 JSON 上传（POST /upload/image），与 upload.service
+  // 里既有的「单张图片 ≤5MB」校验对齐。Express/Nest 默认 JSON 上限只有 100KB，
+  // >100KB 的图片（收款码、手机照片）会在 body-parser 阶段被拦成 PayloadTooLargeError(413)，
+  // 根本到不了业务代码，前端只能看到「服务器异常」——2026-09-19 运营后台上传收款码报错根因。
+  // 故显式关闭 Nest 默认 bodyParser，按 5MB 自行注册（urlencoded 一并放开，行为对齐）。
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false })
+  app.use(json({ limit: '5mb' }))
+  app.use(urlencoded({ extended: true, limit: '5mb' }))
 
   // 静态资源：上传的图片（交付照片 / 收款码 / 付款凭证）
   app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads/' })

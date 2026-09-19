@@ -20,9 +20,12 @@ export class UploadService {
       ext = match[1].toLowerCase().replace('jpeg', 'jpg')
       data = match[2]
     }
-    // 简单大小限制（约 5MB）
-    if (data.length > 7 * 1024 * 1024) {
-      throw new BizException(ErrorCode.PARAM_ERROR, '图片过大（上限 5MB）')
+    // 大小限制：单张图片 ≤5MB（与 main.ts 的 JSON body 5MB 上限对齐）。
+    // 5MB 原始字节对应的 base64 字符长约 6.99MB；实际经 HTTP 上传时 body-parser 的
+    // 5MB 上限会更早拦下（异常由全局过滤器转成「图片过大」业务错误），此处为兜底防御。
+    const maxBase64Len = Math.ceil((5 * 1024 * 1024) / 3) * 4
+    if (data.length > maxBase64Len) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '图片过大，请压缩后上传（单张不超过 5MB）')
     }
 
     fs.mkdirSync(this.uploadDir, { recursive: true })

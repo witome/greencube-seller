@@ -41,6 +41,7 @@ import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { courierApi } from '@/api/modules'
 import { fullUrl } from '@/api/request'
+import { compressToBase64 } from '@/utils/image-compress'
 
 const orderId = ref('')
 const shopName = ref('')
@@ -77,20 +78,21 @@ const skipThis = () => {
   advance(false)
 }
 
-// 拍照 → 转 base64 → 上传
+// 拍照 → 本地压缩到 300KB 内 → base64 上传
 const takePayProof = () => {
   if (submitting.value) return
   uni.chooseImage({
     count: 1,
     sourceType: ['camera'],
+    sizeType: ['compressed'],
     success: async (res) => {
       try {
         const path = res.tempFilePaths[0]
-        const base64 = await fileToBase64(path)
+        const base64 = await compressToBase64(path)
         const { url } = await courierApi.uploadImage(base64)
         proofPhotos.value.push(url)
       } catch (e) {
-        uni.showToast({ title: '照片上传失败', icon: 'none' })
+        uni.showToast({ title: e?.msg || '照片上传失败', icon: 'none' })
       }
     },
   })
@@ -109,22 +111,6 @@ const submitProof = async () => {
   } finally {
     submitting.value = false
   }
-}
-
-const fileToBase64 = (path) => {
-  return new Promise((resolve, reject) => {
-    // #ifdef MP-WEIXIN
-    uni.getFileSystemManager().readFile({
-      filePath: path,
-      encoding: 'base64',
-      success: (r) => resolve(`data:image/jpeg;base64,${r.data}`),
-      fail: reject,
-    })
-    // #endif
-    // #ifndef MP-WEIXIN
-    resolve(path)
-    // #endif
-  })
 }
 
 onLoad(async (opts) => {

@@ -158,7 +158,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { financeAdminApi, categoryAdminApi } from '../../api/modules'
+import { financeAdminApi, categoryAdminApi, goodsAdminApi } from '../../api/modules'
+import { compressFileToDataUri } from '../../utils/image-compress'
 
 const loading = ref(false)
 const globalRate = ref(5)
@@ -350,12 +351,17 @@ async function loadQr() {
   }
 }
 
-function onQrFile(e) {
+// 选图 → 本地压缩到 300KB 内（原图达标则原样保留）→ 存为待上传 base64
+async function onQrFile(e) {
   const file = e.target.files && e.target.files[0]
   if (!file) return
-  const reader = new FileReader()
-  reader.onload = () => { pendingQrBase64.value = reader.result }
-  reader.readAsDataURL(file)
+  try {
+    pendingQrBase64.value = await compressFileToDataUri(file)
+  } catch (err) {
+    ElMessage.error('图片读取失败，请重试')
+  } finally {
+    e.target.value = '' // 允许重复选择同一文件
+  }
 }
 
 async function saveQr() {
