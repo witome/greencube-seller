@@ -1,5 +1,6 @@
 <script>
 import { authApi } from '@/api/modules'
+import { getLoginCode } from '@/utils/wx-login'
 
 // 调试用角色映射（dev mock 登录 code，后端会加 dev_ 前缀：demo_supplier → dev_demo_supplier）
 const DEV_ROLES = [
@@ -103,25 +104,8 @@ export default {
           // 失效：getProfile 内部已通过 request 清除凭据，这里落到重登
         }
       }
-      // 登录 code：mock 阶段用固定 devRole（保证 openid 稳定，多端共用同一测试身份）
-      // 开关走构建配置：VITE_USE_MOCK_LOGIN 显式配置优先；未配置时开发默认开、生产构建默认关
-      // → 打正式包自动切真实登录，不靠人记得改代码（后端 .env WX_MOCK_LOGIN 仍需独立配置）
-      const USE_MOCK_LOGIN =
-        import.meta.env.VITE_USE_MOCK_LOGIN !== undefined
-          ? String(import.meta.env.VITE_USE_MOCK_LOGIN) === 'true'
-          : process.env.NODE_ENV !== 'production'
-      let code = uni.getStorageSync('devRole') || 'buyer'
-      // #ifdef MP-WEIXIN
-      if (!USE_MOCK_LOGIN) {
-        code = await new Promise((resolve) => {
-          uni.login({
-            provider: 'weixin',
-            success: (res) => resolve(res.code || ''),
-            fail: () => resolve(''),
-          })
-        })
-      }
-      // #endif
+      // 登录 code 全仓唯一入口：mock 用 devRole / 真实模式调 uni.login()（详见 utils/wx-login.js）
+      const code = await getLoginCode()
       try {
         const data = await authApi.login(code)
         uni.setStorageSync('token', data.token)

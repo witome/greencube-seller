@@ -41,6 +41,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi } from '@/api/modules'
+import { getLoginCode } from '@/utils/wx-login'
 
 const logging = ref(false)
 
@@ -59,8 +60,9 @@ const doLogin = async () => {
   if (logging.value) return
   logging.value = true
   try {
-    // mock 阶段：固定以采购方身份登录（角色切换通过登录后的 🎭 按钮）
-    const data = await authApi.login('buyer')
+    // 登录 code 走全仓唯一入口（mock 用 devRole / 真实模式调 uni.login()）
+    const code = await getLoginCode()
+    const data = await authApi.login(code)
     uni.setStorageSync('token', data.token)
     uni.setStorageSync('currentRole', data.currentRole)
     uni.setStorageSync('accountStatus', data.accountStatus)
@@ -81,14 +83,25 @@ const goRegister = async () => {
   if (logging.value) return
   logging.value = true
   try {
-    // 注册用独立新账号（时间戳 code → 新 openid），避免复用固定测试账号导致「已提交过注册」
-    const data = await authApi.login('reg_' + Date.now())
+    // 注册前提：后端 /buyer/register 从 token 取当前用户（@CurrentUser），必须先有 token。
+    // 真实微信登录下 openid 与微信账号一一对应 → 登录与注册是同一个用户：
+    // 先用真实 code 调 wx-login（新用户后端会建号并签发 token、needRegister=true），
+    // 再带着该 token 去注册页提交资料——复用当前用户，绝不伪造新 openid。
+    // mock 模式（仅开发）：fresh=true 用 reg_+时间戳模拟全新用户，便于反复测试注册流程。
+    const code = await getLoginCode({ fresh: true })
+    const data = await authApi.login(code)
     uni.setStorageSync('token', data.token)
     uni.setStorageSync('currentRole', data.currentRole)
     uni.setStorageSync('accountStatus', data.accountStatus)
-    uni.navigateTo({ url: '/pages/buyer/register' })
+    if (data.needRegister) {
+      uni.navigateTo({ url: '/pages/buyer/register' })
+    } else {
+      // 该微信账号已有身份，无需再注册
+      uni.showToast({ title: '该账号已注册，无需重复提交', icon: 'none' })
+      setTimeout(() => routeToHome(data.currentRole), 1200)
+    }
   } catch (e) {
-    uni.showToast({ title: '请先登录后再注册', icon: 'none' })
+    uni.showToast({ title: '微信登录失败，请确认后端已启动', icon: 'none' })
   } finally {
     logging.value = false
   }
