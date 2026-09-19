@@ -435,6 +435,8 @@ model DeliveryException {
   courierId      BigInt    @map("courier_id")
   orderId        BigInt?   @map("order_id")
   reason         String    @db.VarChar(255)
+  /// 上报留证照片 URL 数组（配送员上报时拍照，可多张；2026-09-19 决策⑦）
+  photos         Json?
   /// 0 待处理 / 1 已处理
   status         Int       @default(0) @db.TinyInt
   handledBy      BigInt?   @map("handled_by")
@@ -506,6 +508,8 @@ model AftersaleOrder {
   compensateMethod Int?   @map("compensate_method") @db.TinyInt
   /// 运营处理：处理备注/驳回原因
   handleRemark String?  @map("handle_remark") @db.VarChar(255)
+  /// 申请照片 URL 数组（采购方售后拍照留证，可多张；2026-09-19 决策⑦）
+  attachments  Json?
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([orderId])

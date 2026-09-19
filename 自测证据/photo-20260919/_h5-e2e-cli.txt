@@ -1,0 +1,72 @@
+
+── 1. open browser ──
+### Events
+- New console entries: .playwright-cli\console-2026-09-19T08-52-22-422Z.log#L1-L2
+
+── 2. set devRole=courier via uni storage + reload + install in-page XHR log ──
+### Result
+"{\"title\":\"登录\",\"devRole\":\"courier\",\"token\":false}"
+### Ran Playwright code
+
+── 3. login (WeChat one-tap, mock courier) ──
+
+── 4. navigate to report page via hash (no full reload) + orderId=976 ──
+### Result
+"{\"url\":\"http://localhost:5199/#/subpkg-courier/pages/report?orderId=976\",\"token\":true,\"currentRole\":\"courier\",\"photoRow\":\"📷 ＋ 拍照留证\",\"xhr\":[{\"u\":\"/auth/wx-login\",\"status\":201,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":{\\\"token\\\":\\\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjYsInVzZXJJZCI6Niwicm9sZXMiOlsiY291cmllciJdLCJjdXJyZW50Um9sZSI6ImNvdXJpZXIiLCJpYXQiOjE3ODk4MDc5NTYsImV4cCI6MTc5MDQxMjc1Nn0.OFryShKg-8NNweKJJJdZolWiHGMX_iixgXIvzC1uvYY\\\",\\\"userId\\\":6,\\\"roles\\\":[\\\"courier\\\"],\\\"currentRole\\\":\\\"co\"},{\"u\":\"/courier/today-tasks\",\"status\":200,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":[{\\\"taskId\\\":229,\\\"routeNo\\\":\\\"R20260919-1\\\",\\\"status\\\":3,\\\"stationList\\\":[{\\\"seq\\\":1,\\\"type\\\":\\\"deliver\\\",\\\"picked\\\":true,\\\"address\\\":\\\"自助新路 579 号\\\",\\\"orderId\\\":486,\\\"shopName\\\":\\\"HACK-1789776772579\\\",\\\"items\\\":[{\\\"name\\\":\\\"白菜001\\\",\\\"qty\\\":1,\\\"unit\\\":\\\"斤\\\"}],\\\"abnormal\\\":false,\\\"payMethod\\\":2}]},{\\\"taskId\\\":230,\\\"rou\"},{\"u\":\"/courier/today-tasks\",\"status\":200,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":[{\\\"taskId\\\":229,\\\"routeNo\\\":\\\"R20260919-1\\\",\\\"status\\\":3,\\\"stationList\\\":[{\\\"seq\\\":1,\\\"type\\\":\\\"deliver\\\",\\\"picked\\\":true,\\\"address\\\":\\\"自助新路 579 号\\\",\\\"orderId\\\":486,\\\"shopName\\\":\\\"HACK-1789776772579\\\",\\\"items\\\":[{\\\"name\\\":\\\"白菜001\\\",\\\"qty\\\":1,\\\"unit\\\":\\\"斤\\\"}],\\\"abnormal\\\":false,\\\"payMethod\\\":2}]},{\\\"taskId\\\":230,\\\"rou\"},{\"u\":\"/courier/status\",\"status\":200,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":{\\\"courierId\\\":1,\\\"online\\\":1,\\\"autoAccept\\\":1,\\\"onRoute\\\":0,\\\"activeTasks\\\":0}}\"}]}"
+### Ran Playwright code
+
+── 5. fill description (Chinese via unicode escape) ──
+### Result
+"卡F E2E：到货不足，附真实尺寸现场照片"
+### Ran Playwright code
+
+── 6. tap photo row -> native file chooser ──
+### Modal state
+- [File chooser]: can be handled by upload
+### Snapshot
+- [Snapshot](.playwright-cli\page-2026-09-19T08-52-55-724Z.yml)
+
+── 7. upload REAL 1.55MB photo (3024x4032) ──
+- Console: 0 errors, 1 warnings
+### Snapshot
+- [Snapshot](.playwright-cli\page-2026-09-19T08-53-03-183Z.yml)
+
+── 8. wait for thumbnail + diagnostics + screenshot ──
+### Result
+"{\"url\":\"http://localhost:5199/#/subpkg-courier/pages/report?orderId=976\",\"token\":true,\"currentRole\":\"courier\",\"thumbs\":1,\"firstThumb\":\"http://127.0.0.1:3001/uploads/1789807982645_derofc.jpg\",\"xhr\":[{\"u\":\"/auth/wx-login\",\"status\":201,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":{\\\"token\\\":\\\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjYsInVzZXJJZCI6Niwicm9sZXMiOlsiY291cmllciJdLCJjdXJyZW50Um9sZSI6ImNvdXJpZXIiLCJpYXQiOjE3ODk4MDc5NTYsImV4cCI6MTc5MDQxMjc1Nn0.OFryShKg-8NNweKJJJdZolWiHGMX_iixgXIvzC1uvYY\\\",\\\"userId\\\":6,\\\"roles\\\":[\\\"courier\\\"],\\\"currentRole\\\":\\\"co\"},{\"u\":\"/courier/today-tasks\",\"status\":200,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":[{\\\"taskId\\\":229,\\\"routeNo\\\":\\\"R20260919-1\\\",\\\"status\\\":3,\\\"stationList\\\":[{\\\"seq\\\":1,\\\"type\\\":\\\"deliver\\\",\\\"picked\\\":true,\\\"address\\\":\\\"自助新路 579 号\\\",\\\"orderId\\\":486,\\\"shopName\\\":\\\"HACK-1789776772579\\\",\\\"items\\\":[{\\\"name\\\":\\\"白菜001\\\",\\\"qty\\\":1,\\\"unit\\\":\\\"斤\\\"}],\\\"abnormal\\\":false,\\\"payMethod\\\":2}]},{\\\"taskId\\\":230,\\\"rou\"},{\"u\":\"/courier/today-tasks\",\"status\":200,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":[{\\\"taskId\\\":229,\\\"routeNo\\\":\\\"R20260919-1\\\",\\\"status\\\":3,\\\"stationList\\\":[{\\\"seq\\\":1,\\\"type\\\":\\\"deliver\\\",\\\"picked\\\":true,\\\"address\\\":\\\"自助新路 579 号\\\",\\\"orderId\\\":486,\\\"shopName\\\":\\\"HACK-1789776772579\\\",\\\"items\\\":[{\\\"name\\\":\\\"白菜001\\\",\\\"qty\\\":1,\\\"unit\\\":\\\"斤\\\"}],\\\"abnormal\\\":false,\\\"payMethod\\\":2}]},{\\\"taskId\\\":230,\\\"rou\"},{\"u\":\"/courier/status\",\"status\":200,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":{\\\"courierId\\\":1,\\\"online\\\":1,\\\"autoAccept\\\":1,\\\"onRoute\\\":0,\\\"activeTasks\\\":0}}\"},{\"u\":\"/upload/image\",\"status\":201,\"body\":\"{\\\"code\\\":0,\\\"msg\\\":\\\"ok\\\",\\\"data\\\":{\\\"url\\\":\\\"/uploads/1789807982645_derofc.jpg\\\"}}\"}]}"
+### Ran Playwright code
+
+── 9. add a second photo (multiple allowed) ──
+- [File chooser]: can be handled by upload
+### Snapshot
+- [Snapshot](.playwright-cli\page-2026-09-19T08-53-15-467Z.yml)
+- Console: 0 errors, 1 warnings
+### Snapshot
+- [Snapshot](.playwright-cli\page-2026-09-19T08-53-22-858Z.yml)
+### Result
+"thumbnails=2"
+### Ran Playwright code
+
+── 10. delete one photo (deletable) ──
+### Result
+"remaining=1"
+### Ran Playwright code
+
+── 11. submit -> capture success toast (flashes ~1.5s) + request body ──
+### Result
+"{\"toast\":\"已上报\",\"reportRequestBody\":\"{\\\"orderId\\\":976,\\\"reason\\\":\\\"缺货：卡F E2E：到货不足，附真实尺寸现场照片\\\",\\\"photos\\\":[\\\"/uploads/1789808002318_blgkym.jpg\\\"]}\",\"count\":1}"
+### Ran Playwright code
+
+── 12. close browser ──
+Browser 'default' closed
+
+
+=== screenshots ===
+total 184
+drwxr-xr-x 1 Administrator 197121     0 Sep 19 16:53 .
+drwxr-xr-x 1 Administrator 197121     0 Sep 19 16:25 ..
+-rw-r--r-- 1 Administrator 197121 35355 Sep 19 16:53 11-report-thumbnail.png
+-rw-r--r-- 1 Administrator 197121 45658 Sep 19 16:53 12-two-thumbnails.png
+-rw-r--r-- 1 Administrator 197121 35493 Sep 19 16:53 13-after-remove.png
+-rw-r--r-- 1 Administrator 197121 36710 Sep 19 16:53 14-submitted-toast.png
+-rw-r--r-- 1 Administrator 197121 20802 Sep 19 16:53 15-after-submit.png

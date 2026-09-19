@@ -1,0 +1,142 @@
+==============================================================
+卡F 取证 · 售后申请 / 配送员上报 拍照上传（真实尺寸照片）
+==============================================================
+
+────────── 0. 登录 ──────────
+  ✅ 四角色 token 拿到
+  采购方 = 老张水产 (purchaserId 6)
+
+────────── 1. 上传真实尺寸照片（3024×4032 / 约 1.5MB，非填充假图） ──────────
+  real-photo-1.jpg = 1627635 B（1.55 MB）
+  real-photo-2.jpg = 1622327 B（1.55 MB）
+  ✅ 照片1 上传成功
+  ✅ 照片2 上传成功
+  → /uploads/1789805263805_opz10l.jpg / /uploads/1789805263830_xwoyvf.jpg
+  ✅ 落盘文件可访问且字节完整
+
+────────── 2. 链路一 · 采购方售后申请（POST /buyer/aftersale 带 attachments） ──────────
+  ✅ 找到可售后订单（页面同款筛选 60/70/90）
+  售后目标订单 = 218 status = 60
+  ✅ 售后申请提交成功
+  → aftersaleId = 161
+
+────────── 2b. SQL 直查 aftersale_order（证明照片 URL 真进了库） ──────────
+[
+  {
+    "id": 161,
+    "order_id": 218,
+    "order_item_id": 0,
+    "type": 2,
+    "reason": "卡F取证：品质问题，已拍现场照片（真实尺寸原图）",
+    "qty_diff": "0",
+    "amount_diff": "0",
+    "status": 0,
+    "attachments": [
+      "/uploads/1789805263805_opz10l.jpg",
+      "/uploads/1789805263830_xwoyvf.jpg"
+    ],
+    "created_at": "2026-09-19T08:07:43.869Z"
+  }
+]
+  ✅ 落库行存在且 attachments 为 2 个 URL
+
+────────── 3. 链路二 · 配送员上报（POST /courier/report 带 photos） ──────────
+  ✅ 取证专用订单已创建
+  ✅ 备货完成 → 待配送(40/45)
+  取证订单 = 974 status = 40
+  ✅ 异常上报成功
+  ✅ 上报确实影响了订单（affectedOrders=1）
+  ✅ 订单已置 92 无法交付
+
+────────── 3b. SQL 直查 delivery_exception（证明照片 URL 真进了库） ──────────
+[
+  {
+    "id": 60,
+    "delivery_task_id": null,
+    "courier_id": 1,
+    "order_id": 974,
+    "reason": "卡F取证：到货不足，已拍现场照片",
+    "status": 0,
+    "photos": [
+      "/uploads/1789805263805_opz10l.jpg",
+      "/uploads/1789805263830_xwoyvf.jpg"
+    ],
+    "created_at": "2026-09-19T08:07:43.938Z"
+  }
+]
+  ✅ 落库行存在且 photos 为 2 个 URL
+
+────────── 4. 超限反例 · 8MB 真实尺寸图 → 友好报错（不是裸 500） ──────────
+  real-photo-8mb.jpg = 8675719 B（8.27 MB，4000×5333）
+  → 返回: {"status":200,"code":1001,"msg":"图片过大，请压缩后上传（单张不超过 5MB）","data":null}
+  ✅ 返回业务码 1001（不是 500/5001）
+  ✅ 文案友好（含「图片过大」）
+
+────────── 5. 审计 · 带照片的售后/上报都写 audit_log，action 全大写 ──────────
+[
+  {
+    "id": 5227,
+    "operator_id": 6,
+    "action": "courier_report",
+    "entity": "delivery_task",
+    "entity_id": 974,
+    "after": {
+      "photos": [
+        "/uploads/1789805263805_opz10l.jpg",
+        "/uploads/1789805263830_xwoyvf.jpg"
+      ],
+      "reason": "卡F取证：到货不足，已拍现场照片",
+      "taskId": null,
+      "orderId": 974
+    }
+  },
+  {
+    "id": 5223,
+    "operator_id": 10,
+    "action": "AFTERSALE_SUBMIT",
+    "entity": "aftersale",
+    "entity_id": 161,
+    "after": {
+      "type": 2,
+      "reason": "卡F取证：品质问题，已拍现场照片（真实尺寸原图）",
+      "orderId": 218,
+      "qtyDiff": 0,
+      "amountDiff": 0,
+      "attachments": [
+        "/uploads/1789805263805_opz10l.jpg",
+        "/uploads/1789805263830_xwoyvf.jpg"
+      ],
+      "attachmentCount": 2
+    }
+  },
+  {
+    "id": 5210,
+    "operator_id": 6,
+    "action": "courier_report",
+    "entity": "delivery_task",
+    "entity_id": 972,
+    "after": {
+      "reason": "事务化验收-异常",
+      "taskId": null,
+      "orderId": 972
+    }
+  },
+  {
+    "id": 5130,
+    "operator_id": 6,
+    "action": "courier_report",
+    "entity": "delivery_task",
+    "entity_id": 960,
+    "after": {
+      "reason": "事务化验收-异常",
+      "taskId": null,
+      "orderId": 960
+    }
+  }
+]
+  ✅ 存在 AFTERSALE_SUBMIT（全大写）
+  非大写 action: []
+  ❌ 未新增小写 action（仍只有 courier_report） → []
+
+────────── 结果 ──────────
+  ✅ 通过 16 项 / ❌ 失败 1 项

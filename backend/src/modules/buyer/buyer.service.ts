@@ -398,6 +398,7 @@ export class BuyerService {
       throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
     }
 
+    const attachments = dto.attachments ?? []
     const aftersale = await this.prisma.aftersaleOrder.create({
       data: {
         orderId: BigInt(dto.orderId),
@@ -407,6 +408,27 @@ export class BuyerService {
         qtyDiff: dto.qtyDiff ?? 0,
         amountDiff: dto.amountDiff ?? 0,
         status: 0,
+        // 决策⑦（2026-09-19）：售后拍照留证。存 URL 数组；不传即 NULL（可空，兼容拒绝收自动生成的工单）
+        attachments: attachments.length ? attachments : undefined,
+      },
+    })
+
+    // 铁律 3：售后申请是定责/补偿的起点（含照片证据），写审计
+    // action 全大写（全仓仅 courier_report 一个小写残留，不新增小写）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'AFTERSALE_SUBMIT',
+      entity: 'aftersale',
+      entityId: aftersale.id,
+      before: null,
+      after: {
+        orderId: Number(dto.orderId),
+        type: dto.type,
+        reason: dto.reason ?? null,
+        qtyDiff: dto.qtyDiff ?? 0,
+        amountDiff: dto.amountDiff ?? 0,
+        attachmentCount: attachments.length,
+        attachments,
       },
     })
 

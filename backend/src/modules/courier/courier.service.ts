@@ -313,6 +313,8 @@ export class CourierService {
           orderId: dto.orderId ? BigInt(dto.orderId) : null,
           reason: dto.reason,
           status: 0,
+          // 决策⑦（2026-09-19）：上报拍照留证。存 URL 数组；不传即 NULL（可空，兼容既有不拍照的上报）
+          photos: dto.photos?.length ? dto.photos : undefined,
         },
       })
       exceptionId = Number(exception.id)

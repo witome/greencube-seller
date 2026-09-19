@@ -1,0 +1,12 @@
+{
+  "sqlCastBinary": [
+    {
+      "action": "courier_report",
+      "c": 65
+    }
+  ],
+  "jsNonUpper": [
+    "courier_report"
+  ],
+  "total": 49
+}
