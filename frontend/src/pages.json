@@ -38,7 +38,6 @@
         { "path": "pages/home", "style": { "navigationBarTitleText": "配送员·今日任务" } },
         { "path": "pages/task-detail", "style": { "navigationBarTitleText": "配送详情" } },
         { "path": "pages/deliver", "style": { "navigationBarTitleText": "交付确认" } },
-        { "path": "pages/pay-assist", "style": { "navigationBarTitleText": "收款协助" } },
         { "path": "pages/cod-pay", "style": { "navigationBarTitleText": "货到付款" } },
         { "path": "pages/report", "style": { "navigationBarTitleText": "异常上报" } },
         { "path": "pages/mine", "style": { "navigationBarTitleText": "我的" } }
