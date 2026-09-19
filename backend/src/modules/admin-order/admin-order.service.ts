@@ -58,6 +58,27 @@ export class AdminOrderService {
       include: { purchaser: true },
     })
 
+    // payProof.courierId → 配送员姓名（无关系字段，批量查 user；name 优先 → phone → 配送员#id，与每日对账 nameMap 同口径）
+    const courierIds = [
+      ...new Set(
+        orders
+          .map((o) => (o.payProof as any)?.courierId)
+          .filter((id): id is number => id != null),
+      ),
+    ]
+    const couriers = courierIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: courierIds.map((id) => BigInt(id)) } },
+          select: { id: true, name: true, phone: true },
+        })
+      : []
+    const courierMap = new Map(
+      couriers.map((c) => [
+        Number(c.id),
+        c.name || c.phone || `配送员#${Number(c.id)}`,
+      ]),
+    )
+
     return orders.map((o) => ({
       orderId: Number(o.id),
       shopName: o.purchaser.shopName,
@@ -67,6 +88,12 @@ export class AdminOrderService {
       amountOrdered: Number(o.amountOrdered),
       payMethod: o.payMethod,
       payProof: o.payProof ?? null,
+      // 卡M（2026-09-19 拍板）：采购方在 COD 单送达后点「我已付款」的时间——仅代表客户称已付，不代表钱已核销
+      buyerPaidClaimAt: o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null,
+      courierName:
+        (o.payProof as any)?.courierId != null
+          ? courierMap.get(Number((o.payProof as any).courierId)) ?? null
+          : null,
     }))
   }
 

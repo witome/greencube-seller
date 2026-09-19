@@ -22,6 +22,25 @@
         <div class="admin-fulfill-stat-num admin-fulfill-num-green">{{ deliveredList.length }}</div>
         <div class="admin-fulfill-stat-lbl">已送达</div>
       </div>
+      <!-- 卡M（2026-09-19 拍板）：客户称已付 ≠ 已核销，仅代表采购方自称，颜色醒目但不复用「已收款」绿色 -->
+      <div class="admin-fulfill-stat" :class="{ on: activeFilter === 'claimed' }" @click="filterBy('claimed')">
+        <div class="admin-fulfill-stat-num admin-fulfill-num-orange">{{ claimedCount }}</div>
+        <div class="admin-fulfill-stat-lbl">客户称已付</div>
+      </div>
+    </div>
+
+    <!-- 已送达/客户称已付视图下的筛选：送达日 + 只看未核销（默认关闭=看全部，有凭证的也能看到） -->
+    <div v-if="activeFilter === 'delivered' || activeFilter === 'claimed'" class="admin-fulfill-toolbar">
+      <el-date-picker
+        v-model="claimDate"
+        type="date"
+        value-format="YYYY-MM-DD"
+        placeholder="按送达日筛"
+        clearable
+        style="width: 150px"
+      />
+      <el-checkbox v-model="onlyUncleared" style="margin-left: 16px">只看未核销（无配送员凭证）</el-checkbox>
+      <span class="admin-fulfill-toolbar-tip">「客户称已付」仅代表采购方自称已付款，核销以配送员收款凭证为准</span>
     </div>
 
     <el-card shadow="never">
@@ -52,12 +71,25 @@
             <span v-else style="color:#c0c4cc;">-</span>
           </template>
         </el-table-column>
+        <!-- 卡M：客户称已付标记（仅 COD 送达后采购方自称，≠已核销）+ 配送员 -->
+        <el-table-column label="客户称已付" width="150">
+          <template #default="{ row }">
+            <template v-if="row.buyerPaidClaimAt">
+              <el-tag type="warning" size="small">客户称已付</el-tag>
+              <div class="claim-time">{{ fmtTime(row.buyerPaidClaimAt) }}</div>
+            </template>
+            <span v-else style="color:#c0c4cc;">-</span>
+          </template>
+        </el-table-column>
         <!-- 收款凭证（配送员 COD 收款拍照，只读查看；2026-09-19 拍板卡） -->
         <el-table-column label="收款凭证" width="110">
           <template #default="{ row }">
             <el-button v-if="row.payProof?.photos?.length" type="primary" link @click="openProof(row)">📷 凭证({{ row.payProof.photos.length }})</el-button>
             <span v-else style="color:#c0c4cc;">—</span>
           </template>
+        </el-table-column>
+        <el-table-column label="配送员" width="100">
+          <template #default="{ row }">{{ row.courierName || '—' }}</template>
         </el-table-column>
         <el-table-column prop="statusText" label="状态" width="120">
           <template #default="{ row }">
@@ -185,10 +217,22 @@ const stats = computed(() => {
 })
 
 const filteredList = computed(() => {
-  if (activeFilter.value === 'delivered') return deliveredList.value
+  if (activeFilter.value === 'delivered') return deliveredFiltered.value
+  if (activeFilter.value === 'claimed') return deliveredFiltered.value.filter((o) => o.buyerPaidClaimAt)
   if (activeFilter.value === 'all') return list.value
   if (activeFilter.value === 'shortage') return list.value.filter((o) => hasShortage(o))
   return list.value.filter((o) => o.status === Number(activeFilter.value))
+})
+
+// ── 卡M：客户称已付（已送达列表的送达日/未核销筛选，前端本地过滤——数据为全量 take 400）──
+const claimDate = ref(null)
+const onlyUncleared = ref(false)
+const claimedCount = computed(() => deliveredList.value.filter((o) => o.buyerPaidClaimAt).length)
+const deliveredFiltered = computed(() => {
+  let rows = deliveredList.value
+  if (claimDate.value) rows = rows.filter((o) => o.deliveryDate === claimDate.value)
+  if (onlyUncleared.value) rows = rows.filter((o) => !(o.payProof?.photos?.length))
+  return rows
 })
 
 function filterBy(f) {
@@ -337,6 +381,21 @@ onMounted(load)
   height: 220px;
   border-radius: 8px;
   cursor: zoom-in;
+}
+.admin-fulfill-toolbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.admin-fulfill-toolbar-tip {
+  margin-left: auto;
+  font-size: 12px;
+  color: #909399;
+}
+.claim-time {
+  font-size: 11px;
+  color: #ff8f1f;
+  margin-top: 2px;
 }
 .admin-fulfill-stat-lbl {
   font-size: 12px;
