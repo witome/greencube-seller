@@ -463,6 +463,9 @@ export class BuyerService {
       orderItemId: Number(r.orderItemId),
       type: r.type,
       reason: r.reason,
+      // 售后照片（2026-09-19 卡I）：申请时上传的 URL 数组，供采购方在「我的售后」回看。
+      // 与 myAppeals() 同口径：null / 非数组一律归一成 []，前端据此判断是否渲染照片区。
+      attachments: Array.isArray(r.attachments) ? r.attachments : [],
       qtyDiff: Number(r.qtyDiff),
       amountDiff: Number(r.amountDiff),
       status: r.status,

@@ -10,7 +10,7 @@
  * 后端 JSON body 上限 5MB，压到 300KB 后每张 base64 约 400KB，远低于上限；
  * 万一压缩失效（低版本基础库）仍超限，后端会返回「图片过大，请压缩后上传」业务错误。
  */
-import { post } from '@/api/request'
+import { post, fullUrl } from '@/api/request'
 import { compressToBase64 } from '@/utils/image-compress'
 
 /** 单次最多张数（与页面缩略图网格容量一致） */
@@ -46,4 +46,18 @@ export async function uploadPhoto(path) {
   const url = res && res.url
   if (!url) throw { msg: '上传返回异常，请重试' }
   return url
+}
+
+/**
+ * 点缩略图看大图（2026-09-19 卡I：采购方回看自己拍的售后照片）
+ *
+ * 与上传侧同口径：入参是**相对路径数组**（/uploads/xxx），这里统一用 fullUrl 拼成绝对地址，
+ * 调用方不需要自己拼 host，也不要在页面里另写一套预览逻辑。
+ * 全部图片一起传进 uni.previewImage，用户可在多张之间左右滑动。
+ */
+export function previewPhotos(paths, current) {
+  const urls = (paths || []).map((p) => fullUrl(p)).filter(Boolean)
+  if (!urls.length) return
+  const cur = fullUrl(current) || urls[0]
+  uni.previewImage({ urls, current: cur })
 }

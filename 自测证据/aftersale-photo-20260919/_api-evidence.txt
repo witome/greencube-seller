@@ -1,0 +1,76 @@
+=== 卡I 接口层证据（2026-09-19 17:08:18）===
+
+[1] 采购方 mock 登录（code=buyer）
+  code=0 msg=ok userId=10 currentRole=purchaser
+
+[2] curl GET /buyer/aftersale  （采购方 token）
+  $ curl -s --noproxy '*' http://127.0.0.1:3001/api/v1/buyer/aftersale -H 'Authorization: Bearer <buyer>'
+  HTTP_STATUS=200
+  code=0 msg=ok 工单数=5
+  ★ 含 attachments 的那一行：
+    {
+      "aftersaleId": 162,
+      "orderId": 218,
+      "type": 2,
+      "reason": "卡F取证：品质问题，已拍现场照片（真实尺寸手机原图 3024×4032）",
+      "attachments": [
+        "/uploads/1789806078696_mxmxsz.jpg",
+        "/uploads/1789806079655_gdazb7.jpg"
+      ],
+      "status": 0,
+      "statusText": "待处理",
+      "createdAt": "2026-09-19T08:21:50.407Z"
+    }
+  ★ 含 attachments 的那一行：
+    {
+      "aftersaleId": 161,
+      "orderId": 218,
+      "type": 2,
+      "reason": "卡F取证：品质问题，已拍现场照片（真实尺寸原图）",
+      "attachments": [
+        "/uploads/1789805263805_opz10l.jpg",
+        "/uploads/1789805263830_xwoyvf.jpg"
+      ],
+      "status": 0,
+      "statusText": "待处理",
+      "createdAt": "2026-09-19T08:07:43.869Z"
+    }
+  无照片行归一化：3 条，attachments 均 = ["[]"]
+
+[3] SQL 直查库里那一行（证明接口数据来自库，不是拼出来的）
+[
+  {
+    "id": 162,
+    "order_id": 218,
+    "type": 2,
+    "reason": "卡F取证：品质问题，已拍现场照片（真实尺寸手机原图 3024×4032）",
+    "attachments": [
+      "/uploads/1789806078696_mxmxsz.jpg",
+      "/uploads/1789806079655_gdazb7.jpg"
+    ],
+    "created_at": "2026-09-19T08:21:50.407Z",
+    "purchaser_id": 6
+  },
+  {
+    "id": 161,
+    "order_id": 218,
+    "type": 2,
+    "reason": "卡F取证：品质问题，已拍现场照片（真实尺寸原图）",
+    "attachments": [
+      "/uploads/1789805263805_opz10l.jpg",
+      "/uploads/1789805263830_xwoyvf.jpg"
+    ],
+    "created_at": "2026-09-19T08:07:43.869Z",
+    "purchaser_id": 6
+  }
+]
+
+[4] 照片文件可访问性（证明不是裂图；对比上传前源图 MD5）
+  /uploads/1789806078696_mxmxsz.jpg  HTTP=200 SIZE=1627635 TYPE=image/jpeg
+  /uploads/1789806079655_gdazb7.jpg  HTTP=200 SIZE=1622327 TYPE=image/jpeg
+  源图（上传前）：
+    ba6bb05572f6a153875fa66392503586 *real-photo-1.jpg
+    0525c05e5439ca534587840819563f31 *real-photo-2.jpg
+  从库中 URL 下载回来的：
+    ba6bb05572f6a153875fa66392503586 *C:/Users/Administrator/AppData/Local/Temp/cardi/chk_1789806078696_mxmxsz.jpg
+    0525c05e5439ca534587840819563f31 *C:/Users/Administrator/AppData/Local/Temp/cardi/chk_1789806079655_gdazb7.jpg
