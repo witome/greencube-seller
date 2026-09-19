@@ -102,50 +102,60 @@ export class SupplierGoodsService {
       throw new BizException(ErrorCode.FORBIDDEN, '该商品分类未被授权，请联系运营开通')
     }
 
-    const product = await this.prisma.product.create({
-      data: {
-        categoryId: dto.categoryId,
-        name: dto.name,
-        weighType: dto.weighType,
-        unit: dto.unit ?? '斤',
-        specText: dto.specText,
-        images: dto.images,
-        // ⚠️ 销售价由运营审核后按加价比例设定，此处占位 0
-        salePrice: 0,
-        markupRate: 0,
-        status: ProductStatus.PENDING,
-      },
-    })
+    // 前置校验（2026-09-19 卡B）：分类必须存在。product.category_id 有 FK，
+    // 若分类已被删则 create 撞 P2003 → 裸 5001；先查再写，落到业务码
+    const category = await this.prisma.category.findUnique({ where: { id: BigInt(dto.categoryId) } })
+    if (!category) throw new BizException(ErrorCode.PARAM_ERROR, '商品分类不存在')
 
-    await this.prisma.productSupplierLink.create({
-      data: {
-        productId: product.id,
-        supplierId: supplier.id,
-        supplyPrice: dto.supplyPrice,
-        dailySupply: dto.dailySupply,
-        priority: 9,
-        status: 1,
-      },
-    })
-
-    const application = await this.prisma.productApplication.create({
-      data: {
-        type: 1,
-        productId: product.id,
-        supplierId: supplier.id,
-        payload: {
-          name: dto.name,
+    // 事务（2026-09-19 卡B 涉库存/商品收口）：product + product_supplier_link（可供量）+ 审核申请
+    // 三张表要么都成、要么都不成。原实现三次独立 create，中途失败会留下「有商品无供货关系」
+    // 或「有商品无待审申请」的孤儿数据
+    const application = await this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
           categoryId: dto.categoryId,
+          name: dto.name,
           weighType: dto.weighType,
           unit: dto.unit ?? '斤',
           specText: dto.specText,
+          images: dto.images,
+          // ⚠️ 销售价由运营审核后按加价比例设定，此处占位 0
+          salePrice: 0,
+          markupRate: 0,
+          status: ProductStatus.PENDING,
+        },
+      })
+
+      await tx.productSupplierLink.create({
+        data: {
+          productId: product.id,
+          supplierId: supplier.id,
           supplyPrice: dto.supplyPrice,
           dailySupply: dto.dailySupply,
-          images: dto.images,
-          qualification: dto.qualification,
+          priority: 9,
+          status: 1,
         },
-        status: 0,
-      },
+      })
+
+      return tx.productApplication.create({
+        data: {
+          type: 1,
+          productId: product.id,
+          supplierId: supplier.id,
+          payload: {
+            name: dto.name,
+            categoryId: dto.categoryId,
+            weighType: dto.weighType,
+            unit: dto.unit ?? '斤',
+            specText: dto.specText,
+            supplyPrice: dto.supplyPrice,
+            dailySupply: dto.dailySupply,
+            images: dto.images,
+            qualification: dto.qualification,
+          },
+          status: 0,
+        },
+      })
     })
 
     return { applyId: Number(application.id), status: 'pending' }

@@ -202,26 +202,29 @@ export class CourierService {
     }
 
     const orderIds = this.orderIdsOf(task)
-    await this.prisma.$transaction([
-      this.prisma.deliveryTask.update({
+    // 交付确认：任务→3、订单 50→60、配送员 onRoute 复位 同一事务（2026-09-19 卡B 涉订单状态收口）。
+    // 原实现 onRoute 复位在事务外，任务/订单已落库但复位失败会把配送员锁在「配送中」接不到新单
+    const remaining = await this.prisma.$transaction(async (tx) => {
+      await tx.deliveryTask.update({
         where: { id: task.id },
         data: { status: TaskStatus.DONE, completedAt: new Date(), proof: { photos: dto.photos, signature: dto.signature, remark: dto.remark } },
-      }),
-      ...orderIds.map((oid) =>
-        this.prisma.order.updateMany({
+      })
+      for (const oid of orderIds) {
+        await tx.order.updateMany({
           where: { id: BigInt(oid), status: OrderStatus.DELIVERING },
           data: { status: OrderStatus.DELIVERED },
-        }),
-      ),
-    ])
+        })
+      }
 
-    // 全部任务配送完成后，恢复可接单资格（onRoute → 0）
-    const remaining = await this.prisma.deliveryTask.count({
-      where: { courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED] } },
+      // 全部任务配送完成后，恢复可接单资格（onRoute → 0）
+      const left = await tx.deliveryTask.count({
+        where: { courierId: courier.id, status: { in: [TaskStatus.PENDING_PICKUP, TaskStatus.DELIVERING, TaskStatus.DEPARTED] } },
+      })
+      if (left === 0) {
+        await tx.courier.update({ where: { id: courier.id }, data: { onRoute: 0 } })
+      }
+      return left
     })
-    if (remaining === 0) {
-      await this.prisma.courier.update({ where: { id: courier.id }, data: { onRoute: 0 } })
-    }
 
     // 铁律 3：交付确认推进交付链路（任务→3、订单 50→60），写审计（2026-09-11 补，闭合 S2）
     await this.audit.log({

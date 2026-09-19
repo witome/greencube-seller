@@ -81,12 +81,12 @@ export class OrderService {
       })
       // 下单后立即自动拆单（按供应商优先级 + 当日可供量）
       await this.autoSplit(tx, o.id)
+      // 清空购物车中对应商品：与建单同事务（2026-09-19 卡B 涉订单收口），
+      // 杜绝「订单已建、购物车未清」残留导致采购方重复下单
+      await tx.cartItem.deleteMany({
+        where: { userId, productId: { in: productIds } },
+      })
       return o
-    })
-
-    // 下单成功后清空购物车中对应商品
-    await this.prisma.cartItem.deleteMany({
-      where: { userId, productId: { in: productIds } },
     })
 
     // 铁律 3：下单是订单全链路起点（含金额快照 + 下单事务内即时拆单），写审计

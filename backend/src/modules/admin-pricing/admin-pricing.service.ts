@@ -103,15 +103,20 @@ export class AdminPricingService {
     })
 
     let updated = 0
+    const updates: any[] = []
     for (const p of products) {
       const patch: any = { markupRate: dto.markupRate }
       const primary = p.links[0]
       if (primary) {
         patch.salePrice = Math.round(Number(primary.supplyPrice) * (1 + dto.markupRate) * 100) / 100
       }
-      await this.prisma.product.update({ where: { id: p.id }, data: patch })
+      updates.push(this.prisma.product.update({ where: { id: p.id }, data: patch }))
       updated++
     }
+
+    // 涉钱收口（2026-09-19 卡B）：整批改价同事务提交。原实现逐条 await，
+    // 中途失败会留下「一部分商品已按新比例改价、一部分还是旧价」的价盘不一致
+    if (updates.length) await this.prisma.$transaction(updates)
 
     await this.audit.log({
       operatorId,

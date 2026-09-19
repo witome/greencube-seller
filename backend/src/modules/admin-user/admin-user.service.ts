@@ -126,32 +126,35 @@ export class AdminUserService {
       throw new BizException(ErrorCode.PARAM_ERROR, '驳回时必须填写驳回原因')
     }
 
-    // 写核实记录（决策：全部留存）
-    await this.prisma.verificationLog.create({
-      data: {
-        purchaserId: p.id,
-        operatorId,
-        method: dto.methods,
-        result: dto.result,
-        reasonCode: dto.reasonCode,
-        reasonText: dto.reasonText,
-        attachments: dto.attachments,
-        durationMin: dto.durationMin,
-        signature: dto.signature,
-      },
-    })
-
     const nextStatus = dto.result === 1 ? AccountStatus.ACTIVE : AccountStatus.REJECTED
-    await this.prisma.purchaser.update({
-      where: { id: p.id },
-      data: {
-        accountStatus: nextStatus,
-        verifiedBy: operatorId,
-        verifiedAt: new Date(),
-        rejectReasonCode: dto.result === 2 ? dto.reasonCode : null,
-        rejectReasonText: dto.result === 2 ? dto.reasonText : null,
-      },
-    })
+
+    // 事务（2026-09-19 卡B 涉权限收口）：核实记录 + 采购方账号状态 要么都成、要么都不成，
+    // 杜绝「核实记录已写、账号状态没改」的准入脏数据。写核实记录沿用原决策：全部留存。
+    await this.prisma.$transaction([
+      this.prisma.verificationLog.create({
+        data: {
+          purchaserId: p.id,
+          operatorId,
+          method: dto.methods,
+          result: dto.result,
+          reasonCode: dto.reasonCode,
+          reasonText: dto.reasonText,
+          attachments: dto.attachments,
+          durationMin: dto.durationMin,
+          signature: dto.signature,
+        },
+      }),
+      this.prisma.purchaser.update({
+        where: { id: p.id },
+        data: {
+          accountStatus: nextStatus,
+          verifiedBy: operatorId,
+          verifiedAt: new Date(),
+          rejectReasonCode: dto.result === 2 ? dto.reasonCode : null,
+          rejectReasonText: dto.result === 2 ? dto.reasonText : null,
+        },
+      }),
+    ])
 
     // 铁律 3：审核属关键操作，全量写审计（2026-09-10 补，修复单缺陷 4）
     await this.audit.log({
@@ -315,8 +318,12 @@ export class AdminUserService {
     const cat = await this.prisma.category.findUnique({ where: { id: BigInt(id) } })
     const productCount = await this.prisma.product.count({ where: { categoryId: BigInt(id) } })
     if (productCount > 0) throw new BizException(ErrorCode.PARAM_ERROR, '该分类下有商品，无法删除')
-    await this.prisma.supplierCategory.deleteMany({ where: { categoryId: BigInt(id) } })
-    await this.prisma.category.delete({ where: { id: BigInt(id) } })
+    // 事务（2026-09-19 卡B 涉权限收口）：解绑授权 + 删分类 要么都成、要么都不成，
+    // 杜绝「授权已解绑、分类还在」的半删状态
+    await this.prisma.$transaction([
+      this.prisma.supplierCategory.deleteMany({ where: { categoryId: BigInt(id) } }),
+      this.prisma.category.delete({ where: { id: BigInt(id) } }),
+    ])
     // 铁律 3：删除分类属结构性变更，写审计（2026-09-11 补，闭合审计复核缺口 G4~G6）
     await this.audit.log({
       operatorId,
@@ -349,12 +356,33 @@ export class AdminUserService {
       select: { categoryId: true },
     })
 
-    await this.prisma.supplierCategory.deleteMany({ where: { supplierId: BigInt(id) } })
-    if (dto.categoryIds.length) {
-      await this.prisma.supplierCategory.createMany({
-        data: dto.categoryIds.map((cid) => ({ supplierId: BigInt(id), categoryId: BigInt(cid) })),
-      })
+    // 前置校验（2026-09-19 卡B）：分类 id 唯一 + 存在性校验。
+    // supplier_category 有 @@unique([supplierId, categoryId])，重复 id 会在 createMany 撞 P2002 → 裸 5001；
+    // 不存在的 id 会撞 FK P2003 → 裸 5001。两者都必须先查再写，落到业务码，避免事务内抛裸错整体回滚。
+    if (new Set(dto.categoryIds).size !== dto.categoryIds.length) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '分类 id 存在重复')
     }
+    if (dto.categoryIds.length) {
+      const found = await this.prisma.category.count({
+        where: { id: { in: dto.categoryIds.map((cid) => BigInt(cid)) } },
+      })
+      if (found !== dto.categoryIds.length) {
+        throw new BizException(ErrorCode.PARAM_ERROR, '存在无效的分类 id')
+      }
+    }
+
+    // 事务（2026-09-19 卡B 涉权限收口）：先清后建 要么都成、要么都不成。
+    // 原实现 deleteMany 与 createMany 分离，createMany 失败会把供应商授权清空（越权/失权脏数据）
+    await this.prisma.$transaction([
+      this.prisma.supplierCategory.deleteMany({ where: { supplierId: BigInt(id) } }),
+      ...(dto.categoryIds.length
+        ? [
+            this.prisma.supplierCategory.createMany({
+              data: dto.categoryIds.map((cid) => ({ supplierId: BigInt(id), categoryId: BigInt(cid) })),
+            }),
+          ]
+        : []),
+    ])
 
     // 铁律 3：分类授权决定供应商可见/可发布范围，属权限类关键操作，全量写审计
     // （2026-09-11 补，闭合审计复核缺口 G2）

@@ -153,7 +153,11 @@ export class SupplierFulfillService {
       throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '订单当前状态不可确认备货')
     }
 
+    // 交接确认 + 订单金额/状态推进 + 即时自动派单 同一事务（2026-09-19 卡B 涉订单/库存收口）。
+    // 原实现：明细回填是一个事务，订单推进与建派送任务是事务外的两条独立写，
+    // 中途失败会留下「明细已验收、订单仍 30 备货中」或「订单已 40、派送任务没建」的脏数据。
     // 不用验收称重：本供应商明细的「申报量」即最终交付量，直接落 qtyAccepted
+    let status: number = OrderStatus.STOCKING
     await this.prisma.$transaction(async (tx) => {
       for (const item of order.items) {
         if (item.supplierId === null || Number(item.supplierId) !== Number(supplier.id)) continue
@@ -165,25 +169,24 @@ export class SupplierFulfillService {
           })
         }
       }
-    })
 
-    // 所有供应商都确认备货后，算最终金额并进入「待配送」
-    const pending = await this.prisma.orderItem.count({
-      where: { orderId: order.id, qtyAccepted: null },
-    })
-    let status: number = OrderStatus.STOCKING
-    if (pending === 0) {
-      const allItems = await this.prisma.orderItem.findMany({ where: { orderId: order.id } })
-      // 交付金额 = 商品金额（验收数量×销售价）+ 运费
-      const amountFinal = allItems.reduce((s, i) => s + Number(i.qtyAccepted) * Number(i.salePrice), 0) + Number(order.deliveryFee)
-      await this.prisma.order.update({
-        where: { id: order.id },
-        data: { status: OrderStatus.WAIT_DELIVERY, amountFinal: Math.round(amountFinal * 100) / 100 },
+      // 所有供应商都确认备货后，算最终金额并进入「待配送」
+      const pending = await tx.orderItem.count({
+        where: { orderId: order.id, qtyAccepted: null },
       })
-      status = OrderStatus.WAIT_DELIVERY
-      // 以自动派单为主：订单进入待配送后自动派给最合适的配送员（失败则保留待配送，等运营手动派单）
-      await this.autoAssignOrder(order.id)
-    }
+      if (pending === 0) {
+        const allItems = await tx.orderItem.findMany({ where: { orderId: order.id } })
+        // 交付金额 = 商品金额（验收数量×销售价）+ 运费
+        const amountFinal = allItems.reduce((s, i) => s + Number(i.qtyAccepted) * Number(i.salePrice), 0) + Number(order.deliveryFee)
+        await tx.order.update({
+          where: { id: order.id },
+          data: { status: OrderStatus.WAIT_DELIVERY, amountFinal: Math.round(amountFinal * 100) / 100 },
+        })
+        status = OrderStatus.WAIT_DELIVERY
+        // 以自动派单为主：订单进入待配送后自动派给最合适的配送员（失败则保留待配送，等运营手动派单）
+        await this.autoAssignOrder(tx, order.id)
+      }
+    })
 
     await this.audit.log({
       operatorId: userId,
@@ -200,22 +203,24 @@ export class SupplierFulfillService {
   // ────────────────────────────────────────
   // 自动派单：把待配送订单派给最合适的配送员（在线 + 空闲 + 未超单量，按优先级）
   // 与运营后台 autoAssign 共用同一规则；无可用配送员时保持待配送，等运营手动派单
+  // ⚠️ 2026-09-19 卡B：改为接事务客户端 tx，由 handover 在同一事务内调用，
+  //    派送任务与订单状态不再脱离外部事务单独提交
   // ────────────────────────────────────────
-  private async autoAssignOrder(orderId: bigint) {
-    const order = await this.prisma.order.findUnique({
+  private async autoAssignOrder(tx: any, orderId: bigint) {
+    const order = await tx.order.findUnique({
       where: { id: orderId },
       include: { purchaser: true },
     })
     if (!order || order.status !== OrderStatus.WAIT_DELIVERY) return
 
-    const couriers = await this.prisma.courier.findMany({
+    const couriers = await tx.courier.findMany({
       where: { status: 1, online: 1, onRoute: 0 },
       orderBy: [{ priority: 'asc' }, { id: 'asc' }],
     })
     if (!couriers.length) return
 
     // 统计各配送员当前未完成任务数
-    const activeTasks = await this.prisma.deliveryTask.findMany({
+    const activeTasks = await tx.deliveryTask.findMany({
       where: { status: { in: [0, 1, 2] } },
       select: { courierId: true },
     })
@@ -239,10 +244,8 @@ export class SupplierFulfillService {
     ]
     const routeNo = `R${order.deliveryDate.toISOString().slice(0, 10).replace(/-/g, '')}-${Number(target.id)}`
 
-    await this.prisma.$transaction([
-      this.prisma.deliveryTask.create({ data: { courierId: target.id, routeNo, stationList, status: 0 } }),
-      this.prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.ASSIGNED } }),
-    ])
+    await tx.deliveryTask.create({ data: { courierId: target.id, routeNo, stationList, status: 0 } })
+    await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.ASSIGNED } })
   }
 
   private deadline(deliveryDate: Date): string {

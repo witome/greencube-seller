@@ -375,18 +375,21 @@ export class AdminDispatchService {
         select: { status: true },
       })
       orderFromStatus = orderBefore ? orderBefore.status : null
-      await this.prisma.order.update({
-        where: { id: exception.orderId },
-        data: { status: targetStatus },
-      })
       orderToStatus = targetStatus
       resumed = true
     }
 
-    await this.prisma.deliveryException.update({
-      where: { id: BigInt(id) },
-      data: { status: 1, handledBy: operatorId, handledAt: new Date() },
-    })
+    // 事务（2026-09-19 卡B 涉订单状态收口）：订单状态复位 + 异常工单置已处理 要么都成、要么都不成。
+    // 原实现两条 update 分离：订单已复位但工单仍挂着，运营会重复处理 / 状态自相矛盾
+    await this.prisma.$transaction([
+      ...(exception.orderId && orderToStatus !== null
+        ? [this.prisma.order.update({ where: { id: exception.orderId }, data: { status: orderToStatus } })]
+        : []),
+      this.prisma.deliveryException.update({
+        where: { id: BigInt(id) },
+        data: { status: 1, handledBy: operatorId, handledAt: new Date() },
+      }),
+    ])
 
     // 铁律 3：处理异常工单会推进订单状态（92 无法交付 → 45/50），属关键操作，全量写审计
     // （2026-09-11 补，闭合审计复核缺口 G1）
