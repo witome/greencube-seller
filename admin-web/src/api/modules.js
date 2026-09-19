@@ -44,6 +44,7 @@ export const userAdminApi = {
 /* ── 订单履约 / 派送 ── */
 export const orderAdminApi = {
   getPendingList: () => request.get('/admin/order/pending'),
+  getDeliveredList: () => request.get('/admin/order/delivered'),
   getSplitPreview: (id) => request.get(`/admin/order/${id}/split-preview`),
   split: (id, data) => request.post(`/admin/order/${id}/split`, data),
   autoSplit: (id) => request.post(`/admin/order/${id}/auto-split`),
@@ -52,6 +53,7 @@ export const orderAdminApi = {
 
 export const dispatchAdminApi = {
   getDispatchList: () => request.get('/admin/dispatch'),
+  getTasks: () => request.get('/admin/dispatch/tasks'),
   getCouriers: () => request.get('/admin/dispatch/couriers'),
   assign: (data) => request.post('/admin/dispatch', data),
   autoAssign: () => request.post('/admin/dispatch/auto-assign'),

@@ -38,6 +38,13 @@ export class AdminDispatchController {
     return this.service.list()
   }
 
+  /// 配送任务（近期 20 条，含交付留证 proof，只读查看，2026-09-19 拍板卡）
+  @Get('tasks')
+  @Roles(Role.ADMIN)
+  async recentTasks() {
+    return this.service.recentTasks()
+  }
+
   /// 指派/改派配送员（创建派送任务）
   @Post()
   @Roles(Role.ADMIN)

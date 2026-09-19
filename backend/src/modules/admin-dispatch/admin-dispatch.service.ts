@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service'
 
 /// 配送任务状态：0 待取货 / 1 配送中 / 3 已完成 / 4 异常
 const TaskStatus = { PENDING_PICKUP: 0, DELIVERING: 1, DEPARTED: 2, DONE: 3, EXCEPTION: 4 } as const
+const TaskStatusText: Record<number, string> = { 0: '待取货', 1: '配送中', 2: '已出发', 3: '已完成', 4: '异常' }
 
 @Injectable()
 export class AdminDispatchService {
@@ -71,6 +72,38 @@ export class AdminDispatchService {
   // ────────────────────────────────────────
   // 待派送订单（status=40 未派单）
   // ────────────────────────────────────────
+  // ────────────────────────────────────────
+  // 配送任务（近期 20 条，含交付留证 proof，运营只读查看 2026-09-19 拍板卡）
+  // proof 由配送员交付确认时写入，运营侧仅查看，不提供修改入口
+  // ────────────────────────────────────────
+  async recentTasks() {
+    const tasks = await this.prisma.deliveryTask.findMany({
+      orderBy: { id: 'desc' },
+      take: 20,
+    })
+    // DeliveryTask 无 courier 关系字段，批量查配送员姓名（复用 couriers() 的 user.phone 口径）
+    const courierIds = [...new Set(tasks.map((t) => Number(t.courierId)))]
+    const couriers = await this.prisma.courier.findMany({
+      where: { id: { in: courierIds.map((id) => BigInt(id)) } },
+      include: { user: true },
+    })
+    const nameMap = new Map(couriers.map((c) => [Number(c.id), c.user?.phone || `配送员#${c.id}`]))
+
+    return tasks.map((t) => {
+      const stations = Array.isArray(t.stationList) ? (t.stationList as any[]) : []
+      return {
+        taskId: Number(t.id),
+        courierId: Number(t.courierId),
+        courierName: nameMap.get(Number(t.courierId)) || `配送员#${t.courierId}`,
+        status: t.status,
+        statusText: TaskStatusText[t.status] ?? String(t.status),
+        orders: stations.filter((s) => s && s.type === 'deliver' && s.orderId !== undefined).map((s) => Number(s.orderId)),
+        proof: t.proof ?? null,
+        createdAt: t.createdAt,
+      }
+    })
+  }
+
   async list() {
     const orders = await this.prisma.order.findMany({
       where: { status: OrderStatus.WAIT_DELIVERY },

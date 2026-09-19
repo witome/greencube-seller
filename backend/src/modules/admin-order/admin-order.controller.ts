@@ -16,6 +16,13 @@ export class AdminOrderController {
     return this.service.pendingList()
   }
 
+  /// 已送达/已完成订单（含配送员收款凭证 payProof，只读查看，2026-09-19 拍板卡）
+  @Get('delivered')
+  @Roles(Role.ADMIN)
+  async deliveredList() {
+    return this.service.deliveredList()
+  }
+
   /// 拆单建议：按优先级自动分配
   @Get(':id/split-preview')
   @Roles(Role.ADMIN)

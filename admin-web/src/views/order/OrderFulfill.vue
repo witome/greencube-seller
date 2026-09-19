@@ -18,6 +18,10 @@
         <div class="admin-fulfill-stat-num admin-fulfill-num-red">{{ stats.shortage }}</div>
         <div class="admin-fulfill-stat-lbl">缺货异常</div>
       </div>
+      <div class="admin-fulfill-stat" :class="{ on: activeFilter === 'delivered' }" @click="filterBy('delivered')">
+        <div class="admin-fulfill-stat-num admin-fulfill-num-green">{{ deliveredList.length }}</div>
+        <div class="admin-fulfill-stat-lbl">已送达</div>
+      </div>
     </div>
 
     <el-card shadow="never">
@@ -33,7 +37,7 @@
         <el-table-column prop="shopName" label="餐馆" min-width="140" />
         <el-table-column prop="deliveryDate" label="送达日" width="110" />
         <el-table-column label="商品数" width="80">
-          <template #default="{ row }">{{ row.items.length }} 项</template>
+          <template #default="{ row }">{{ row.items ? row.items.length + ' 项' : '—' }}</template>
         </el-table-column>
         <el-table-column label="金额" width="100">
           <template #default="{ row }">¥{{ row.amountOrdered }}</template>
@@ -46,6 +50,13 @@
               </div>
             </div>
             <span v-else style="color:#c0c4cc;">-</span>
+          </template>
+        </el-table-column>
+        <!-- 收款凭证（配送员 COD 收款拍照，只读查看；2026-09-19 拍板卡） -->
+        <el-table-column label="收款凭证" width="110">
+          <template #default="{ row }">
+            <el-button v-if="row.payProof?.photos?.length" type="primary" link @click="openProof(row)">📷 凭证({{ row.payProof.photos.length }})</el-button>
+            <span v-else style="color:#c0c4cc;">—</span>
           </template>
         </el-table-column>
         <el-table-column prop="statusText" label="状态" width="120">
@@ -107,6 +118,24 @@
         </el-table-column>
       </el-table>
     </el-dialog>
+    <!-- 收款凭证弹窗（只读：大图查看，支持多张；2026-09-19 拍板卡） -->
+    <el-dialog v-model="proofDialog" :title="`订单 #${proofOrder?.orderId} 收款凭证`" width="520px">
+      <div v-if="proofPhotos.length" class="proof-grid">
+        <el-image
+          v-for="(p, i) in proofPhotos"
+          :key="i"
+          :src="p"
+          :preview-src-list="proofPhotos"
+          :initial-index="i"
+          fit="cover"
+          class="proof-img"
+        />
+      </div>
+      <div v-else style="color:#909399;text-align:center;padding:16px 0;">未留证</div>
+      <div v-if="proofOrder?.payProof?.paidAt" style="margin-top:10px;font-size:12px;color:#909399;">
+        收款时间：{{ fmtTime(proofOrder.payProof.paidAt) }}（配送员确认收款时拍摄）
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -116,8 +145,25 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { orderAdminApi } from '../../api/modules'
 
 const list = ref([])
+const deliveredList = ref([])
 const loading = ref(false)
 const submitting = ref(false)
+
+// ── 收款凭证（只读查看）──
+const proofDialog = ref(false)
+const proofOrder = ref(null)
+// 上传返回的是相对路径 /uploads/xxx：开发走 vite 代理、生产与 API 同源（api.hsfresh.com），直接用即可
+const proofPhotos = computed(() => proofOrder.value?.payProof?.photos || [])
+function openProof(row) {
+  proofOrder.value = row
+  proofDialog.value = true
+}
+function fmtTime(iso) {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // 分类筛选：all | 10 | 30 | shortage
 const activeFilter = ref('all')
@@ -139,6 +185,7 @@ const stats = computed(() => {
 })
 
 const filteredList = computed(() => {
+  if (activeFilter.value === 'delivered') return deliveredList.value
   if (activeFilter.value === 'all') return list.value
   if (activeFilter.value === 'shortage') return list.value.filter((o) => hasShortage(o))
   return list.value.filter((o) => o.status === Number(activeFilter.value))
@@ -168,7 +215,13 @@ const splitAlertText = computed(() =>
 async function load() {
   loading.value = true
   try {
-    list.value = await orderAdminApi.getPendingList()
+    // 已送达列表（含收款凭证）与待处理列表并行拉取，互不影响
+    const [pending, delivered] = await Promise.all([
+      orderAdminApi.getPendingList(),
+      orderAdminApi.getDeliveredList().catch(() => []),
+    ])
+    list.value = pending
+    deliveredList.value = delivered
   } catch (e) { /* 已提示 */ } finally {
     loading.value = false
   }
@@ -270,6 +323,20 @@ onMounted(load)
 }
 .admin-fulfill-num-red {
   color: #fa5151;
+}
+.admin-fulfill-num-green {
+  color: #00b96b;
+}
+.proof-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.proof-img {
+  width: 220px;
+  height: 220px;
+  border-radius: 8px;
+  cursor: zoom-in;
 }
 .admin-fulfill-stat-lbl {
   font-size: 12px;

@@ -79,6 +79,38 @@
       </el-table>
     </el-card>
 
+    <!-- 配送任务（近期 20 条，交付留证只读查看；2026-09-19 拍板卡） -->
+    <el-card shadow="never" style="margin-top:16px">
+      <template #header>🚚 配送任务（近期 20 条）</template>
+      <el-table :data="tasks" v-loading="tasksLoading" stripe>
+        <el-table-column prop="taskId" label="任务号" width="90">
+          <template #default="{ row }">#{{ row.taskId }}</template>
+        </el-table-column>
+        <el-table-column prop="courierName" label="配送员" width="140" />
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 3 ? 'success' : row.status === 4 ? 'danger' : 'warning'" size="small">{{ row.statusText }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="订单" min-width="120">
+          <template #default="{ row }">
+            <span v-if="row.orders.length">{{ row.orders.map((o) => '#' + o).join('、') }}</span>
+            <span v-else style="color:#c0c4cc;">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="交付留证" width="120">
+          <template #default="{ row }">
+            <el-button v-if="row.proof?.photos?.length" type="primary" link @click="openTaskProof(row)">📷 留证({{ row.proof.photos.length }})</el-button>
+            <span v-else style="color:#c0c4cc;">未留证</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="160">
+          <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!tasks.length && !tasksLoading" description="暂无配送任务" />
+    </el-card>
+
     <!-- 配送异常工单 -->
     <el-card shadow="never" style="margin-top:16px">
       <template #header>⚠️ 配送异常工单</template>
@@ -128,9 +160,25 @@
       </div>
     </el-dialog>
 
+    <!-- 交付留证弹窗（只读：大图查看，支持多张；2026-09-19 拍板卡） -->
+    <el-dialog v-model="taskProofDialog" :title="`任务 #${taskProofTask?.taskId} 交付留证`" width="520px">
+      <div v-if="taskProofPhotos.length" class="proof-grid">
+        <el-image
+          v-for="(p, i) in taskProofPhotos"
+          :key="i"
+          :src="p"
+          :preview-src-list="taskProofPhotos"
+          :initial-index="i"
+          fit="cover"
+          class="proof-img"
+        />
+      </div>
+      <div v-else style="color:#909399;text-align:center;padding:16px 0;">未留证</div>
+      <div v-if="taskProofTask?.proof?.remark" style="margin-top:10px;font-size:12px;color:#909399;">备注：{{ taskProofTask.proof.remark }}</div>
+    </el-dialog>
+
     <!-- 配送员设置弹窗 -->
-    <el-dialog v-model="settingDialog" title="配送员派单设置" width="420px">
-      <el-form label-width="90px">
+    <el-dialog v-model="settingDialog" title="配送员派单设置" width="420px">      <el-form label-width="90px">
         <el-form-item label="配送员">
           <span>{{ currentCourier?.phone }}</span>
         </el-form-item>
@@ -170,6 +218,27 @@ const autoAssigning = ref(false)
 // 配送异常
 const exceptions = ref([])
 const exLoading = ref(false)
+
+// 配送任务（交付留证只读查看）
+const tasks = ref([])
+const tasksLoading = ref(false)
+const taskProofDialog = ref(false)
+const taskProofTask = ref(null)
+// 上传返回的是相对路径 /uploads/xxx：开发走 vite 代理、生产与 API 同源，直接用即可
+const taskProofPhotos = computed(() => taskProofTask.value?.proof?.photos || [])
+function openTaskProof(row) {
+  taskProofTask.value = row
+  taskProofDialog.value = true
+}
+
+async function loadTasks() {
+  tasksLoading.value = true
+  try {
+    tasks.value = await dispatchAdminApi.getTasks()
+  } catch (e) { /* 已提示 */ } finally {
+    tasksLoading.value = false
+  }
+}
 
 // 订单详情弹窗
 const orderDialog = ref(false)
@@ -305,6 +374,7 @@ async function saveSetting() {
 onMounted(() => {
   load()
   loadExceptions()
+  loadTasks()
 })
 </script>
 
@@ -318,4 +388,6 @@ onMounted(() => {
 .exc-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
 .exc-k { color: #909399; }
 .exc-v { color: #303133; }
+.proof-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.proof-img { width: 220px; height: 220px; border-radius: 8px; cursor: zoom-in; }
 </style>

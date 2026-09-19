@@ -46,6 +46,30 @@ export class AdminOrderService {
     }))
   }
 
+  // ────────────────────────────────────────
+  // 已送达/已完成订单（运营查配送员收款凭证 2026-09-19 拍板卡，只读）
+  // payProof 由配送员 COD 收款拍照落库，运营侧仅查看，不提供修改入口
+  // ────────────────────────────────────────
+  async deliveredList() {
+    const orders = await this.prisma.order.findMany({
+      where: { status: { in: [OrderStatus.DELIVERED, OrderStatus.COMPLETED] } },
+      orderBy: { id: 'desc' },
+      take: 400, // 覆盖已送达+已完成全量（当前 311 条），订单号较小的历史单也能查凭证
+      include: { purchaser: true },
+    })
+
+    return orders.map((o) => ({
+      orderId: Number(o.id),
+      shopName: o.purchaser.shopName,
+      deliveryDate: o.deliveryDate.toISOString().slice(0, 10),
+      status: o.status,
+      statusText: this.statusText(o.status),
+      amountOrdered: Number(o.amountOrdered),
+      payMethod: o.payMethod,
+      payProof: o.payProof ?? null,
+    }))
+  }
+
   private statusText(status: number): string {
     const map: Record<number, string> = {
       [OrderStatus.PENDING_CONFIRM]: '待确认（待拆单）',
