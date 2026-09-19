@@ -49,6 +49,14 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
+        <el-table-column label="凭证" width="90">
+          <template #default="{ row }">
+            <el-button v-if="row.attachments && row.attachments.length" link type="primary" @click="openPhotos(row)">
+              {{ row.attachments.length }} 张
+            </el-button>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ row.statusText }}</el-tag>
@@ -125,6 +133,23 @@
       </template>
     </el-drawer>
 
+    <!-- 凭证照片弹窗（只读：采购方售后拍照，大图查看；照 OrderFulfill.vue 收款凭证同款写法） -->
+    <el-dialog v-model="photosDialog" :title="`工单 #${photosRow?.aftersaleId} 售后凭证`" width="520px">
+      <div v-if="photosRow?.attachments?.length" class="proof-grid">
+        <el-image
+          v-for="(p, i) in photosRow.attachments"
+          :key="i"
+          :src="p"
+          :preview-src-list="photosRow.attachments"
+          :initial-index="i"
+          fit="cover"
+          class="proof-img"
+        />
+      </div>
+      <div v-else style="color:#909399;text-align:center;padding:16px 0;">—</div>
+      <div style="margin-top:10px;font-size:12px;color:#909399;">采购方提交售后时拍摄</div>
+    </el-dialog>
+
     <!-- 处理弹窗 -->
     <el-dialog v-model="handleVisible" title="处理售后工单" width="480px">
       <el-form label-width="90px">
@@ -184,6 +209,15 @@ const detail = ref(null)
 const handleVisible = ref(false)
 const handling = ref(false)
 const handleForm = ref({ id: null, action: 'compensate', compensateAmount: 0, compensateMethod: null, handleRemark: '' })
+
+// ── 售后凭证照片（只读查看）──
+const photosDialog = ref(false)
+const photosRow = ref(null)
+// 上传返回的是相对路径 /uploads/xxx：开发走 vite 代理、生产与 API 同源，直接用即可（同 OrderFulfill.vue 凭证写法）
+function openPhotos(row) {
+  photosRow.value = row
+  photosDialog.value = true
+}
 
 async function load() {
   loading.value = true
@@ -264,4 +298,6 @@ onMounted(load)
 .admin-aftersale-filter { display: flex; align-items: center; }
 .admin-aftersale-table-card { margin-bottom: 24px; }
 .admin-aftersale-sub-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #303133; }
+.proof-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.proof-img { width: 220px; height: 220px; border-radius: 8px; cursor: zoom-in; }
 </style>

@@ -162,6 +162,8 @@ export class AdminAftersaleService {
       compensateMethod: r.compensateMethod ?? null,
       compensateMethodText: r.compensateMethod != null ? COMPENSATE_METHOD_TEXT[r.compensateMethod] ?? null : null,
       handleRemark: r.handleRemark,
+      // 采购方拍照留证（/uploads/xxx 相对路径数组）：Prisma Json 原样返回；null/非数组统一成 []（与 buyer.service toVo 同口径）
+      attachments: Array.isArray(r.attachments) ? r.attachments : [],
       handledBy: r.handledBy != null ? Number(r.handledBy) : null,
       handledAt: r.handledAt ? r.handledAt.toISOString() : null,
       createdAt: r.createdAt.toISOString(),
