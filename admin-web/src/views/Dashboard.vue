@@ -117,9 +117,12 @@ const quicks = [
   { icon: '🏷️', title: '价格与加价', desc: '分类加价比例', path: '/pricing' },
   { icon: '📈', title: '报表', desc: '经营统计', path: '/reports' },
   { icon: '⚙️', title: '系统设置', desc: '交易规则 · 通知', path: '/settings' },
-  { icon: '🛡️', title: '售后工单', desc: '售后处理', todo: '售后工单' },
-  { icon: '🚨', title: '异常仲裁', desc: '异常订单处理', todo: '异常仲裁' },
-  { icon: '🌇', title: '日结', desc: '每日结算', todo: '日结管理' },
+  // 售后工单：/aftersale 页面与路由真实存在（此前漏写 path 落到 todo，2026-09-19 修入口）
+  { icon: '🛡️', title: '售后工单', desc: '售后处理', path: '/aftersale' },
+  // 异常仲裁：路由表/菜单/页面均不存在（全仓核实），如实标注规划中，不硬造功能
+  { icon: '🚨', title: '异常仲裁', desc: '规划中 · 暂未上线', todo: '异常仲裁' },
+  // 日结：接既有「每日对账」页（按送达日核对进出款项 + 未收清单），语义即日结
+  { icon: '🌇', title: '每日对账', desc: '按送达日对账 · 未收清单', path: '/daily-reconciliation' },
 ]
 
 function formatNum(v) {
