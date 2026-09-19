@@ -532,6 +532,15 @@ model AuditLog {
 }
 
 /// 平台服务费配置（全局默认 + 可选分类覆盖）
+///
+/// ⚠️ 库层另有一条本 schema **故意不声明**的唯一约束（2026-09-19 卡J）：
+///    生成列 global_key = COALESCE(category_id, 0) STORED + UNIQUE KEY uk_service_fee_config_global_key
+///    见迁移 20260919173000_add_service_fee_unique_global。
+///    原因：category_id 可空，而 MySQL 唯一索引**不约束 NULL**（多行 NULL 视为互不相同），
+///    所以 @@unique([categoryId]) 挡不住「两条全局费率」这个真正的问题；
+///    加生成列把「全局」归一成 0 才能兜住（category.id 自增从 1 起，0 不是合法分类）。
+///    **不要声明 global_key 字段**：Prisma 会尝试写入生成列，MySQL 报 3105。
+///    **不要删这条约束**：删了并发双写就又不设防（写入路径见 admin-finance.service.ts）。
 model ServiceFeeConfig {
   id         BigInt    @id @default(autoincrement())
   /// null = 全局默认；非空 = 某分类覆盖

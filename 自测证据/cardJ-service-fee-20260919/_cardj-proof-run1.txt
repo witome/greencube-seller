@@ -1,0 +1,181 @@
+【起始快照】service_fee_config 全表（后面每段结束都会比对它）
+[
+  {
+    "id": 1,
+    "category_id": null,
+    "global_key": 0,
+    "rate": "0.05",
+    "updated_by": 4,
+    "updated_at": "2026-09-11T10:10:44.730Z"
+  }
+]
+
+========================================================================
+E1 查重：现有数据有没有重复（我只读，不删不改）
+========================================================================
+  按 category_id 分组、COUNT(*)>1 的组：
+  []
+  重复组数 = 0
+  按 global_key 分组、COUNT(*)>1 的组：[]  （唯一键已建立，理论上不可能 >1）
+  全表行数 = [
+  {
+    "c": 1
+  }
+]
+  全局行（category_id IS NULL）条数 = [
+  {
+    "c": 1
+  }
+]
+
+========================================================================
+E2 结构与迁移：生成列 + 唯一键是否真在库里
+========================================================================
+  列定义：
+  [
+  {
+    "COLUMN_NAME": "id",
+    "COLUMN_TYPE": "bigint",
+    "IS_NULLABLE": "NO",
+    "EXTRA": "auto_increment",
+    "GENERATION_EXPRESSION": ""
+  },
+  {
+    "COLUMN_NAME": "category_id",
+    "COLUMN_TYPE": "bigint",
+    "IS_NULLABLE": "YES",
+    "EXTRA": "",
+    "GENERATION_EXPRESSION": ""
+  },
+  {
+    "COLUMN_NAME": "rate",
+    "COLUMN_TYPE": "decimal(5,4)",
+    "IS_NULLABLE": "NO",
+    "EXTRA": "",
+    "GENERATION_EXPRESSION": ""
+  },
+  {
+    "COLUMN_NAME": "updated_by",
+    "COLUMN_TYPE": "bigint",
+    "IS_NULLABLE": "YES",
+    "EXTRA": "",
+    "GENERATION_EXPRESSION": ""
+  },
+  {
+    "COLUMN_NAME": "updated_at",
+    "COLUMN_TYPE": "datetime(3)",
+    "IS_NULLABLE": "NO",
+    "EXTRA": "",
+    "GENERATION_EXPRESSION": ""
+  },
+  {
+    "COLUMN_NAME": "global_key",
+    "COLUMN_TYPE": "bigint",
+    "IS_NULLABLE": "NO",
+    "EXTRA": "STORED GENERATED",
+    "GENERATION_EXPRESSION": "coalesce(`category_id`,0)"
+  }
+]
+  索引：
+  [
+  {
+    "Key": "PRIMARY",
+    "NonUnique": 0,
+    "Col": "id"
+  },
+  {
+    "Key": "uk_service_fee_config_global_key",
+    "NonUnique": 0,
+    "Col": "global_key"
+  }
+]
+
+========================================================================
+E3 手工插一条重复的全局费率 → 应被数据库拒绝（这就是「光看代码看不出来」的那层兜底）
+========================================================================
+  执行：INSERT INTO service_fee_config (category_id, rate, updated_at) VALUES (NULL, 0.07, NOW(3))
+  ✓ 被拒。原始报错：
+    code    = P2010
+    errno   = 1062
+    message =  Invalid `prisma.$executeRawUnsafe()` invocation:   Raw query failed. Code: `1062`. Message: `Duplicate entry '0' for key 'service_fee_config.uk_service_fee_config_global_key'`
+
+========================================================================
+E4 并发真表：两个独立连接同时插同一分类 → 第二个被唯一键阻塞（DB 会串行化）
+========================================================================
+  A 的结局：INTENTIONAL_ROLLBACK_A
+  B 的结局：INTENTIONAL_ROLLBACK_B
+  B 的 INSERT 被阻塞了约 2187 ms（若为 0 说明没锁住，唯一键没起作用）
+  两边回滚后，该分类残留行数 = [
+  {
+    "c": 0
+  }
+]  （应为 0）
+
+========================================================================
+E5 真服务并发：并发两次 PUT /admin/finance/service-fee（同一个全局分类）
+========================================================================
+  运营登录：code=0 role=admin
+  并发请求 1：HTTP 200 → {
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "rate": 0.05,
+    "categoryId": null
+  }
+}
+  并发请求 2：HTTP 200 → {
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "rate": 0.05,
+    "categoryId": null
+  }
+}
+  并发写入后，全局行：
+  [
+  {
+    "id": 1,
+    "category_id": null,
+    "global_key": 0,
+    "rate": "0.05",
+    "updated_at": "2026-09-19T17:22:50.027Z"
+  }
+]
+  全局行条数 = [
+  {
+    "c": 1
+  }
+]  （必须为 1）
+
+========================================================================
+E6 机制对照：同一段「先判存在→再插」在【无唯一键】与【有唯一键+原子 upsert】下各写两次
+========================================================================
+  ✗ 本段异常：
+Invalid `prisma.$executeRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `1044`. Message: `Access denied for user 'lvlifang_app'@'localhost' to database 'lvlifang'`
+
+========================================================================
+E7 冲突友好性：用真实的 P2002 调编译产物里的映射函数
+========================================================================
+  真表上触发到的原始错误：code=P2002  (Prisma 侧识别为 P2002 = 唯一键冲突)
+  调 serviceFeeWriteError(真实错误) 得到：
+  BizException code=1001 msg="该费率配置已存在，请刷新后重试"
+  ⇒ 若真走到冲突分支，接口返回的是上面这个业务码，不是裸 500
+
+========================================================================
+【结束快照】service_fee_config 全表
+========================================================================
+[
+  {
+    "id": 1,
+    "category_id": null,
+    "global_key": 0,
+    "rate": "0.05",
+    "updated_by": 4,
+    "updated_at": "2026-09-19T17:22:50.027Z"
+  }
+]
+
+与起始快照是否完全一致（业务数据零改动）：否 ✗

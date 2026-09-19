@@ -1,10 +1,27 @@
 import { Injectable } from '@nestjs/common'
+import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode } from '../../common/constants/error-codes'
 import { AuditService } from '../audit/audit.service'
 import { ServiceFeeConfigDto, GenerateSettlementDto } from './dto/finance.dto'
 import { DeliveryFeeConfigDto, PayQrDto } from './dto/delivery-fee.dto'
 import { HomeContentDto } from './dto/home-content.dto'
+
+/**
+ * 服务费配置写入失败 → 友好业务错误（2026-09-19 卡J）
+ *
+ * 抽成独立导出函数的原因：正常写入路径走 `INSERT ... ON DUPLICATE KEY UPDATE`，
+ * 并发下第二个请求会**自动走更新语义**、不会抛错，所以冲突分支在真实链路上无法复现。
+ * 独立导出后，验证脚本可以用**真实的 P2002 异常**（直接打库触发）来证明这段映射确实生效。
+ *
+ * 返回 null 表示「不是唯一键冲突」，调用方应原样抛出（真实故障不该被吞掉）。
+ */
+export function serviceFeeWriteError(e: unknown): BizException | null {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+    return new BizException(ErrorCode.PARAM_ERROR, '该费率配置已存在，请刷新后重试')
+  }
+  return null
+}
 
 @Injectable()
 export class AdminFinanceService {
@@ -83,31 +100,65 @@ export class AdminFinanceService {
   // 保存服务费配置（不追溯已生成结算单）
   // ────────────────────────────────────────
   async serviceFeeConfig(userId: bigint, dto: ServiceFeeConfigDto) {
-    const existing = await this.prisma.serviceFeeConfig.findFirst({ where: { categoryId: dto.categoryId ?? null } })
+    const categoryId = dto.categoryId ?? null
+
+    // before 仅用于审计留痕（口径与原实现逐字一致）
+    const existing = await this.prisma.serviceFeeConfig.findFirst({ where: { categoryId } })
     const before = existing ? { rate: Number(existing.rate) } : null
 
-    let saved
-    if (existing) {
-      saved = await this.prisma.serviceFeeConfig.update({
-        where: { id: existing.id },
-        data: { rate: dto.rate, updatedBy: userId },
+    // 原子写入（2026-09-19 卡J，堵住并发双写）：
+    // 原实现是 findFirst → create 两步，**不是原子的** —— 两个并发请求同时读到「无配置」
+    // 就会各插一条；最要紧的是全局那条（category_id IS NULL），而 MySQL 唯一索引不约束 NULL，
+    // 所以光加 @@unique([categoryId]) 挡不住它（那是「看起来对、其实没用」的修复）。
+    //
+    // 现由迁移 20260919173000_add_service_fee_unique_global 在库层兜底：
+    // global_key = COALESCE(category_id, 0) 生成列 + 唯一键 uk_service_fee_config_global_key。
+    // 这里再用**单条** SQL 写入，把「判存在 + 写」压成一步：并发下第二个请求由
+    // ON DUPLICATE KEY UPDATE 自动走**更新语义**（要求里更优的那种处理），
+    // 既不会产生第二行，也不会抛错、不会裸 500。
+    //
+    // 走原生 SQL 的原因：global_key 是生成列，Prisma schema 表达不了（声明了就报 3105），
+    // 因此 Prisma 的 upsert 没有可用的唯一选择器（where 必须是 unique 字段）。
+    // 不用 VALUES() 函数，把参数写两遍：避免 MySQL 8.0.20+ 的弃用告警，且 5.7 也兼容。
+    let savedId: bigint
+    try {
+      await this.prisma.$executeRaw`
+        INSERT INTO service_fee_config (category_id, rate, updated_by, updated_at)
+        VALUES (${categoryId}, ${dto.rate}, ${userId}, NOW(3))
+        ON DUPLICATE KEY UPDATE
+          rate = ${dto.rate},
+          updated_by = ${userId},
+          updated_at = NOW(3)
+      `
+
+      // 写入后回读该分类的唯一一行（唯一键保证至多一行）
+      const row = await this.prisma.serviceFeeConfig.findFirst({
+        where: { categoryId },
+        select: { id: true },
       })
-    } else {
-      saved = await this.prisma.serviceFeeConfig.create({
-        data: { categoryId: dto.categoryId ?? null, rate: dto.rate, updatedBy: userId },
-      })
+      if (!row) {
+        throw new BizException(ErrorCode.INTERNAL_ERROR, '服务费配置写入后未读到记录，请重试')
+      }
+      savedId = row.id
+    } catch (e) {
+      // 兜底：正常路径（ON DUPLICATE KEY UPDATE）到不了这里。
+      // 万一唯一键冲突以 P2002 冒出来 → 友好业务错误码，绝不裸 500；
+      // 其它异常原样抛出（真实故障不该被吞）。
+      const mapped = serviceFeeWriteError(e)
+      if (mapped) throw mapped
+      throw e
     }
 
     await this.audit.log({
       operatorId: userId,
       action: 'UPDATE_SERVICE_FEE',
       entity: 'service_fee_config',
-      entityId: saved.id,
-      before: before ? { categoryId: dto.categoryId ?? null, ...before } : { categoryId: dto.categoryId ?? null, rate: null },
-      after: { categoryId: dto.categoryId ?? null, rate: dto.rate },
+      entityId: savedId,
+      before: before ? { categoryId, ...before } : { categoryId, rate: null },
+      after: { categoryId, rate: dto.rate },
     })
 
-    return { rate: dto.rate, categoryId: dto.categoryId ?? null }
+    return { rate: dto.rate, categoryId }
   }
 
   // ────────────────────────────────────────
