@@ -1,0 +1,53 @@
+
+== 1. open browser ==
+### Events
+- New console entries: .playwright-cli\console-2026-09-19T10-13-44-940Z.log#L1
+
+== 2. identity = buyer via uni storage + clear stale token ==
+### Result
+"{\"devRole\":\"buyer\",\"token\":false}"
+### Ran Playwright code
+
+== 3. login (WeChat one-tap, mock buyer) ==
+
+== 4. open order detail (COD delivered order 1088) via hash ==
+### Result
+"{\"url\":\"http://localhost:5199/#/pages/buyer/order-detail?id=1088\",\"status\":\"已送达\",\"payMethodRow\":[\"支付方式\\n货到付款\"]}"
+### Ran Playwright code
+
+== 5. 收款区内容 + 确认页面没有收款码图片 ==
+### Result
+"{\"cardVisible\":true,\"cardText\":\"货到付款\\n应付 ¥45.65\\n请用微信「扫一扫」扫配送员出示的收款码\\n扫码付款\\n微信直接支付\\n客户称已付\\n尚未声明\\n已核销\\n配送员尚未上传收款凭证\\n我已付款\",\"amount\":\"应付 ¥45.65\",\"tip\":\"请用微信「扫一扫」扫配送员出示的收款码\",\"payButtons\":[\"扫码付款\",\"微信直接支付\"],\"claimBtn\":\"我已付款\",\"qrImagesInCard\":0,\"statusRows\":[\"客户称已付 | 尚未声明\",\"已核销 | 配送员尚未上传收款凭证\"]}"
+### Ran Playwright code
+
+== 6. 点「扫码付款」→ 只弹说明 ==
+### Result
+"{\"modal\":\"扫码付款 | 请用微信「扫一扫」扫配送员出示的收款码付款，应付 ¥45.65。付款后请点「我已付款」告知配送员。 | 知道了\"}"
+### Ran Playwright code
+await (async page => { const btn = page.locator('.uni-modal__btn').first(); if (await btn.count()) { await btn.click(); await page.waitForTimeout(800) } return 'dismissed' })(page);
+```
+
+== 7. 点「微信直接支付」→ 只提示即将开通（无模拟支付请求） ==
+### Result
+"{\"modal\":\"微信直接支付 | 微信支付即将开通，请先用上方方式扫码付款 | 知道了\",\"paymentRequests\":[]}"
+### Ran Playwright code
+await (async page => { const btn = await page.locator('.uni-modal__btn').first(); if (await btn.count()) { await btn.click(); await page.waitForTimeout(800) } return 'dismissed' })(page);
+```
+
+== 8. 点「我已付款」→ 文案状态变化 + 抓请求体 ==
+### Result
+"{\"toast\":\"已告知配送员，待其核对收款\",\"requests\":[{\"method\":\"POST\",\"url\":\"http://127.0.0.1:3001/api/v1/buyer/order/1088/claim-paid\",\"body\":null}],\"dom\":{\"claimBtnGone\":true,\"claimedText\":\"✅ 已告知配送员，待其核对收款\",\"statusRows\":[\"客户称已付 | 已告知配送员 · 2026-09-19 18:14\",\"已核销 | 配送员尚未上传收款凭证\"]}}"
+### Ran Playwright code
+
+== 9. close browser ==
+Browser 'default' closed
+
+
+=== screenshots ===
+total 216
+drwxr-xr-x 1 Administrator 197121     0 Sep 19 18:14 .
+drwxr-xr-x 1 Administrator 197121     0 Sep 19 18:13 ..
+-rw-r--r-- 1 Administrator 197121 60188 Sep 19 18:14 31-cod-pay-area.png
+-rw-r--r-- 1 Administrator 197121 47145 Sep 19 18:14 32-scan-tip.png
+-rw-r--r-- 1 Administrator 197121 44847 Sep 19 18:14 33-wechat-coming.png
+-rw-r--r-- 1 Administrator 197121 59553 Sep 19 18:14 34-claimed.png

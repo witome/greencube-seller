@@ -356,6 +356,9 @@ model Order {
   urgent     Int      @default(0) @db.TinyInt
   /// 货到付款收款凭证：配送员上传的客户付款拍照 + 记录（photos/courierId/paidAt）
   payProof   Json?    @map("pay_proof")
+  /// 采购方「我已付款」声明时间（2026-09-19 卡L）
+  /// ⚠️ 这只是「客户称已付」，**不是核销**：是否真收到钱仍以 payProof 为准，二者必须分开显示。
+  buyerPaidClaimAt DateTime? @map("buyer_paid_claim_at")
   /// 1 小程序自选 / 2 AI 客服代下单（阶段 2）
   source      Int      @default(1) @db.TinyInt
   createdAt   DateTime @default(now()) @map("created_at")

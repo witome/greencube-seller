@@ -41,7 +41,7 @@
       <!-- 货物（订单）列表：取货 + 异常上报 + 已取状态 -->
       <view v-for="s in deliverStations(t)" :key="s.orderId" :class="['cargo-item', { abnormal: s.abnormal }]">
         <view class="cargo-main">
-          <view class="cargo-name">{{ s.shopName }}<text v-if="s.abnormal" class="cargo-abnormal-tag">异常</text></view>
+          <view class="cargo-name">{{ s.shopName }}<text v-if="s.abnormal" class="cargo-abnormal-tag">异常</text><text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text></view>
           <view class="cargo-addr">{{ s.address }}</view>
           <view v-if="s.items && s.items.length" class="cargo-items">{{ s.items.map(i => `${i.name}×${i.qty}${i.unit}`).join('、') }}</view>
         </view>
@@ -73,7 +73,7 @@
         </view>
         <view v-for="s in deliverStations(t)" :key="s.orderId" class="cargo-item">
           <view class="cargo-main">
-            <view class="cargo-name">{{ s.shopName }}</view>
+            <view class="cargo-name">{{ s.shopName }}<text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text></view>
             <view class="cargo-addr">{{ s.address }}</view>
           </view>
           <text class="cargo-picked">✓ 已交付</text>
@@ -101,12 +101,39 @@ import CustomTabBar from '@/components/CustomTabBar.vue'
 const tasks = ref([])
 const status = reactive({ online: 0, autoAccept: 0, onRoute: 0, activeTasks: 0 })
 
+// 两个轮询器共用一次请求：5 秒内重复调用走缓存，
+// 避免两条 alerter 的定时器几乎同时触发时把同一个接口打两遍
+let tasksCache = { at: 0, data: null }
+const fetchTasks = async () => {
+  const now = Date.now()
+  if (tasksCache.data && now - tasksCache.at < 5000) return tasksCache.data
+  const ts = await courierApi.getTodayTasks()
+  tasksCache = { at: now, data: ts }
+  return ts
+}
+
 // 新单语音提示（2026-09-12 拍板 1A）：30s 轮询现有接口，比对任务内订单 id，新单播预置音频
 // 首次=基线不播；同单只播一次；onHide 停/onShow 启（见 @/utils/new-order-alerter）
 useNewOrderAlerter(async () => {
-  const ts = await courierApi.getTodayTasks()
+  const ts = await fetchTasks()
   return ts.flatMap((t) => (t.stationList || []).filter((s) => s.type === 'deliver').map((s) => s.orderId))
 }, { tag: 'courier-tasks' })
+
+// 「客户称已付」提示（2026-09-19 卡L）：**复用同一套轮询机制**
+// （30s 周期 / 首轮建基线 / 同单只提示一次 / 权限错误自停 / 全局登记），
+// 只把反应从「播音频」换成「弹一次 toast」—— 不另写一套轮询。
+// 已存在的标记不会补弹（首轮=基线），符合「收到标记时提示一次」。
+useNewOrderAlerter(async () => {
+  const ts = await fetchTasks()
+  return ts.flatMap((t) =>
+    (t.stationList || []).filter((s) => s.type === 'deliver' && s.buyerPaidClaimAt).map((s) => s.orderId),
+  )
+}, {
+  tag: 'courier-paid-claim',
+  onFresh: (ids) => {
+    uni.showToast({ title: `${ids.length} 单客户称已付，请核对是否到账`, icon: 'none' })
+  },
+})
 
 const courierTabs = [
   { path: '/subpkg-courier/pages/home', icon: '📋', label: '今日任务' },
@@ -152,7 +179,9 @@ const doReport = (t, s) => {
 }
 
 const goCodPay = (s) => {
-  uni.navigateTo({ url: `/subpkg-courier/pages/cod-pay?orderId=${s.orderId}&shopName=${encodeURIComponent(s.shopName || '')}` })
+  // 带上「客户称已付」标记，收款页可立即显示（收款页自身也会拉一次核对，见 cod-pay.vue）
+  const claim = s.buyerPaidClaimAt ? '&clientClaimed=1' : ''
+  uni.navigateTo({ url: `/subpkg-courier/pages/cod-pay?orderId=${s.orderId}&shopName=${encodeURIComponent(s.shopName || '')}${claim}` })
 }
 
 const goDeliver = (t) => {
@@ -166,6 +195,8 @@ const goDeliver = (t) => {
 
 const load = async () => {
   tasks.value = await courierApi.getTodayTasks()
+  // 顺手填缓存，避免紧接着的轮询器把同一个接口再打一遍
+  tasksCache = { at: Date.now(), data: tasks.value }
   Object.assign(status, await courierApi.getStatus())
 }
 
@@ -231,6 +262,8 @@ onShow(() => {
 .cargo-picked { color: $color-primary; font-size: 13px; font-weight: 600; }
 .cargo-abnormal { color: #fa5151; font-size: 13px; font-weight: 600; }
 .cargo-abnormal-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #fa5151; color: #fff; font-size: 10px; border-radius: 8px; font-weight: 400; }
+/* 「客户称已付」标记（2026-09-19 卡L）：只是采购方声明，**不是核销**，故用橙色而非绿色 */
+.cargo-claim-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #fff3e6; color: #ff6b00; font-size: 10px; border-radius: 8px; font-weight: 400; }
 .cargo-item.abnormal { opacity: 0.7; }
 .cargo-btn { padding: 5px 14px; border-radius: 14px; font-size: 12px; }
 .cargo-btn.pickup { background: $color-primary; color: #fff; }

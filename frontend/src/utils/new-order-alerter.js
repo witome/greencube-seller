@@ -7,6 +7,8 @@
  *     const ts = await courierApi.getTodayTasks()
  *     return ts.flatMap(t => (t.stationList || []).filter(s => s.type === 'deliver').map(s => s.orderId))
  *   }, { tag: 'courier-tasks' })
+ *   // 复用同一套轮询、但不播音频、只弹一次提示（2026-09-19 卡L「客户称已付」）：
+ *   useNewOrderAlerter(fetchClaimIds, { tag: 'courier-paid-claim', onFresh: (ids) => uni.showToast(...) })
  *
  * 行为：
  * - 每 30 秒轮询一次现有接口，比对订单 id 集合（比对逻辑见 new-order-diff.js）
@@ -50,6 +52,11 @@ export function useNewOrderAlerter(fetchIds, opts = {}) {
     }
   }
 
+  // 发现「新 id」时的反应：默认播新单提示音。
+  // 传了 onFresh 就交给调用方 —— 例如「客户称已付」只弹一次 toast、不播音频，
+  // 但轮询周期 / 基线 / 去重 / 权限自停 / 全局登记这些机制**完全复用**，不另写一套。
+  const onFresh = typeof opts.onFresh === 'function' ? opts.onFresh : () => play()
+
   const check = async () => {
     try {
       const ids = await fetchIds()
@@ -57,7 +64,7 @@ export function useNewOrderAlerter(fetchIds, opts = {}) {
       seen = r.seen
       if (r.fresh.length) {
         console.log(`[new-order-alerter:${tag}] 发现新单 id=`, r.fresh)
-        play()
+        onFresh(r.fresh)
       }
     } catch (e) {
       // 权限类错误（2001 未登录 / 2002 当前身份无此权限 / 4001）→ 立即自停：

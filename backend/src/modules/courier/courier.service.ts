@@ -122,13 +122,18 @@ export class CourierService {
     const abnormalSet = new Set(abnormalOrders.map((o) => Number(o.id)))
 
     // 查订单支付方式：货到付款(2)订单在今日任务里显示「货到付款」按钮
+    // 2026-09-19 卡L：同时带出采购方「我已付款」声明时间，供配送员端显示「客户称已付」标记
+    // ⚠️ 只是标记，**不参与核销**（核销仍以 order.payProof 为准），也不影响本函数其它逻辑
     const orderPayments = orderIds.length
       ? await this.prisma.order.findMany({
           where: { id: { in: orderIds.map((id) => BigInt(id)) } },
-          select: { id: true, payMethod: true },
+          select: { id: true, payMethod: true, buyerPaidClaimAt: true },
         })
       : []
     const payMap = new Map(orderPayments.map((o) => [Number(o.id), o.payMethod]))
+    const paidClaimMap = new Map(
+      orderPayments.map((o) => [Number(o.id), o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null]),
+    )
 
     return tasks.map((t) => ({
       taskId: Number(t.id),
@@ -136,7 +141,7 @@ export class CourierService {
       status: t.status,
       stationList: (Array.isArray(t.stationList) ? t.stationList : []).map((s: any) => {
         if (s.type === 'deliver' && s.orderId) {
-          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)), payMethod: payMap.get(Number(s.orderId)) ?? null }
+          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)), payMethod: payMap.get(Number(s.orderId)) ?? null, buyerPaidClaimAt: paidClaimMap.get(Number(s.orderId)) ?? null }
         }
         return s
       }),

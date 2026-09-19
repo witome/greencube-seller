@@ -48,6 +48,8 @@ export const buyerApi = {
   updateOrder: (id, data) => post(`/order/${id}/update`, data),   // 编辑待确认订单（覆盖式）
   payOrder: (id, payMethod) => post(`/order/${id}/pay`, { payMethod }), // 1 微信支付（返回支付单）/ 2 货到付款
   mockPay: (payNo) => post('/payment/mock/pay', { payNo }), // 模拟支付通道（WX_MOCK_PAY=1；接商户号后换 wx.requestPayment）
+  // 货到付款「我已付款」声明（2026-09-19 卡L）：⚠️ 只登记「客户称已付」，不是核销
+  claimPaid: (id) => post(`/buyer/order/${id}/claim-paid`),
   setUrgent: (id, urgent) => post(`/order/${id}/urgent`, { urgent }), // 加急 1 / 取消加急 0
   aiParse: (text) => post('/ai/parse', { text }),                 // AI 客服下单解析
   // 对账单/售后

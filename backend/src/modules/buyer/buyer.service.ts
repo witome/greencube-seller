@@ -435,6 +435,77 @@ export class BuyerService {
     return { aftersaleId: Number(aftersale.id), status: 'pending' }
   }
 
+  // ────────────────────────────────────────
+  // 采购方声明「我已付款」（货到付款订单 · 送达后）
+  // 2026-09-19 卡L：原实现里采购方订单详情的支付卡片只在「待确认(10)+未选支付方式(0)」时出现，
+  // 一旦选了货到付款并送达，采购方那侧就再没有任何付款入口。
+  //
+  // ⚠️ 本接口只记录「客户称已付」（order.buyer_paid_claim_at），**不是核销**：
+  //    是否真收到钱仍以 order.pay_proof（配送员上传的收款凭证）为准 —— 二者分开显示。
+  //    故这里**不写 payProof**、**不推进订单状态**，配送员既有 COD 收款流程一行未动。
+  //
+  // 约束：仅本人订单；仅 payMethod=2（货到付款）；仅 已送达(60)/已完成(70)；
+  //       重复声明幂等（返回既有时间，不报错、不重复写审计）。
+  // ────────────────────────────────────────
+  async claimPaid(userId: bigint, orderId: number) {
+    const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
+    if (!purchaser) throw new BizException(ErrorCode.NOT_FOUND, '未找到采购方档案')
+
+    // 归属过滤写进 where：别人的订单直接 4001，不泄露「该订单存在但不属于你」
+    const order = await this.prisma.order.findFirst({
+      where: { id: BigInt(orderId), purchaserId: purchaser.id },
+      select: { id: true, status: true, payMethod: true, buyerPaidClaimAt: true },
+    })
+    if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+
+    if (order.payMethod !== 2) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '该订单不是货到付款，无需此操作')
+    }
+    const claimable: number[] = [OrderStatus.DELIVERED, OrderStatus.COMPLETED]
+    if (!claimable.includes(order.status)) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '订单送达后才能声明已付款')
+    }
+
+    // 幂等：已声明过就直接返回既有时间（不报错、不刷新时间、不再写审计）
+    if (order.buyerPaidClaimAt) {
+      return {
+        orderId: Number(order.id),
+        buyerPaidClaimAt: order.buyerPaidClaimAt.toISOString(),
+        alreadyClaimed: true,
+      }
+    }
+
+    const now = new Date()
+    // 条件更新（buyer_paid_claim_at IS NULL）防并发双写：两个并发声明只有一个真正写入
+    // （与卡J 同思路：把「判存在 + 写」压成一步，不靠先查后写）
+    const updated = await this.prisma.order.updateMany({
+      where: { id: order.id, buyerPaidClaimAt: null },
+      data: { buyerPaidClaimAt: now },
+    })
+
+    // 审计：只在真正写入时记一条（action 全大写，与全仓约定一致）
+    if (updated.count > 0) {
+      await this.audit.log({
+        operatorId: userId,
+        action: 'BUYER_CLAIM_PAID',
+        entity: 'order',
+        entityId: Number(order.id),
+        before: { buyerPaidClaimAt: null },
+        after: { buyerPaidClaimAt: now.toISOString(), payMethod: 2, status: order.status },
+      })
+    }
+
+    const fresh = await this.prisma.order.findUnique({
+      where: { id: order.id },
+      select: { buyerPaidClaimAt: true },
+    })
+    return {
+      orderId: Number(order.id),
+      buyerPaidClaimAt: fresh?.buyerPaidClaimAt ? fresh.buyerPaidClaimAt.toISOString() : now.toISOString(),
+      alreadyClaimed: updated.count === 0,
+    }
+  }
+
   /// 我的售后工单（含运营处理状态，2026-09-10 补，修复单缺陷 3）
   async myAftersales(userId: bigint) {
     const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })

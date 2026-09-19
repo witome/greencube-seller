@@ -1,0 +1,289 @@
+
+== 0. 采购方身份（code=buyer） ==
+  code=0 userId=10 currentRole=purchaser
+
+== 1. 反例A · 别人的订单 orderId=1082 → 期望 4001 ==
+{"code":4001,"msg":"订单不存在","data":null}
+  HTTP=200
+
+== 2. 反例B · 未送达（COD 但 status=30）orderId=233 → 期望 3002 ==
+{"code":3002,"msg":"订单送达后才能声明已付款","data":null}
+  HTTP=200
+
+== 3. 反例C · 非货到付款 orderId=108 → 期望 3002 ==
+{"code":3002,"msg":"该订单不是货到付款，无需此操作","data":null}
+  HTTP=200
+
+== 4. 正例 · 本人的 COD 已送达单 orderId=1087 → 期望 code 0 ==
+{"code":0,"msg":"ok","data":{"orderId":1087,"buyerPaidClaimAt":"2026-09-19T10:12:24.155Z","alreadyClaimed":false}}
+  HTTP=201
+
+== 5. 幂等 · 再声明一次 → 期望仍 code 0 且 alreadyClaimed=true（不报错） ==
+{"code":0,"msg":"ok","data":{"orderId":1087,"buyerPaidClaimAt":"2026-09-19T10:12:24.155Z","alreadyClaimed":true}}
+  HTTP=201
+
+== 6. 订单详情：两个状态分开返回（buyerPaidClaimAt = 客户称已付；paidProofAt = 已核销） ==
+  status=60 statusText=已送达 payMethod=2 amountFinal=45.65
+  buyerPaidClaimAt = "2026-09-19T10:12:24.155Z"   ← 客户称已付（非核销）
+  paidProofAt      = null   ← 已核销（配送员凭证）
+
+== 7. SQL 直查那一行（证明真进库，不是接口回显） ==
+[
+  {
+    "id": 1087,
+    "purchaser_id": 6,
+    "status": 60,
+    "pay_method": 2,
+    "amount_final": "45.65",
+    "buyer_paid_claim_at": "2026-09-19T10:12:24.155Z",
+    "pay_proof": null
+  }
+]
+审计（BUYER_CLAIM_PAID 最近 3 条，重复声明不应新增）：
+[
+  {
+    "id": 5974,
+    "operator_id": 10,
+    "action": "BUYER_CLAIM_PAID",
+    "entity": "order",
+    "entity_id": 1087,
+    "before": {
+      "buyerPaidClaimAt": null
+    },
+    "after": {
+      "status": 60,
+      "payMethod": 2,
+      "buyerPaidClaimAt": "2026-09-19T10:12:24.155Z"
+    },
+    "created_at": "2026-09-19T10:12:24.158Z"
+  },
+  {
+    "id": 5968,
+    "operator_id": 10,
+    "action": "BUYER_CLAIM_PAID",
+    "entity": "order",
+    "entity_id": 1086,
+    "before": {
+      "buyerPaidClaimAt": null
+    },
+    "after": {
+      "status": 60,
+      "payMethod": 2,
+      "buyerPaidClaimAt": "2026-09-19T10:11:55.326Z"
+    },
+    "created_at": "2026-09-19T10:11:55.330Z"
+  }
+]
+全表小写 action（应仍只有 courier_report）: [
+  {
+    "action": "courier_report",
+    "c": 79
+  }
+]
+
+== 8. 配送员侧：todayTasks 是否带出 buyerPaidClaimAt ==
+  任务站点（orderId / payMethod / buyerPaidClaimAt）：
+   {"taskId":229,"orderId":486,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":230,"orderId":479,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":231,"orderId":488,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":232,"orderId":490,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":233,"orderId":498,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":234,"orderId":491,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":235,"orderId":500,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":236,"orderId":502,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":237,"orderId":510,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":238,"orderId":503,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":239,"orderId":512,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":240,"orderId":514,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":241,"orderId":522,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":242,"orderId":515,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":243,"orderId":524,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":244,"orderId":526,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":245,"orderId":534,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":246,"orderId":527,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":247,"orderId":536,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":248,"orderId":538,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":249,"orderId":546,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":250,"orderId":539,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":251,"orderId":548,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":252,"orderId":550,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":253,"orderId":558,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":254,"orderId":551,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":255,"orderId":560,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":256,"orderId":562,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":257,"orderId":570,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":258,"orderId":563,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":259,"orderId":572,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":260,"orderId":574,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":261,"orderId":582,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":262,"orderId":575,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":263,"orderId":584,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":264,"orderId":586,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":265,"orderId":594,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":266,"orderId":587,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":267,"orderId":596,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":268,"orderId":598,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":269,"orderId":606,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":270,"orderId":599,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":271,"orderId":608,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":272,"orderId":610,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":273,"orderId":618,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":274,"orderId":611,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":275,"orderId":620,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":276,"orderId":622,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":277,"orderId":630,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":278,"orderId":623,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":279,"orderId":632,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":280,"orderId":634,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":281,"orderId":642,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":282,"orderId":635,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":283,"orderId":644,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":284,"orderId":646,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":285,"orderId":654,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":286,"orderId":647,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":287,"orderId":656,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":288,"orderId":658,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":289,"orderId":666,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":290,"orderId":659,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":291,"orderId":668,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":292,"orderId":670,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":293,"orderId":678,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":294,"orderId":671,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":295,"orderId":680,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":296,"orderId":682,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":297,"orderId":683,"payMethod":null,"buyerPaidClaimAt":null}
+   {"taskId":298,"orderId":684,"payMethod":null,"buyerPaidClaimAt":null}
+   {"taskId":303,"orderId":694,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":304,"orderId":687,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":305,"orderId":696,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":306,"orderId":698,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":307,"orderId":706,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":308,"orderId":699,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":309,"orderId":708,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":310,"orderId":710,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":311,"orderId":718,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":312,"orderId":711,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":313,"orderId":720,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":314,"orderId":722,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":315,"orderId":730,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":316,"orderId":723,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":317,"orderId":732,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":318,"orderId":734,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":319,"orderId":742,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":320,"orderId":735,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":321,"orderId":744,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":322,"orderId":746,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":323,"orderId":754,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":324,"orderId":747,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":325,"orderId":756,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":326,"orderId":758,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":327,"orderId":766,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":328,"orderId":759,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":329,"orderId":768,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":330,"orderId":770,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":332,"orderId":785,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":333,"orderId":778,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":334,"orderId":787,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":335,"orderId":789,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":336,"orderId":797,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":337,"orderId":790,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":338,"orderId":799,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":339,"orderId":801,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":340,"orderId":809,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":341,"orderId":802,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":342,"orderId":811,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":343,"orderId":813,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":344,"orderId":821,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":345,"orderId":814,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":346,"orderId":823,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":347,"orderId":825,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":348,"orderId":833,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":349,"orderId":826,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":350,"orderId":835,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":351,"orderId":837,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":352,"orderId":845,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":353,"orderId":838,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":354,"orderId":847,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":355,"orderId":849,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":356,"orderId":857,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":357,"orderId":850,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":358,"orderId":859,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":359,"orderId":861,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":360,"orderId":869,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":361,"orderId":862,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":362,"orderId":871,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":363,"orderId":873,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":364,"orderId":885,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":365,"orderId":878,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":366,"orderId":887,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":367,"orderId":889,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":368,"orderId":897,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":369,"orderId":890,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":370,"orderId":899,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":371,"orderId":901,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":372,"orderId":909,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":373,"orderId":902,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":374,"orderId":911,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":375,"orderId":913,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":376,"orderId":921,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":377,"orderId":914,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":378,"orderId":923,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":379,"orderId":925,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":380,"orderId":933,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":381,"orderId":926,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":382,"orderId":935,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":383,"orderId":937,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":384,"orderId":945,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":385,"orderId":938,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":386,"orderId":947,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":387,"orderId":949,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":388,"orderId":957,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":389,"orderId":950,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":390,"orderId":959,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":391,"orderId":961,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":392,"orderId":969,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":393,"orderId":962,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":394,"orderId":971,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":395,"orderId":973,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":396,"orderId":974,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":397,"orderId":975,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":398,"orderId":976,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":399,"orderId":984,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":400,"orderId":977,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":401,"orderId":986,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":402,"orderId":988,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":403,"orderId":996,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":404,"orderId":989,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":405,"orderId":998,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":406,"orderId":1000,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":407,"orderId":1008,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":408,"orderId":1001,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":409,"orderId":1010,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":410,"orderId":1012,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":411,"orderId":1020,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":412,"orderId":1013,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":413,"orderId":1022,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":414,"orderId":1024,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":415,"orderId":1032,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":416,"orderId":1025,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":417,"orderId":1034,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":418,"orderId":1036,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":419,"orderId":1044,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":420,"orderId":1037,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":421,"orderId":1046,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":422,"orderId":1048,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":423,"orderId":1056,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":424,"orderId":1049,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":425,"orderId":1058,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":426,"orderId":1060,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":427,"orderId":1068,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":428,"orderId":1061,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":429,"orderId":1070,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":430,"orderId":1072,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":431,"orderId":1080,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":432,"orderId":1073,"payMethod":0,"buyerPaidClaimAt":null}
+   {"taskId":433,"orderId":1082,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":434,"orderId":1084,"payMethod":1,"buyerPaidClaimAt":null}
+   {"taskId":435,"orderId":1085,"payMethod":2,"buyerPaidClaimAt":null}
+   {"taskId":436,"orderId":1086,"payMethod":2,"buyerPaidClaimAt":"2026-09-19T10:11:55.326Z"}
+   {"taskId":437,"orderId":1087,"payMethod":2,"buyerPaidClaimAt":"2026-09-19T10:12:24.155Z"}

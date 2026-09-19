@@ -1,5 +1,9 @@
 <template>
   <view class="page">
+    <!-- 「客户称已付」标记（2026-09-19 卡L）：采购方在订单详情点了「我已付款」。
+         ⚠️ 这只是客户声明，**不是核销** —— 是否真到账仍以本页拍照留证的凭证为准。 -->
+    <view v-if="clientClaimed" class="claim-banner">🔔 客户称已付款，请核对是否到账，确认后拍照留证</view>
+
     <view class="notice">💰 货到付款：请客户扫下方收款码付款，付款成功后拍照留证</view>
 
     <!-- 订单信息 -->
@@ -52,6 +56,8 @@ const submitting = ref(false)
 // 从任务列表手动进入时无此标记，保持原有 navigateBack 行为
 const codFlow = ref(false)
 const remaining = ref(0)
+// 「客户称已付」标记（2026-09-19 卡L）：仅提示，不参与核销
+const clientClaimed = ref(false)
 
 /** 收完或跳过当前单后的流转：还有下一单 → redirectTo 接力；收完/跳完 → 回首页提示；任务列表入口 → 原样返回 */
 const advance = (submitted) => {
@@ -116,6 +122,8 @@ const submitProof = async () => {
 onLoad(async (opts) => {
   orderId.value = opts.orderId || ''
   shopName.value = opts.shopName ? decodeURIComponent(opts.shopName) : ''
+  // 任务列表跳进来时会带上标记，先即时显示
+  clientClaimed.value = opts.clientClaimed === '1'
   const queue = uni.getStorageSync('codQueue')
   codFlow.value = Array.isArray(queue) // deliver.vue 交付流程写入（空数组也是标记）
   remaining.value = codFlow.value ? queue.length : 0
@@ -123,12 +131,21 @@ onLoad(async (opts) => {
     const res = await courierApi.getPayQr()
     payQr.value = res.url || ''
   } catch (e) { /* 忽略 */ }
+  // 再以任务列表为准核一次（URL 参数只负责首屏即时显示；深链进来时也能拿到）
+  // 拉不到就算了 —— 标记只是提示，绝不能影响既有收款流程
+  try {
+    const ts = await courierApi.getTodayTasks()
+    const hit = ts.flatMap((t) => t.stationList || []).find((s) => String(s.orderId) === String(orderId.value))
+    if (hit) clientClaimed.value = !!hit.buyerPaidClaimAt
+  } catch (e) { /* 忽略 */ }
 })
 </script>
 
 <style lang="scss" scoped>
 .page { padding-bottom: 30px; }
 .notice { background: $warn-soft; color: $warn; font-size: 12px; padding: 10px 12px; border-radius: 8px; margin: 10px 12px; }
+/* 「客户称已付」标记（2026-09-19 卡L）：橙色 = 仅客户声明，绿色留给「已收款留证」 */
+.claim-banner { background: #fff3e6; color: #ff6b00; font-size: 12px; padding: 10px 12px; border-radius: 8px; margin: 10px 12px -4px; font-weight: 600; }
 .card { background: #fff; border-radius: 12px; margin: 6px 12px; padding: 4px 12px; }
 .form-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; font-size: 14px; }
 .fr-l { color: $text-second; }

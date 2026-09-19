@@ -254,6 +254,12 @@ export class OrderService {
       urgentFreeThreshold,
       urgent: order.urgent,
       payMethod: order.payMethod,
+      // 货到付款「送达后付款闭环」（2026-09-19 卡L）：两个状态**分开**返回，前端也会分开显示：
+      //   buyerPaidClaimAt = 采购方点「我已付款」的时间 → 「客户称已付」，**不是核销**
+      //   paidProofAt      = 配送员上传收款凭证的时间 → 「已核销」，取自既有 payProof.paidAt
+      // ⚠️ 只读透出，不改变 payProof 的既有语义（它仍是 COD 唯一的核销依据）
+      buyerPaidClaimAt: order.buyerPaidClaimAt ? order.buyerPaidClaimAt.toISOString() : null,
+      paidProofAt: (order.payProof as any)?.paidAt ?? null,
     }
   }
 

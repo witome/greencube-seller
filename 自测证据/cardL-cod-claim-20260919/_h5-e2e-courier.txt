@@ -1,0 +1,32 @@
+
+== 1. open browser ==
+### Events
+- New console entries: .playwright-cli\console-2026-09-19T10-15-49-807Z.log#L1-L2
+
+== 2. identity = courier via uni storage + clear stale token ==
+### Result
+"{\"devRole\":\"courier\",\"token\":false}"
+### Ran Playwright code
+
+== 3. login (WeChat one-tap, mock courier) ==
+
+== 4. open courier home (task list) via hash ==
+### Result
+"{\"url\":\"http://localhost:5199/#/subpkg-courier/pages/home\",\"currentRole\":\"courier\",\"taskCards\":205}"
+### Ran Playwright code
+
+== 5. 「客户称已付」标记是否渲染出来 ==
+### Result
+"{\"tagCount\":3,\"tagTexts\":[\"客户称已付\",\"客户称已付\",\"客户称已付\"],\"containers\":[{\"cargoItem\":\"老张水产客户称已付\",\"task\":\"R20260926-1\",\"section\":\"done\"},{\"cargoItem\":\"老张水产客户称已付\",\"task\":\"R20260926-1\",\"section\":\"done\"},{\"cargoItem\":\"老张水产客户称已付\",\"task\":\"R20260926-1\",\"section\":\"done\"}],\"claimedButNoTag\":202}"
+### Ran Playwright code
+
+== 6. screenshot (viewport, 标记所在处) ==
+await (async page => { await page.screenshot({path:'C:/Users/Administrator/Documents/绿立方开发/自测证据/cardL-cod-claim-20260919/shots/41-courier-claim-tag.png'}); return 'shot' })(page);
+```
+
+== 7. close browser ==
+Browser 'default' closed
+
+
+=== screenshots ===
+-rw-r--r-- 1 Administrator 197121 48168 Sep 19 18:16 41-courier-claim-tag.png
