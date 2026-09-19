@@ -146,6 +146,7 @@ async function main() {
   const goods = await call('GET', '/product/list?pageSize=5', null, bt2)
   check('浏览商品(仅销售价)', goods.code === 0 && goods.data.list.length > 0 && goods.data.list[0].salePrice > 0 && !('supplyPrice' in goods.data.list[0]))
   const pid = goods.data.list[0].id
+  const pidPrice = Number(goods.data.list[0].salePrice)
   const addCart = await call('POST', '/cart', { productId: pid, qty: 10 }, bt2)
   check('加购成功', addCart.code === 0)
   const order = await call('POST', '/order', { deliveryDate: '2026-09-20', timeWindow: 1, items: [{ productId: pid, qty: 10 }] }, bt2)
@@ -574,8 +575,10 @@ async function main() {
   const handover = await call('POST', '/supplier-fulfill/handover', { orderId }, st)
   check('确认备货完成→40 待配送', handover.code === 0 && handover.data?.status === 40)
   const od6 = await call('GET', `/order/${orderId}`, null, bt2)
-  // 交付金额 = 验收量×销售价 + 运费；无独立称重，qtyAccepted = qtyDeclared
-  check('最终金额重算(含运费)', od6.data?.amountFinal > 0 && od6.data.amountFinal > od6.data.amountOrdered)
+  // 交付金额 = 验收量×销售价 + 运费（异常申报少交 1 件：qtyAccepted = qtyDeclared = qtyOrdered-1）。
+  // ⚠️ 不用 amountFinal > amountOrdered：运费受免邮配置影响且少交 1 件，原式只在「运费>单价」时碰巧成立
+  const expectFinal = shortQty * pidPrice + Number(od6.data?.deliveryFee || 0)
+  check('最终金额重算(含运费)', od6.data?.amountFinal > 0 && Math.abs(od6.data.amountFinal - expectFinal) < 0.01, { actual: od6.data?.amountFinal, expectFinal })
 
   // ── 7. 派送调度 + 配送交付 ──
   console.log('\n【7. 派送调度 + 配送交付】')
@@ -641,20 +644,22 @@ async function main() {
   await call('POST', '/supplier-fulfill/handover', { orderId: oF.data.orderId }, st)
   check('重试用例下单→40 待配送', (await call('GET', `/order/${oF.data.orderId}`, null, bt2)).data.status === 40)
   const auditF0 = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
-  const cnt0 = (auditF0.data?.list || []).filter(l => l.action === 'AUTO_ASSIGN_DISPATCH').length
+  // ⚠️ 不比窗口内计数：数据累积后 pageSize=100 窗口饱和，新插入行会顶掉边界旧行导致计数失真。改按 id 增量
+  const maxId0 = Math.max(...(auditF0.data?.list || []).map(l => Number(l.id)), 0)
   await call('POST', '/courier/online', { online: 1 }, ct)
   const retry1 = await call('POST', '/admin/dispatch/auto-assign', null, at)
   check('第一次自动派单派出(assigned≥1)', retry1.code === 0 && retry1.data.assigned >= 1, retry1)
   check('重试后订单→45 已派单', (await call('GET', `/order/${oF.data.orderId}`, null, bt2)).data.status === 45)
   const auditF1 = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
-  const cnt1 = (auditF1.data?.list || []).filter(l => l.action === 'AUTO_ASSIGN_DISPATCH').length
-  check('派出时写审计 AUTO_ASSIGN_DISPATCH(assigned>0 才写)', cnt1 >= cnt0 + 1, { cnt0, cnt1 })
+  const newAuto = (auditF1.data?.list || []).some(l => l.action === 'AUTO_ASSIGN_DISPATCH' && Number(l.id) > maxId0)
+  const maxId1 = Math.max(...(auditF1.data?.list || []).map(l => Number(l.id)), 0)
+  check('派出时写审计 AUTO_ASSIGN_DISPATCH(assigned>0 才写)', newAuto, { maxId0, maxId1 })
   const retry2 = await call('POST', '/admin/dispatch/auto-assign', null, at)
   check('第二次跑 assigned=0(待配送队列已空,第二次不产生新任务)', retry2.code === 0 && retry2.data.assigned === 0, retry2)
   check('双跑后订单仍45(未被重复派单)', (await call('GET', `/order/${oF.data.orderId}`, null, bt2)).data.status === 45)
   const auditF2 = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
-  const cnt2 = (auditF2.data?.list || []).filter(l => l.action === 'AUTO_ASSIGN_DISPATCH').length
-  check('第二次跑不写审计(不刷噪音)', cnt2 === cnt1)
+  const noNewAuto = !(auditF2.data?.list || []).some(l => l.action === 'AUTO_ASSIGN_DISPATCH' && Number(l.id) > maxId1)
+  check('第二次跑不写审计(不刷噪音)', noNewAuto)
   check('oF 仅存在一个派送任务(绝不重复建任务)',
     ((await call('GET', '/courier/today-tasks', null, ct)).data || [])
       .filter(t => (t.stationList || []).some(s => s.orderId === oF.data.orderId)).length === 1)
@@ -711,6 +716,85 @@ async function main() {
   // 清理：全量清欠后断言无活动任务（不卡下次回归）
   const drained2 = await drainCourier()
   check('无遗留活动任务(不卡下次回归)', drained2 === 0)
+
+  // ── 3.15 后台「账号+密码」登录（2026-09-19 拍板 1A）──
+  // 直连 DB 仅用于：造测试账号 + SQL 取证（scrypt 哈希 / 审计无明文）；业务断言全走 HTTP
+  console.log('\n【3.15 后台账号+密码登录】')
+  {
+    const fs = require('fs')
+    const crypto = require('crypto')
+    const { promisify } = require('util')
+    const dbUrl = (fs.readFileSync('.env', 'utf8').match(/DATABASE_URL="([^"]+)"/) || [])[1]
+    if (!dbUrl) abort('3.15 前置失败：.env 无 DATABASE_URL')
+    const { PrismaClient } = require('@prisma/client')
+    const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } })
+    const scryptP = promisify(crypto.scrypt)
+
+    // 测试本地独立实现同款 scrypt（与服务端 password.util 相互印证）
+    async function hashOf(pw) {
+      const salt = crypto.randomBytes(16)
+      const h = await scryptP(pw, salt, 64)
+      return `scrypt$${salt.toString('hex')}$${h.toString('hex')}`
+    }
+
+    const PW_A = 'Right_' + ts + '_a'
+    const PW_B = 'NoRole_' + ts
+    const PW_C = 'Dis_' + ts
+    const uA = { wxOpenid: 'dev_admt_' + ts, name: 'adm_' + ts, roles: ['admin'], status: 1, passwordHash: await hashOf(PW_A) }
+    const uB = { wxOpenid: 'dev_admnr_' + ts, name: 'admnr_' + ts, roles: ['purchaser'], status: 1, passwordHash: await hashOf(PW_B) }
+    const uC = { wxOpenid: 'dev_admdis_' + ts, name: 'admdis_' + ts, roles: ['admin'], status: 0, passwordHash: await hashOf(PW_C) }
+    try {
+      await prisma.user.createMany({ data: [uA, uB, uC] })
+
+      const UNIFIED = '账号或密码错误'
+      // 1) 密码错 → 统一文案
+      const wrongPw = await call('POST', '/auth/admin-login', { username: uA.name, password: 'Wrong_' + ts })
+      check('3.15 密码错→统一文案(不出现"账号不存在")', wrongPw.code !== 0 && wrongPw.msg === UNIFIED && !String(wrongPw.msg).includes('账号不存在'))
+      // 2) 账号不存在 → 与密码错逐字一致
+      const noUser = await call('POST', '/auth/admin-login', { username: 'nosuch_' + ts, password: 'x_' + ts })
+      check('3.15 账号不存在→与密码错返回逐字一致', JSON.stringify(noUser) === JSON.stringify(wrongPw))
+      // 3) 无 admin 角色（密码正确）→ 拒绝
+      const noRole = await call('POST', '/auth/admin-login', { username: uB.name, password: PW_B })
+      check('3.15 无admin角色→拒绝且统一文案', noRole.code !== 0 && noRole.msg === UNIFIED)
+      // 4) status=0 禁用（密码正确）→ 拒绝
+      const disabled = await call('POST', '/auth/admin-login', { username: uC.name, password: PW_C })
+      check('3.15 禁用账号→拒绝且统一文案', disabled.code !== 0 && disabled.msg === UNIFIED)
+      // 5) 连续失败 5 次 → 第 6 次锁定（独立用户名，不污染后续用例）
+      const lockName = 'admlock_' + ts
+      let lockMsg = ''
+      for (let i = 0; i < 6; i++) {
+        const r = await call('POST', '/auth/admin-login', { username: lockName, password: 'try_' + i })
+        lockMsg = r.msg || ''
+      }
+      check('3.15 连续失败5次→第6次被锁定', lockMsg.includes('锁定'))
+      // 6) 正确账号密码 → 200 + token
+      const okLogin = await call('POST', '/auth/admin-login', { username: uA.name, password: PW_A })
+      check('3.15 正确账密→登录成功拿token', okLogin.code === 0 && !!okLogin.data?.token && okLogin.data?.currentRole === 'admin')
+      // 7) token 能调通 admin 接口（RolesGuard 零改动）
+      const adminApi = await call('GET', '/admin/buyers/pending?pageSize=1', null, okLogin.data.token)
+      check('3.15 token可调通admin接口', adminApi.code === 0 && Array.isArray(adminApi.data?.list))
+      // 8) 审计：成功/失败各落一条（经 HTTP 审计查询接口）
+      const auditList = await call('GET', '/audit?entity=user&pageSize=100', null, at)
+      const loginRows = (auditList.data?.list || []).filter((l) => String(l.action).startsWith('ADMIN_LOGIN'))
+      const succ = loginRows.find((l) => l.action === 'ADMIN_LOGIN_SUCCESS' && l.after?.username === uA.name)
+      const locked = loginRows.find((l) => l.action === 'ADMIN_LOGIN_FAILED' && l.after?.username === lockName && l.after?.reason === 'locked')
+      check('3.15 审计落 ADMIN_LOGIN_SUCCESS/FAILED(含locked)', !!succ && !!locked && loginRows.length >= 8)
+      // 9) 审计表搜不到明文密码（SQL 直查）
+      const auditRows = await prisma.$queryRawUnsafe(
+        "SELECT action, `before`, `after` FROM audit_log WHERE action LIKE 'ADMIN_LOGIN%'",
+      )
+      const auditText = JSON.stringify(auditRows)
+      check('3.15 SQL搜审计表无明文密码', auditRows.length > 0 && !auditText.includes(PW_A) && !auditText.includes(PW_B) && !auditText.includes(PW_C))
+      // 10) SQL 证明密码存储为 scrypt 哈希（非明文/不可逆单列）
+      const hashRows = await prisma.$queryRawUnsafe('SELECT name, password_hash FROM `user` WHERE name = ?', uA.name)
+      const stored = hashRows[0]?.password_hash || ''
+      check('3.15 SQL证密码=scrypt$salt$hash(非明文)', /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}$/.test(stored) && !stored.includes(PW_A))
+    } finally {
+      // 清理测试账号（audit_log 无外键，审计行按设计保留作证据）
+      await prisma.user.deleteMany({ where: { name: { in: [uA.name, uB.name, uC.name] } } })
+      await prisma.$disconnect()
+    }
+  }
 
   console.log('\n' + '='.repeat(50))
   console.log(`验收结果：✅ 通过 ${passed} 项 / ❌ 失败 ${failed} 项`)

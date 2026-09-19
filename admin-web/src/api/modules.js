@@ -3,6 +3,8 @@ import request from './request'
 /* ── 登录 ── */
 export const authApi = {
   login: (code) => request.post('/auth/wx-login', { code }),
+  // 后台「账号+密码」登录（拍板 1A）
+  adminLogin: (data) => request.post('/auth/admin-login', data),
 }
 
 /* ── 采购方审核 ── */

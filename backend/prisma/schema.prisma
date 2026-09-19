@@ -26,6 +26,9 @@ model User {
   roles     Json
   /// 0 禁用 / 1 正常
   status    Int      @default(1) @db.TinyInt
+  /// 后台「账号+密码」登录（2026-09-19 拍板 1A）：
+  /// scrypt 哈希，格式 scrypt$<salt-hex>$<hash-hex>；NULL = 未设置密码（不可后台密码登录）
+  passwordHash String? @map("password_hash") @db.VarChar(255)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

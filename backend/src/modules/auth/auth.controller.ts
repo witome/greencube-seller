@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body } from '@nestjs/common'
+import { Controller, Get, Post, Body, Req } from '@nestjs/common'
 import { AuthService } from './auth.service'
 import { WxLoginDto } from './dto/wx-login.dto'
 import { SwitchRoleDto } from './dto/switch-role.dto'
+import { AdminLoginDto } from './dto/admin-login.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -17,6 +18,12 @@ export class AuthController {
   @Post('wx-login')
   async wxLogin(@Body() dto: WxLoginDto) {
     return this.service.wxLogin(dto)
+  }
+
+  /// 后台「账号+密码」登录（拍板 1A）：账号=user.name，失败统一文案防枚举，5 次失败锁 15 分钟
+  @Post('admin-login')
+  async adminLogin(@Body() dto: AdminLoginDto, @Req() req: any) {
+    return this.service.adminLogin(dto, req.ip)
   }
 
   /// 决策4：切换身份重签 token，旧 token 失效

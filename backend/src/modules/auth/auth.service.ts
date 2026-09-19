@@ -2,8 +2,11 @@ import { Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, Role } from '../../common/constants/error-codes'
+import { AuditService } from '../audit/audit.service'
+import { verifyPassword } from '../../common/utils/password.util'
 import { WxLoginDto } from './dto/wx-login.dto'
 import { SwitchRoleDto } from './dto/switch-role.dto'
+import { AdminLoginDto } from './dto/admin-login.dto'
 
 /// 微信 code2session 返回结构
 interface WxSession {
@@ -17,6 +20,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
+    private audit: AuditService,
   ) {}
 
   // ────────────────────────────────────────
@@ -58,6 +62,95 @@ export class AuthService {
       currentRole,
       accountStatus: user.purchaser ? user.purchaser.accountStatus : null,
       needRegister: isNew || roles.length === 0,
+    }
+  }
+
+  // ────────────────────────────────────────
+  // 后台「账号+密码」登录（拍板 1A，2026-09-19）
+  // ────────────────────────────────────────
+  // 限流：同一 账号+IP 连续失败 5 次 → 锁定 15 分钟（内存态，适用于单实例部署）
+  private static readonly LOCK_THRESHOLD = 5
+  private static readonly LOCK_MS = 15 * 60 * 1000
+  /** 统一失败文案：绝不区分「账号不存在」与「密码错误」（防账号枚举） */
+  private static readonly ADMIN_LOGIN_UNIFIED_MSG = '账号或密码错误'
+  private loginFails = new Map<string, { count: number; lockedUntil: number }>()
+
+  async adminLogin(dto: AdminLoginDto, ip: string) {
+    const username = String(dto.username || '').trim()
+    const key = `${username}|${ip || 'unknown'}`
+    const now = Date.now()
+
+    // 内存超限则清理已过锁期的记录（防长期运行膨胀；锁已过期，下次尝试重新计数）
+    if (this.loginFails.size > 1000) {
+      for (const [k, v] of this.loginFails) {
+        if (v.lockedUntil && v.lockedUntil <= now) this.loginFails.delete(k)
+      }
+    }
+
+    // 失败统一出口：统一文案 + 审计（记录 username + 失败类别 + ip；绝不记录密码）
+    const fail = async (reason: string) => {
+      const prev = this.loginFails.get(key)
+      const count = (prev?.count || 0) + 1
+      const lockedUntil = count >= AuthService.LOCK_THRESHOLD ? now + AuthService.LOCK_MS : 0
+      this.loginFails.set(key, { count, lockedUntil })
+      await this.audit.log({
+        operatorId: 0n,
+        action: 'ADMIN_LOGIN_FAILED',
+        entity: 'user',
+        entityId: 0,
+        after: { username, reason, ip: ip || 'unknown' },
+      })
+      throw new BizException(ErrorCode.FORBIDDEN, AuthService.ADMIN_LOGIN_UNIFIED_MSG)
+    }
+
+    // 锁定期直接拒绝（文案不含账号有效性信息，锁的是「尝试的账号+IP」组合）
+    const rec = this.loginFails.get(key)
+    if (rec && rec.lockedUntil > now) {
+      await this.audit.log({
+        operatorId: 0n,
+        action: 'ADMIN_LOGIN_FAILED',
+        entity: 'user',
+        entityId: 0,
+        after: { username, reason: 'locked', ip: ip || 'unknown' },
+      })
+      throw new BizException(ErrorCode.FORBIDDEN, '失败次数过多，已临时锁定，请15分钟后再试')
+    }
+
+    // 用户存在 + passwordHash 非空（name 非唯一约束，可能多条，逐一恒定时间比对，任一通过即可）
+    const candidates = await this.prisma.user.findMany({
+      where: { name: username, passwordHash: { not: null } },
+      select: { id: true, passwordHash: true, roles: true, status: true },
+    })
+    if (candidates.length === 0) await fail('bad_credentials')
+
+    let matched: { id: bigint; passwordHash: string; roles: any; status: number } | null = null
+    for (const c of candidates) {
+      if (await verifyPassword(dto.password, c.passwordHash!)) {
+        matched = c as any
+        break
+      }
+    }
+    if (!matched) await fail('bad_credentials')
+    if (matched.status !== 1) await fail('account_disabled')
+    const roles: string[] = Array.isArray(matched.roles) ? matched.roles : []
+    if (!roles.includes(Role.ADMIN)) await fail('not_admin')
+
+    // 成功：清失败计数 + 审计
+    this.loginFails.delete(key)
+    await this.audit.log({
+      operatorId: matched.id,
+      action: 'ADMIN_LOGIN_SUCCESS',
+      entity: 'user',
+      entityId: matched.id,
+      after: { username, ip: ip || 'unknown' },
+    })
+
+    // 与 /auth/wx-login 同款 JWT：现有路由守卫 / RolesGuard 零改动即可工作
+    return {
+      token: this.signToken(matched.id, roles, Role.ADMIN),
+      userId: Number(matched.id),
+      roles,
+      currentRole: Role.ADMIN,
     }
   }
 

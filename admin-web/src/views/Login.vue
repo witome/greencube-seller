@@ -2,10 +2,20 @@
   <div class="login-wrap">
     <el-card class="login-card">
       <div class="logo">🌿 绿立方运营后台</div>
-      <p class="tip">开发环境登录（后端 dev mock）</p>
-      <el-input v-model="code" placeholder="登录标识 code" @keyup.enter="doLogin" />
-      <el-button type="primary" class="btn" :loading="loading" @click="doLogin">登录</el-button>
-      <el-button class="btn" @click="quickAdmin">一键登录运营账号（code=admin）</el-button>
+      <p class="tip">运营管理员登录</p>
+      <el-form @submit.prevent>
+        <el-input v-model="username" placeholder="账号" autocomplete="username" @keyup.enter="doLogin" />
+        <el-input
+          v-model="password"
+          type="password"
+          class="pwd"
+          placeholder="密码"
+          show-password
+          autocomplete="current-password"
+          @keyup.enter="doLogin"
+        />
+        <el-button type="primary" class="btn" :loading="loading" @click="doLogin">登录</el-button>
+      </el-form>
     </el-card>
   </div>
 </template>
@@ -17,31 +27,32 @@ import { ElMessage } from 'element-plus'
 import { authApi } from '../api/modules'
 
 const router = useRouter()
-const code = ref('')
+const username = ref('')
+const password = ref('')
 const loading = ref(false)
 
-async function doLogin(c = null) {
-  const loginCode = c ?? code.value
-  if (!loginCode) {
-    ElMessage.warning('请输入登录标识 code')
+async function doLogin() {
+  // 非空校验
+  if (!username.value.trim()) {
+    ElMessage.warning('请输入账号')
+    return
+  }
+  if (!password.value) {
+    ElMessage.warning('请输入密码')
     return
   }
   loading.value = true
   try {
-    const data = await authApi.login(loginCode)
+    const data = await authApi.adminLogin({ username: username.value.trim(), password: password.value })
     localStorage.setItem('admin_token', data.token)
     localStorage.setItem('admin_name', '运营管理员')
     ElMessage.success('登录成功')
     router.push('/dashboard')
   } catch (e) {
-    // 错误已由拦截器提示
+    // 错误提示已由拦截器统一弹出（后端返回的 message）
   } finally {
     loading.value = false
   }
-}
-
-function quickAdmin() {
-  doLogin('admin')
 }
 </script>
 
@@ -70,9 +81,12 @@ function quickAdmin() {
   font-size: 13px;
   margin-bottom: 20px;
 }
+.pwd {
+  margin-top: 12px;
+}
 .btn {
   width: 100%;
-  margin-top: 16px;
+  margin-top: 20px;
   margin-left: 0;
 }
 </style>

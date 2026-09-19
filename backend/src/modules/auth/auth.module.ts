@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { JwtModule } from '@nestjs/jwt'
 import { AuthController } from './auth.controller'
 import { AuthService } from './auth.service'
+import { AuditModule } from '../audit/audit.module'
 
 @Module({
   imports: [
@@ -9,6 +10,7 @@ import { AuthService } from './auth.service'
       secret: process.env.JWT_SECRET!,
       signOptions: { expiresIn: process.env.JWT_EXPIRES || '7d' },
     }),
+    AuditModule,
   ],
   controllers: [AuthController],
   providers: [AuthService],
