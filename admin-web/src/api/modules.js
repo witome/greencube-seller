@@ -76,6 +76,8 @@ export const financeAdminApi = {
   // 首页内容（横幅/公告/今日推荐位，platform_config KV）
   getHomeContent: () => request.get('/admin/finance/home-content'),
   updateHomeContent: (data) => request.put('/admin/finance/home-content', data),
+  // 每日对账（只读，按送达日）
+  getDailyReconciliation: (params) => request.get('/admin/finance/daily-reconciliation', { params }),
   uploadImage: (base64) => request.post('/upload/image', { base64 }),
 }
 

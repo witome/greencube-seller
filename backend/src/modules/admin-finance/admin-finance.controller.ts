@@ -87,4 +87,11 @@ export class AdminFinanceController {
   async updateHomeContent(@CurrentUser('userId') userId: bigint, @Body() dto: HomeContentDto) {
     return this.service.updateHomeContent(userId, dto)
   }
+
+  /// 每日对账（只读：按送达日汇总应收/实收/未收/应付供应商参考值/毛利粗算）
+  @Get('daily-reconciliation')
+  @Roles(Role.ADMIN)
+  async dailyReconciliation(@Query() query: any) {
+    return this.service.dailyReconciliation(query)
+  }
 }

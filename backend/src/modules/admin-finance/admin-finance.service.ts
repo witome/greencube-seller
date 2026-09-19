@@ -333,4 +333,172 @@ export class AdminFinanceService {
     })
     return this.getHomeContent()
   }
+
+  /// ─── 每日对账（只读，绝不写入）────────────────────────────────
+  /// 口径（与拍板一致）：
+  /// 1.「一天」按送达日 order.deliveryDate；只统计已送达(60)/已完成(70)
+  /// 2. 线上支付实收 = payment_record 中 status=1（已支付）流水金额合计
+  /// 3. 货到付款实收 = order.payProof 存在（photos 为空视为无凭证，与核销口径一致）
+  /// 4. 应收单笔金额 = amountFinal ?? (amountOrdered + deliveryFee)
+  ///    —— 与 courier.service.ts COD 金额口径一致（amountFinal 已含运费，
+  ///       未核单称重的兜底 = amountOrdered + deliveryFee）
+  /// 5. 应付供应商（参考值）= Σ qtyAccepted × supplyPrice（仅两项均有值的明细；
+  ///    正式结算单仍按月由既有 generate 逻辑生成，此处不参与）
+  /// 6. 毛利粗算 = 实收 − 应付供应商参考值（含运费收入，未扣配送成本/平台服务费/退款）
+  async dailyReconciliation(query: { date?: string }) {
+    const dateStr =
+      query.date && /^\d{4}-\d{2}-\d{2}$/.test(query.date)
+        ? query.date
+        : new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10) // 默认今天（东八区）
+    const day = new Date(`${dateStr}T00:00:00.000Z`)
+
+    const orders = await this.prisma.order.findMany({
+      where: { deliveryDate: day, status: { in: [60, 70] } },
+      include: {
+        purchaser: { select: { shopName: true } },
+        items: { select: { qtyAccepted: true, supplyPrice: true } },
+        payments: { select: { amount: true, status: true } },
+      },
+      orderBy: { id: 'asc' },
+    })
+
+    // 订单 → 配送员映射（delivery_task.stationList 中 type==='deliver' 的站点）
+    // DeliveryTask 无 courier 关系字段，批量查配送员姓名（复用 recentTasks 的 user.phone 口径）
+    const tasks = await this.prisma.deliveryTask.findMany({ orderBy: { id: 'desc' }, take: 500 })
+    const courierIds = [...new Set(tasks.map((t) => Number(t.courierId)))]
+    const couriers = await this.prisma.courier.findMany({
+      where: { id: { in: courierIds.map((id) => BigInt(id)) } },
+      include: { user: true },
+    })
+    const nameMap = new Map(couriers.map((c) => [Number(c.id), c.user?.phone || `配送员#${c.id}`]))
+    const courierOfOrder = new Map<number, { courierId: number; courierName: string }>()
+    for (const t of tasks) {
+      const stations = Array.isArray(t.stationList) ? (t.stationList as any[]) : []
+      for (const s of stations) {
+        if (s && s.type === 'deliver' && s.orderId !== undefined && !courierOfOrder.has(Number(s.orderId))) {
+          courierOfOrder.set(Number(s.orderId), {
+            courierId: Number(t.courierId),
+            courierName: nameMap.get(Number(t.courierId)) || `配送员#${t.courierId}`,
+          })
+        }
+      }
+    }
+
+    const r2 = (n: number) => Math.round(n * 100) / 100
+    const amountOf = (o: any) => (o.amountFinal != null ? Number(o.amountFinal) : Number(o.amountOrdered) + Number(o.deliveryFee))
+    const hasProof = (o: any) => {
+      if (!o.payProof) return false
+      const photos = (o.payProof as any).photos
+      return Array.isArray(photos) ? photos.length > 0 : true
+    }
+    const timeWindowText = (w: number) => ({ 1: '早', 2: '中', 3: '晚' }[w] ?? String(w))
+
+    const summary = { receivable: 0, received: 0, unpaid: 0, supplierPayable: 0, grossProfit: 0 }
+    let codUnpaidCount = 0
+    let wechatPaidCount = 0
+    let codPaidCount = 0
+    let itemsMissingSupplyPrice = 0
+    let itemsMissingQtyAccepted = 0
+    const unpaidList: any[] = []
+    const courierAgg = new Map<string, any>()
+    const shopAgg = new Map<string, any>()
+    const bump = (map: Map<string, any>, key: string, seed: any) => {
+      if (!map.has(key)) map.set(key, { orderCount: 0, receivable: 0, received: 0, unpaid: 0, ...seed })
+      return map.get(key)
+    }
+
+    for (const o of orders) {
+      const receivable = amountOf(o)
+      let received = 0
+      if (o.payMethod === 2) {
+        if (hasProof(o)) {
+          received = receivable
+          codPaidCount++
+        } else {
+          codUnpaidCount++
+        }
+      } else if (o.payMethod === 1) {
+        received = o.payments.filter((p) => p.status === 1).reduce((s, p) => s + Number(p.amount), 0)
+        if (received > 0) wechatPaidCount++
+      }
+      const unpaid = receivable - received
+
+      summary.receivable += receivable
+      summary.received += received
+      summary.unpaid += unpaid
+
+      // 应付供应商参考值
+      for (const it of o.items) {
+        if (it.qtyAccepted == null) {
+          itemsMissingQtyAccepted++
+          continue
+        }
+        if (it.supplyPrice == null) {
+          itemsMissingSupplyPrice++
+          continue
+        }
+        summary.supplierPayable += Number(it.qtyAccepted) * Number(it.supplyPrice)
+      }
+
+      const courier = courierOfOrder.get(Number(o.id))
+      const c = bump(courierAgg, String(courier?.courierId ?? 0), {
+        courierId: courier?.courierId ?? null,
+        courierName: courier?.courierName ?? '未指派',
+      })
+      c.orderCount++
+      c.receivable += receivable
+      c.received += received
+      c.unpaid += unpaid
+
+      const shop = bump(shopAgg, o.purchaser?.shopName ?? '未知餐馆', { shopName: o.purchaser?.shopName ?? '未知餐馆' })
+      shop.orderCount++
+      shop.receivable += receivable
+      shop.received += received
+      shop.unpaid += unpaid
+
+      if (o.payMethod === 2 && !hasProof(o)) {
+        unpaidList.push({
+          orderId: Number(o.id),
+          shopName: o.purchaser?.shopName ?? '未知餐馆',
+          courierName: courier?.courierName ?? '未指派',
+          amount: r2(receivable),
+          deliveryDate: dateStr,
+          timeWindow: timeWindowText(o.timeWindow),
+        })
+      }
+    }
+
+    summary.receivable = r2(summary.receivable)
+    summary.received = r2(summary.received)
+    summary.unpaid = r2(summary.unpaid)
+    summary.supplierPayable = r2(summary.supplierPayable)
+    summary.grossProfit = r2(summary.received - summary.supplierPayable)
+
+    const finishAgg = (m: Map<string, any>) =>
+      [...m.values()].map((x) => ({
+        ...x,
+        receivable: r2(x.receivable),
+        received: r2(x.received),
+        unpaid: r2(x.unpaid),
+      }))
+
+    return {
+      date: dateStr,
+      summary: {
+        ...summary,
+        orderCount: orders.length,
+        codPaidCount,
+        codUnpaidCount,
+        wechatPaidCount,
+      },
+      unpaidList,
+      byCourier: finishAgg(courierAgg).sort((a, b) => b.unpaid - a.unpaid || b.orderCount - a.orderCount),
+      byShop: finishAgg(shopAgg).sort((a, b) => b.receivable - a.receivable),
+      meta: {
+        itemsMissingSupplyPrice,
+        itemsMissingQtyAccepted,
+        tasksScanned: tasks.length,
+      },
+    }
+  }
 }

@@ -20,6 +20,7 @@ const routes = [
       { path: 'dispatch', name: 'dispatch', component: () => import('../views/dispatch/Dispatch.vue'), meta: { title: '派送调度' } },
       { path: 'finance', name: 'finance', component: () => import('../views/finance/Finance.vue'), meta: { title: '资金结算' } },
       { path: 'payments', name: 'payments', component: () => import('../views/finance/Payments.vue'), meta: { title: '支付流水' } },
+      { path: 'daily-reconciliation', name: 'daily-reconciliation', component: () => import('../views/finance/DailyReconciliation.vue'), meta: { title: '每日对账' } },
       { path: 'audit', name: 'audit', component: () => import('../views/audit/AuditLog.vue'), meta: { title: '审计日志' } },
       { path: 'pricing', name: 'pricing', component: () => import('../views/pricing/Pricing.vue'), meta: { title: '价格与加价' } },
       { path: 'reports', name: 'reports', component: () => import('../views/reports/Reports.vue'), meta: { title: '报表' } },

@@ -48,6 +48,9 @@
         <el-menu-item index="/payments">
           <el-icon><Money /></el-icon><span>支付流水</span>
         </el-menu-item>
+        <el-menu-item index="/daily-reconciliation">
+          <el-icon><CreditCard /></el-icon><span>每日对账</span>
+        </el-menu-item>
         <el-menu-item index="/audit">
           <el-icon><Document /></el-icon><span>审计日志</span>
         </el-menu-item>
