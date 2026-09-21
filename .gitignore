@@ -14,3 +14,9 @@ tmp/
 
 # vite 构建临时文件
 *.timestamp-*.mjs
+
+# 自测证据（截图/接口转储）不入库，保留在磁盘上
+自测证据/
+.playwright-cli/
+frontend/project.config.json
+frontend/project.private.config.json

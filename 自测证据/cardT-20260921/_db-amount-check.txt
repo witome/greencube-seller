@@ -1,7 +1,0 @@
-orderId	status	amount_ordered	delivery_fee	amount_final	should_show
-61	10	192.50	10.00	NULL	202.50
-87	10	19.25	5.00	NULL	24.25
-1290	60	30.42	5.00	35.42	35.42
-1291	60	52.86	5.00	57.86	57.86
-1292	60	16.87	5.00	21.87	21.87
-1293	60	41.60	5.00	NULL	46.60
