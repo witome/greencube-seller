@@ -6,6 +6,7 @@ import { AuditService } from '../audit/audit.service'
 import { ServiceFeeConfigDto, GenerateSettlementDto } from './dto/finance.dto'
 import { DeliveryFeeConfigDto, PayQrDto } from './dto/delivery-fee.dto'
 import { HomeContentDto } from './dto/home-content.dto'
+import { receivableAmount, round2 } from '../../common/utils/amount.util'
 
 /**
  * 服务费配置写入失败 → 友好业务错误（2026-09-19 卡J）
@@ -437,8 +438,10 @@ export class AdminFinanceService {
       }
     }
 
-    const r2 = (n: number) => Math.round(n * 100) / 100
-    const amountOf = (o: any) => (o.amountFinal != null ? Number(o.amountFinal) : Number(o.amountOrdered) + Number(o.deliveryFee))
+    // 口径唯一实现（卡T 2026-09-21 抽出）：见 common/utils/amount.util.ts
+    // —— 履约页「金额」列与本页「应收」共用同一函数，杜绝两页两个数
+    const r2 = round2
+    const amountOf = receivableAmount
     const hasProof = (o: any) => {
       if (!o.payProof) return false
       const photos = (o.payProof as any).photos
@@ -453,6 +456,8 @@ export class AdminFinanceService {
     let itemsMissingSupplyPrice = 0
     let itemsMissingQtyAccepted = 0
     const unpaidList: any[] = []
+    // 卡T（2026-09-21）：当天订单清单（默认全量），供对账页就地看每单收款状态与凭证
+    const orderList: any[] = []
     const courierAgg = new Map<string, any>()
     const shopAgg = new Map<string, any>()
     const bump = (map: Map<string, any>, key: string, seed: any) => {
@@ -519,6 +524,49 @@ export class AdminFinanceService {
           timeWindow: timeWindowText(o.timeWindow),
         })
       }
+
+      // ── 卡T（2026-09-21）：当天订单清单（每单收款状态 + 凭证），判定口径与上方 summary 完全同源 ──
+      const wechatPaidAmount = r2(
+        o.payments.filter((p) => p.status === 1).reduce((s, p) => s + Number(p.amount), 0),
+      )
+      const proof = hasProof(o)
+      let payStatus: string
+      let payStatusText: string
+      if (o.payMethod === 1 && wechatPaidAmount > 0) {
+        payStatus = 'wechat_paid'
+        payStatusText = '微信已付'
+      } else if (proof) {
+        payStatus = 'cod_cleared'
+        payStatusText = '货到付款已核销'
+      } else if (o.buyerPaidClaimAt) {
+        payStatus = 'buyer_claimed'
+        payStatusText = '客户称已付（未核销）'
+      } else {
+        payStatus = 'unpaid'
+        payStatusText = '未收'
+      }
+      orderList.push({
+        orderId: Number(o.id),
+        shopName: o.purchaser?.shopName ?? '未知餐馆',
+        courierName: courier?.courierName ?? '未指派',
+        deliveryDate: dateStr,
+        timeWindow: timeWindowText(o.timeWindow),
+        orderStatus: o.status,
+        orderStatusText: o.status === 70 ? '已完成' : '已送达',
+        amountOrdered: r2(Number(o.amountOrdered)),
+        deliveryFee: r2(Number(o.deliveryFee)),
+        amountFinal: o.amountFinal != null ? r2(Number(o.amountFinal)) : null,
+        amount: r2(receivable),
+        received: r2(received),
+        unpaid: r2(unpaid),
+        payMethod: o.payMethod,
+        payStatus,
+        payStatusText,
+        hasProof: proof,
+        payProof: o.payProof ?? null,
+        buyerPaidClaimAt: o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null,
+        wechatPaidAmount,
+      })
     }
 
     summary.receivable = r2(summary.receivable)
@@ -548,6 +596,8 @@ export class AdminFinanceService {
         wechatPaidCount,
       },
       unpaidList,
+      // 卡T（2026-09-21 新增）：当天订单清单（默认全量；前端「只看未收款」在本地过滤 unpaid > 0）
+      orderList,
       byCourier: finishAgg(courierAgg).sort((a, b) => b.unpaid - a.unpaid || b.orderCount - a.orderCount),
       byShop: finishAgg(shopAgg).sort((a, b) => b.receivable - a.receivable),
       meta: {

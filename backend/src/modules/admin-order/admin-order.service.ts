@@ -4,6 +4,7 @@ import { BizException, ErrorCode, OrderStatus } from '../../common/constants/err
 import { AuditService } from '../audit/audit.service'
 import { SplitDto } from './dto/split.dto'
 import { allocateByPriority } from '../../common/utils/split.util'
+import { receivableAmount } from '../../common/utils/amount.util'
 
 @Injectable()
 export class AdminOrderService {
@@ -33,6 +34,11 @@ export class AdminOrderService {
       status: o.status,
       statusText: this.statusText(o.status),
       amountOrdered: Number(o.amountOrdered),
+      // 卡T（2026-09-21）：补返回运费与最终金额，供「金额」列显示含运费总金额
+      // 口径唯一实现见 common/utils/amount.util.ts: receivableAmount（与每日对账页同源）
+      deliveryFee: Number(o.deliveryFee),
+      amountFinal: o.amountFinal != null ? Number(o.amountFinal) : null,
+      receivable: receivableAmount(o),
       items: o.items.map((it) => ({
         orderItemId: Number(it.id),
         productName: it.product?.name,
@@ -86,6 +92,10 @@ export class AdminOrderService {
       status: o.status,
       statusText: this.statusText(o.status),
       amountOrdered: Number(o.amountOrdered),
+      // 卡T（2026-09-21）：同上，补运费与最终金额（与每日对账页 receivableAmount 同源）
+      deliveryFee: Number(o.deliveryFee),
+      amountFinal: o.amountFinal != null ? Number(o.amountFinal) : null,
+      receivable: receivableAmount(o),
       payMethod: o.payMethod,
       payProof: o.payProof ?? null,
       // 卡M（2026-09-19 拍板）：采购方在 COD 单送达后点「我已付款」的时间——仅代表客户称已付，不代表钱已核销
@@ -95,6 +105,61 @@ export class AdminOrderService {
           ? courierMap.get(Number((o.payProof as any).courierId)) ?? null
           : null,
     }))
+  }
+
+  // ────────────────────────────────────────
+  // 单订单明细（只读）
+  // 卡T（2026-09-21）：每日对账页「看订单」与履约页已送达行的「明细」共用此接口
+  // （履约页 /admin/order/delivered 只返回金额与凭证，不含 items，明细按需单独拉）
+  // ────────────────────────────────────────
+  async orderDetail(orderId: number) {
+    const o = await this.prisma.order.findUnique({
+      where: { id: BigInt(orderId) },
+      include: { purchaser: true, items: { include: { product: true } } },
+    })
+    if (!o) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+
+    const supplierIds = [
+      ...new Set(o.items.map((it) => it.supplierId).filter((id): id is bigint => id !== null)),
+    ]
+    const suppliers = supplierIds.length
+      ? await this.prisma.supplier.findMany({ where: { id: { in: supplierIds } } })
+      : []
+    const supplierNameMap = new Map(suppliers.map((s) => [Number(s.id), s.stallName]))
+
+    // payProof.courierId → 配送员姓名（口径与 deliveredList 一致）
+    const courierId = (o.payProof as any)?.courierId
+    const courier = courierId != null
+      ? await this.prisma.user.findUnique({ where: { id: BigInt(courierId) }, select: { name: true, phone: true } })
+      : null
+
+    return {
+      orderId: Number(o.id),
+      shopName: o.purchaser.shopName,
+      deliveryDate: o.deliveryDate.toISOString().slice(0, 10),
+      timeWindow: ({ 1: '早', 2: '中', 3: '晚' } as Record<number, string>)[o.timeWindow] ?? String(o.timeWindow),
+      status: o.status,
+      statusText: this.statusText(o.status),
+      amountOrdered: Number(o.amountOrdered),
+      deliveryFee: Number(o.deliveryFee),
+      amountFinal: o.amountFinal != null ? Number(o.amountFinal) : null,
+      receivable: receivableAmount(o),
+      payMethod: o.payMethod,
+      payProof: o.payProof ?? null,
+      buyerPaidClaimAt: o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null,
+      courierName: courier ? courier.name || courier.phone || null : null,
+      items: o.items.map((it) => ({
+        orderItemId: Number(it.id),
+        productName: it.product?.name,
+        unit: it.product?.unit ?? '',
+        supplierName: it.supplierId ? supplierNameMap.get(Number(it.supplierId)) : null,
+        qtyOrdered: Number(it.qtyOrdered),
+        qtyDeclared: it.qtyDeclared ? Number(it.qtyDeclared) : null,
+        qtyAccepted: it.qtyAccepted ? Number(it.qtyAccepted) : null,
+        shortageReason: it.shortageReason,
+        salePrice: Number(it.salePrice),
+      })),
+    }
   }
 
   private statusText(status: number): string {

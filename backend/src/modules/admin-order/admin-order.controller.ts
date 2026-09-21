@@ -23,6 +23,14 @@ export class AdminOrderController {
     return this.service.deliveredList()
   }
 
+  /// 单订单明细（只读）：每日对账页「看订单」与履约页已送达行「明细」共用
+  /// 卡T（2026-09-21）
+  @Get(':id/detail')
+  @Roles(Role.ADMIN)
+  async orderDetail(@Param('id') id: string) {
+    return this.service.orderDetail(Number(id))
+  }
+
   /// 拆单建议：按优先级自动分配
   @Get(':id/split-preview')
   @Roles(Role.ADMIN)

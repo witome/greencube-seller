@@ -40,6 +40,10 @@
         style="width: 150px"
       />
       <el-checkbox v-model="onlyUncleared" style="margin-left: 16px">只看未核销（无配送员凭证）</el-checkbox>
+      <!-- 卡T（2026-09-21）：带上当前送达日跳到每日对账，省得两边各选一次日期 -->
+      <el-button type="primary" plain size="small" style="margin-left: 16px" @click="goReconcile">
+        去对账（{{ claimDate || todayStr() }} 这一天）
+      </el-button>
       <span class="admin-fulfill-toolbar-tip">「客户称已付」仅代表采购方自称已付款，核销以配送员收款凭证为准</span>
     </div>
 
@@ -58,8 +62,19 @@
         <el-table-column label="商品数" width="80">
           <template #default="{ row }">{{ row.items ? row.items.length + ' 项' : '—' }}</template>
         </el-table-column>
-        <el-table-column label="金额" width="100">
-          <template #default="{ row }">¥{{ row.amountOrdered }}</template>
+        <!-- 卡T（2026-09-21）：金额 = 含运费总金额。口径 receivableOf（amountFinal ?? amountOrdered + deliveryFee），
+             与每日对账页「应收」同源（后端 common/utils/amount.util.ts: receivableAmount） -->
+        <el-table-column label="金额" width="110">
+          <template #default="{ row }">
+            <el-tooltip placement="top" effect="dark">
+              <template #content>
+                商品金额 ¥{{ money(row.amountOrdered) }} ＋ 运费 ¥{{ money(row.deliveryFee) }}
+                <span v-if="row.amountFinal != null">（已核单，含运费合计 ¥{{ money(row.amountFinal) }}）</span>
+                <span v-else>（未核单，按商品金额＋运费计）</span>
+              </template>
+              <span class="amount-cell">¥{{ money(receivableOf(row)) }}</span>
+            </el-tooltip>
+          </template>
         </el-table-column>
         <el-table-column label="缺货" min-width="190">
           <template #default="{ row }">
@@ -128,64 +143,67 @@
       </template>
     </el-dialog>
 
-    <!-- 明细弹窗（只读，供应商申报即最终交付量） -->
-    <el-dialog v-model="detailDialog" title="订单明细" width="560px">
-      <el-table :data="currentOrder?.items || []" size="small">
-        <el-table-column prop="productName" label="商品" min-width="110">
-          <template #default="{ row }">
-            {{ row.productName }}
-            <div v-if="row.supplierName" style="font-size:11px;color:#909399;">{{ row.supplierName }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="订购" width="70">
-          <template #default="{ row }">{{ row.qtyOrdered }}</template>
-        </el-table-column>
-        <el-table-column label="实交(申报)" width="150">
-          <template #default="{ row }">
-            <span :style="{ color: isShortage(row) ? '#f56c6c' : '' }">
-              {{ row.qtyDeclared ?? row.qtyOrdered }}
-              <span v-if="isShortage(row)" style="display:block;font-size:11px;color:#f56c6c;">{{ row.shortageReason }}</span>
-            </span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
-    <!-- 收款凭证弹窗（只读：大图查看，支持多张；2026-09-19 拍板卡） -->
-    <el-dialog v-model="proofDialog" :title="`订单 #${proofOrder?.orderId} 收款凭证`" width="520px">
-      <div v-if="proofPhotos.length" class="proof-grid">
-        <el-image
-          v-for="(p, i) in proofPhotos"
-          :key="i"
-          :src="p"
-          :preview-src-list="proofPhotos"
-          :initial-index="i"
-          fit="cover"
-          class="proof-img"
-        />
-      </div>
-      <div v-else style="color:#909399;text-align:center;padding:16px 0;">未留证</div>
-      <div v-if="proofOrder?.payProof?.paidAt" style="margin-top:10px;font-size:12px;color:#909399;">
-        收款时间：{{ fmtTime(proofOrder.payProof.paidAt) }}（配送员确认收款时拍摄）
+    <!-- 明细弹窗（只读，供应商申报即最终交付量）
+         卡T（2026-09-21）：顶部补「商品金额 ＋ 运费 ＝ 应收」拆分，口径与「金额」列一致；
+         已送达/已完成行的数据源不含 items，故按需拉 /admin/order/:id/detail -->
+    <el-dialog v-model="detailDialog" title="订单明细" width="620px">
+      <div v-loading="detailLoading">
+        <div v-if="currentOrder" class="detail-amount">
+          商品金额 ¥{{ money(currentOrder.amountOrdered) }}
+          <span class="detail-amount-op">＋</span>
+          运费 ¥{{ money(currentOrder.deliveryFee) }}
+          <span class="detail-amount-op">＝</span>
+          应收 <b>¥{{ money(receivableOf(currentOrder)) }}</b>
+          <span class="detail-amount-note">
+            {{ currentOrder.amountFinal != null ? '（已核单：取 amountFinal，已含运费）' : '（未核单：回退 商品金额＋运费）' }}
+          </span>
+        </div>
+        <el-table :data="detailItems" size="small" empty-text="暂无明细">
+          <el-table-column prop="productName" label="商品" min-width="110">
+            <template #default="{ row }">
+              {{ row.productName }}
+              <div v-if="row.supplierName" style="font-size:11px;color:#909399;">{{ row.supplierName }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="订购" width="70">
+            <template #default="{ row }">{{ row.qtyOrdered }}</template>
+          </el-table-column>
+          <el-table-column label="实交(申报)" width="150">
+            <template #default="{ row }">
+              <span :style="{ color: isShortage(row) ? '#f56c6c' : '' }">
+                {{ row.qtyDeclared ?? row.qtyOrdered }}
+                <span v-if="isShortage(row)" style="display:block;font-size:11px;color:#f56c6c;">{{ row.shortageReason }}</span>
+              </span>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
     </el-dialog>
+    <!-- 收款凭证弹窗（只读：大图查看，支持多张；2026-09-19 拍板卡；卡T 抽为共享组件） -->
+    <ProofDialog v-model="proofDialog" :order-id="proofOrder?.orderId" :pay-proof="proofOrder?.payProof" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { orderAdminApi } from '../../api/modules'
+import { receivableOf, money } from '../../utils/order-amount'
+// 收款凭证弹窗：从本页抽出为共享组件（卡T 2026-09-21），每日对账页复用同一实现
+import ProofDialog from '../../components/ProofDialog.vue'
+
+const route = useRoute()
+const router = useRouter()
 
 const list = ref([])
 const deliveredList = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 
-// ── 收款凭证（只读查看）──
+// ── 收款凭证（只读查看，弹窗实现见 components/ProofDialog.vue）──
 const proofDialog = ref(false)
 const proofOrder = ref(null)
-// 上传返回的是相对路径 /uploads/xxx：开发走 vite 代理、生产与 API 同源（api.hsfresh.com），直接用即可
-const proofPhotos = computed(() => proofOrder.value?.payProof?.photos || [])
 function openProof(row) {
   proofOrder.value = row
   proofDialog.value = true
@@ -195,6 +213,16 @@ function fmtTime(iso) {
   const d = new Date(iso)
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+// 东八区「今天」，与每日对账页/后端同日口径
+function todayStr() {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+// 卡T：跳到每日对账并带上送达日（带动词意义：这一天该收的钱）
+function goReconcile() {
+  router.push({ path: '/daily-reconciliation', query: { date: claimDate.value || todayStr() } })
 }
 
 // 分类筛选：all | 10 | 30 | shortage
@@ -246,6 +274,9 @@ const currentOrder = ref(null)
 const autoSplittingId = ref(null)
 
 const detailDialog = ref(false)
+// 卡T：明细弹窗的数据源。待处理行自带 items；已送达/已完成行不带，需按需拉明细
+const detailItems = ref([])
+const detailLoading = ref(false)
 
 // 拆单 vs 改拆单：备货中(status=30)的订单重新拆单即「修改自动拆单结果」
 const isReSplit = computed(() => currentOrder.value?.status === 30)
@@ -322,12 +353,43 @@ async function doAutoSplit(row) {
   }
 }
 
-function openDetail(row) {
+// 明细弹窗：待处理行自带来 items 直接用；已送达/已完成行不含 items，按需拉 /admin/order/:id/detail
+// （卡T 2026-09-21：顺带修掉「已送达行点明细是空表」的老问题）
+async function openDetail(row) {
   currentOrder.value = row
   detailDialog.value = true
+  detailItems.value = row.items || []
+  if (detailItems.value.length) return
+  detailLoading.value = true
+  try {
+    const d = await orderAdminApi.getOrderDetail(row.orderId)
+    currentOrder.value = { ...row, ...d }
+    detailItems.value = d.items || []
+  } catch (e) {
+    detailItems.value = []
+  } finally {
+    detailLoading.value = false
+  }
 }
 
-onMounted(load)
+// 卡T：支持从每日对账页带 ?filter=&date=&orderId= 跳进来，直接落到「已送达」视图并打开该单明细
+async function applyRouteQuery() {
+  const f = route.query.filter
+  if (f === 'delivered' || f === 'claimed') activeFilter.value = f
+  if (typeof route.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date)) {
+    claimDate.value = route.query.date
+  }
+  const oid = Number(route.query.orderId)
+  if (oid) {
+    const row = deliveredList.value.find((o) => o.orderId === oid)
+    if (row) await openDetail(row)
+  }
+}
+
+onMounted(async () => {
+  await load()
+  await applyRouteQuery()
+})
 </script>
 
 <style scoped>
@@ -371,16 +433,27 @@ onMounted(load)
 .admin-fulfill-num-green {
   color: #00b96b;
 }
-.proof-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+/* 卡T：金额列（含运费总金额）与明细弹窗的金额拆分 */
+.amount-cell {
+  cursor: help;
+  border-bottom: 1px dashed #c0c4cc;
 }
-.proof-img {
-  width: 220px;
-  height: 220px;
-  border-radius: 8px;
-  cursor: zoom-in;
+.detail-amount {
+  font-size: 13px;
+  color: #606266;
+  background: #f7f8fa;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+.detail-amount-op {
+  color: #909399;
+  margin: 0 4px;
+}
+.detail-amount-note {
+  color: #c0c4cc;
+  font-size: 12px;
+  margin-left: 6px;
 }
 .admin-fulfill-toolbar {
   display: flex;

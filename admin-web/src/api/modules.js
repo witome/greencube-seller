@@ -48,6 +48,8 @@ export const userAdminApi = {
 export const orderAdminApi = {
   getPendingList: () => request.get('/admin/order/pending'),
   getDeliveredList: () => request.get('/admin/order/delivered'),
+  // 单订单明细（卡T 2026-09-21）：每日对账页「看订单」与履约页已送达行「明细」共用
+  getOrderDetail: (id) => request.get(`/admin/order/${id}/detail`),
   getSplitPreview: (id) => request.get(`/admin/order/${id}/split-preview`),
   split: (id, data) => request.post(`/admin/order/${id}/split`, data),
   autoSplit: (id) => request.post(`/admin/order/${id}/auto-split`),
