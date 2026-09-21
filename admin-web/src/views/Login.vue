@@ -1,7 +1,7 @@
 <template>
   <div class="login-wrap">
     <el-card class="login-card">
-      <div class="logo">🌿 绿立方运营后台</div>
+      <div class="logo">🌿 辉崧鲜配运营后台</div>
       <p class="tip">运营管理员登录</p>
       <el-form @submit.prevent>
         <el-input v-model="username" placeholder="账号" autocomplete="username" @keyup.enter="doLogin" />

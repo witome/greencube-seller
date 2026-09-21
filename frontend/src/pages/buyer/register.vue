@@ -1,7 +1,7 @@
 <template>
   <view class="page">
     <view class="hero">
-      <view class="title">🍃 欢迎注册绿立方</view>
+      <view class="title">🍃 欢迎注册辉崧鲜配</view>
       <view class="sub">请选择注册身份，填写对应信息，工作人员将在 24 小时内联系核实</view>
     </view>
 

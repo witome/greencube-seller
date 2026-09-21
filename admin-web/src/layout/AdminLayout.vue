@@ -1,7 +1,7 @@
 <template>
   <el-container class="layout">
     <el-aside width="220px" class="aside">
-      <div class="logo">🌿 绿立方运营后台</div>
+      <div class="logo">🌿 辉崧鲜配运营后台</div>
       <el-menu
         :default-active="activeMenu"
         router

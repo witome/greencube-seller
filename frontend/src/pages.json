@@ -1,7 +1,7 @@
 {
   "pages": [
     { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
-    { "path": "pages/buyer/home", "style": { "navigationBarTitleText": "绿立方" } },
+    { "path": "pages/buyer/home", "style": { "navigationBarTitleText": "辉崧鲜配" } },
     { "path": "pages/buyer/goods", "style": { "navigationBarTitleText": "商品列表" } },
     { "path": "pages/buyer/goods-detail", "style": { "navigationBarTitleText": "商品详情" } },
     { "path": "pages/buyer/cart", "style": { "navigationBarTitleText": "购物车" } },
@@ -59,7 +59,7 @@
   "globalStyle": {
     "navigationBarBackgroundColor": "#00B96B",
     "navigationBarTextStyle": "white",
-    "navigationBarTitleText": "绿立方",
+    "navigationBarTitleText": "辉崧鲜配",
     "backgroundColor": "#F5F6F8",
     "enablePullDownRefresh": false
   }

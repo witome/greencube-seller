@@ -194,7 +194,7 @@ const loadOrders = async () => {
 
 onShow(async () => {
   // 标题在本页动态设置，不改 pages.json 全局配置
-  uni.setNavigationBarTitle({ title: '绿立方 · 采购' })
+  uni.setNavigationBarTitle({ title: '辉崧鲜配 · 采购' })
   // H5 原生 tabBar 不支持 emoji，统一用自绘 BuyerTabBar 底栏，隐藏原生 tabBar
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
   await loadProfile()

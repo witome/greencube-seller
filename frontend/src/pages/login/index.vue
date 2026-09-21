@@ -3,7 +3,7 @@
     <!-- 品牌区 -->
     <view class="brand">
       <view class="logo">🍃</view>
-      <view class="brand-name">绿立方</view>
+      <view class="brand-name">辉崧鲜配</view>
       <view class="brand-slogan">鲜货直供 · 次日送达 · 货到付款</view>
     </view>
 

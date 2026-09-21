@@ -7,7 +7,7 @@
       <!-- 欢迎气泡 -->
       <view class="bubble-row">
         <view class="bubble-av">🤖</view>
-        <view class="bubble">您好，我是绿立方智能客服～<br>告诉我您要买什么，比如「土豆50斤，白菜两颗，明天早上送到」，我帮您整理成订单。</view>
+        <view class="bubble">您好，我是辉崧鲜配智能客服～<br>告诉我您要买什么，比如「土豆50斤，白菜两颗，明天早上送到」，我帮您整理成订单。</view>
       </view>
 
       <!-- 消息列表 -->
