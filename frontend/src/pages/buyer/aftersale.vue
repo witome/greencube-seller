@@ -25,11 +25,11 @@
       </view>
       <view v-if="photos.length" class="photo-grid">
         <view v-for="(p, i) in photos" :key="i" class="photo-item">
-          <image :src="fullUrl(p)" mode="aspectFill" class="photo-img" />
+          <image :src="fullUrl(p)" mode="aspectFill" class="photo-img" @tap="previewPhotos(photos, p)" />
           <view class="photo-del" @tap.stop="removePhoto(i)">✕</view>
         </view>
       </view>
-      <view v-if="photos.length" class="photo-tip">已上传 {{ photos.length }}/{{ MAX_PHOTOS }} 张，点右上角 ✕ 可删除</view>
+      <view v-if="photos.length" class="photo-tip">已上传 {{ photos.length }}/{{ MAX_PHOTOS }} 张，点图片可放大，点 ✕ 删除</view>
     </view>
 
     <!-- 售后政策 -->
@@ -45,7 +45,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { buyerApi } from '@/api/modules'
 import { fullUrl } from '@/api/request'
-import { pickPhotos, uploadPhoto, MAX_PHOTOS, remainCount } from '@/utils/photo-upload'
+import { pickPhotos, uploadPhoto, previewPhotos, MAX_PHOTOS, remainCount } from '@/utils/photo-upload'
 
 const orders = ref([])
 const selectedIndex = ref(-1)
