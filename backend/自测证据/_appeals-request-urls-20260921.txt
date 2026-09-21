@@ -1,0 +1,21 @@
+=== 卡Q ① 页面真实发出的 /admin/appeals 请求 URL（证明日期参数是服务端传的）2026-09-21 12:28:21 ===
+- Page URL: http://localhost:5190/appeals
+- Page Title: 绿立方 · 运营管理后台
+
+--- (a) 不带日期，直接点「查询」---
+### Result
+"{\"totalText\":\"共 2 条\",\"requestUrls\":[\"/admin/appeals?page=1&pageSize=20\"]}"
+### Ran Playwright code
+```js
+
+--- (b) 选 2026-09-01 ~ 2026-09-18 ---
+### Result
+"{\"dom\":{\"dates\":[\"2026-09-01\",\"2026-09-18\"],\"totalText\":\"共 0 条\"},\"requestUrls\":[\"/admin/appeals?page=1&pageSize=20&startDate=2026-09-01&endDate=2026-09-18\"]}"
+### Ran Playwright code
+```js
+
+--- (c) 改成 2026-09-19 ~ 2026-09-19 ---
+### Result
+"{\"dom\":{\"dates\":[\"2026-09-19\",\"2026-09-19\"],\"totalText\":\"共 2 条\",\"rows\":2},\"requestUrls\":[\"/admin/appeals?page=1&pageSize=20&startDate=2026-09-19&endDate=2026-09-19\"]}"
+### Ran Playwright code
+```js

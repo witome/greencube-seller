@@ -1,0 +1,43 @@
+=== 卡Q ③ auto-declare 事务内读改走 tx（改前/改后） 2026-09-21 12:24:17 ===
+文件：backend/src/modules/supplier-fulfill/auto-declare.service.ts
+（卡Q 里写的位置是 admin-auto-declare.service.ts —— 该目录下只有 admin-auto-declare.controller.ts，
+  服务实现实际在 auto-declare.service.ts，与卡B 登记的观察项位置一致）
+
+warning: in the working copy of 'backend/src/modules/supplier-fulfill/auto-declare.service.ts', LF will be replaced by CRLF the next time Git touches it
+diff --git a/backend/src/modules/supplier-fulfill/auto-declare.service.ts b/backend/src/modules/supplier-fulfill/auto-declare.service.ts
+index e69462b..afd0f73 100644
+--- a/backend/src/modules/supplier-fulfill/auto-declare.service.ts
++++ b/backend/src/modules/supplier-fulfill/auto-declare.service.ts
+@@ -68,7 +68,13 @@ export class AutoDeclareService {
+       const details: any[] = []
+       await this.prisma.$transaction(async (tx) => {
+         for (const it of candidates) {
+-          const link = await this.prisma.productSupplierLink.findUnique({
++          // 2026-09-21 卡Q 收口：这里原来读的是 this.prisma（事务**外**的另一条连接）。
++          // 改为 tx 后：①读与随后的写处于同一事务/同一快照，口径一致；
++          // ②不再在一个交互式事务里占用两条连接（高并发下有连接池耗尽/互等的风险）。
++          // 幂等守卫不在这里 —— 它在 applyDeclareUpdate() 内部的
++          // orderItem.updateMany({ where: { qtyAccepted: null, isAutoDeclared: 0 } }) 条件更新里，
++          // 本次改动只替换「读」的连接，不触碰该守卫，也不改超时边界与候选筛选条件。
++          const link = await tx.productSupplierLink.findUnique({
+             where: {
+               productId_supplierId: { productId: it.productId, supplierId: it.supplierId! },
+             },
+
+=== 幂等守卫所在（本次改动未触碰，故幂等/超时边界行为不变）===
+backend/src/modules/supplier-fulfill/supplier-fulfill.service.ts  applyDeclareUpdate():
+  async applyDeclareUpdate(
+    tx: any,
+    orderItemId: bigint,
+    qtyDeclared: number,
+    shortageReason: string | null,
+    isAutoDeclared: 0 | 1,
+  ): Promise<number> {
+    const where: any = { id: orderItemId, qtyAccepted: null }
+    if (isAutoDeclared === 1) where.isAutoDeclared = 0
+    const res = await tx.orderItem.updateMany({
+      where,
+      data: { qtyDeclared, shortageReason, isAutoDeclared },
+    })
+    return res.count
+  }

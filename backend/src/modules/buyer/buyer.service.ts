@@ -414,7 +414,7 @@ export class BuyerService {
     })
 
     // 铁律 3：售后申请是定责/补偿的起点（含照片证据），写审计
-    // action 全大写（全仓仅 courier_report 一个小写残留，不新增小写）
+    // action 一律 UPPER_SNAKE（2026-09-21 卡Q 起，全仓唯一的小写 action 已统一为 COURIER_REPORT）
     await this.audit.log({
       operatorId: userId,
       action: 'AFTERSALE_SUBMIT',

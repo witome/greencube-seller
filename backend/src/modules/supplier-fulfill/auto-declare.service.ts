@@ -68,7 +68,13 @@ export class AutoDeclareService {
       const details: any[] = []
       await this.prisma.$transaction(async (tx) => {
         for (const it of candidates) {
-          const link = await this.prisma.productSupplierLink.findUnique({
+          // 2026-09-21 卡Q 收口：这里原来读的是 this.prisma（事务**外**的另一条连接）。
+          // 改为 tx 后：①读与随后的写处于同一事务/同一快照，口径一致；
+          // ②不再在一个交互式事务里占用两条连接（高并发下有连接池耗尽/互等的风险）。
+          // 幂等守卫不在这里 —— 它在 applyDeclareUpdate() 内部的
+          // orderItem.updateMany({ where: { qtyAccepted: null, isAutoDeclared: 0 } }) 条件更新里，
+          // 本次改动只替换「读」的连接，不触碰该守卫，也不改超时边界与候选筛选条件。
+          const link = await tx.productSupplierLink.findUnique({
             where: {
               productId_supplierId: { productId: it.productId, supplierId: it.supplierId! },
             },

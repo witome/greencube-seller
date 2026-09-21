@@ -80,7 +80,8 @@ function jsonBrief(v) {
 // 操作名中文映射
 function actionText(action) {
   const map = {
-    courier_report: '配送异常上报',
+    // 2026-09-21 卡Q：与后端写点同步改为 UPPER_SNAKE 的 COURIER_REPORT（历史数据已同步改名）
+    COURIER_REPORT: '配送异常上报',
     UPDATE_PRICING: '改价',
     UPDATE_SERVICE_FEE: '改服务费',
     BATCH_MARKUP: '批量加价',

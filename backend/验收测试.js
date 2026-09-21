@@ -707,7 +707,7 @@ async function main() {
   check('异常上报返回不变（审计+订单标记+异常单同一事务）', repG.code === 0 && repG.data.reported === true && repG.data.exceptionId > 0 && repG.data.affectedOrders === 1, repG)
   check('异常后订单→92 无法交付', (await call('GET', `/order/${oG.data.orderId}`, null, bt2)).data.status === 92)
   const auditG = await call('GET', '/audit?entity=delivery_task&pageSize=100', null, at)
-  check('courier_report 审计随事务落库', (auditG.data?.list || []).some(l => l.action === 'courier_report' && l.after?.orderId === oG.data.orderId))
+  check('COURIER_REPORT 审计随事务落库', (auditG.data?.list || []).some(l => l.action === 'COURIER_REPORT' && l.after?.orderId === oG.data.orderId))
 
   // generate：结算生成结果不变（事务化）
   const genG = await call('POST', '/admin/finance/generate', { period: '2026-09' }, at)

@@ -218,14 +218,33 @@ export class AdminUserService {
   // 申诉记录列表（运营/业务员；决策 6 · 2026-09-19 拍板）
   // 只读接口，不写审计（与 pendingBuyers / verifyDetail 等同口径）。
   // 按状态 + 时间倒序，带申诉正文与附件，供运营后台查看与处理
+  // 筛选（均可选）：status；startDate/endDate（2026-09-21 新增，按 created_at 的 UTC 日期、左闭右闭）
+  //           —— 都不传 = 不筛（全部），查询条件与改动前逐字一致
   // 权限：@Roles(ADMIN, BUSINESS_AGENT) —— 业务员是运营子账号，申诉属采购方审核范畴
   // ────────────────────────────────────────
-  async appeals(query: { status?: string; page?: string; pageSize?: string }) {
+  async appeals(query: { status?: string; page?: string; pageSize?: string; startDate?: string; endDate?: string }) {
     const page = Math.max(1, parseInt(query.page || '1'))
     const pageSize = Math.min(50, Math.max(1, parseInt(query.pageSize || '20')))
 
     const where: any = {}
     if (query.status !== undefined && query.status !== '') where.status = parseInt(query.status)
+
+    // 提交日期区间（2026-09-21 大辉改口径：由「前端当前页过滤」改为**服务端**筛，
+    // 这样筛选结果才覆盖全部数据、不受分页限制）。
+    // - 只接受 `YYYY-MM-DD`；非法格式一律**忽略**（= 不筛），避免脏参数造成 500
+    // - 口径与改前的客户端过滤**逐字一致**：按 created_at 的 UTC 日期比较、左闭右闭。
+    //   实现为 createdAt >= startDate T00:00:00Z 且 createdAt < (endDate+1天) T00:00:00Z
+    // - startDate / endDate 都不传时，where 里**不会出现 createdAt 键**，
+    //   查询条件与改前完全相同（行为 = 全部）
+    const dayRe = /^\d{4}-\d{2}-\d{2}$/
+    const startDate = typeof query.startDate === 'string' && dayRe.test(query.startDate) ? query.startDate : ''
+    const endDate = typeof query.endDate === 'string' && dayRe.test(query.endDate) ? query.endDate : ''
+    if (startDate || endDate) {
+      const range: any = {}
+      if (startDate) range.gte = new Date(`${startDate}T00:00:00.000Z`)
+      if (endDate) range.lt = new Date(new Date(`${endDate}T00:00:00.000Z`).getTime() + 86400000)
+      where.createdAt = range
+    }
 
     const [total, rows] = await Promise.all([
       this.prisma.appealRecord.count({ where }),

@@ -270,11 +270,13 @@ export class CourierService {
     // 审计 + 订单/任务异常标记 + 异常工单 同一事务（2026-09-15 涉钱收口：
     // 避免"审计已记、异常单没建"或"异常单建了、订单没标"的中间态）
     await this.prisma.$transaction(async (tx) => {
-      // 2026-09-12 #14 收口：直写 prisma.auditLog.create → 统一走 AuditService（字段等价；action 值逐字保留 courier_report）
+      // 2026-09-12 #14 收口：直写 prisma.auditLog.create → 统一走 AuditService（字段等价）
+      // 2026-09-21 卡Q：action 由原先的小写形式统一为 UPPER_SNAKE 的 COURIER_REPORT
+      //（全仓唯一的小写残留；历史数据已由 backend/自测证据/ 下那份 SQL 同步改名）
       await this.audit.log(
         {
           operatorId: courier.userId,
-          action: 'courier_report',
+          action: 'COURIER_REPORT',
           entity: 'delivery_task',
           entityId: BigInt(dto.taskId ?? dto.orderId ?? 0),
           after: { orderId: dto.orderId ?? null, taskId: dto.taskId ?? null, reason: dto.reason, photos: dto.photos },

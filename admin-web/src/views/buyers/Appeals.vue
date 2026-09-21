@@ -11,8 +11,8 @@
           <el-radio-button :value="0">待处理</el-radio-button>
           <el-radio-button :value="1">已处理</el-radio-button>
         </el-radio-group>
-        <!-- 日期筛选：后端 GET /admin/appeals 仅支持 status/page/pageSize（无日期入参），
-             日期在当前页结果上做客户端过滤，不新造后端接口 -->
+        <!-- 日期筛选：2026-09-21 大辉改口径 → 改为**服务端**筛（后端新增可选 startDate/endDate，
+             按 created_at 过滤）。原来的「当前页客户端过滤」只能筛到本页数据，跨页会漏。 -->
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -21,14 +21,15 @@
           end-placeholder="提交结束日期"
           value-format="YYYY-MM-DD"
           style="width: 260px; margin-left: 16px"
+          @change="onQuery"
         />
-        <el-button type="primary" @click="load">查询</el-button>
+        <el-button type="primary" @click="onQuery">查询</el-button>
       </div>
     </el-card>
 
     <!-- 列表 -->
     <el-card shadow="never" class="admin-appeals-table-card">
-      <el-table :data="displayList" v-loading="loading" stripe>
+      <el-table :data="list" v-loading="loading" stripe>
         <el-table-column prop="appealId" label="申诉号" width="80" />
         <el-table-column prop="shopName" label="店铺名" min-width="150" show-overflow-tooltip />
         <el-table-column prop="contact" label="联系人" width="100" />
@@ -144,7 +145,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { buyerAdminApi } from '../../api/modules'
 
@@ -154,7 +155,8 @@ const page = ref(1)
 const pageSize = 20
 const loading = ref(false)
 const statusFilter = ref('')
-// 日期筛选为客户端过滤（后端无日期入参，见 modules.js 注释）
+// 日期筛选：2026-09-21 起由后端筛（params.startDate / endDate，按 created_at），
+// 前端不再本地过滤 —— 本地过滤只能筛到当前页数据，翻页就会漏
 const dateRange = ref(null)
 
 const detailVisible = ref(false)
@@ -177,6 +179,11 @@ async function load() {
   try {
     const params = { page: page.value, pageSize }
     if (statusFilter.value !== '') params.status = statusFilter.value
+    // 日期区间改由服务端筛（2026-09-21）；未选日期时不带这两个参数 → 与改动前的查询条件一致
+    if (Array.isArray(dateRange.value) && dateRange.value.length === 2) {
+      params.startDate = dateRange.value[0]
+      params.endDate = dateRange.value[1]
+    }
     // request 拦截器已解包 { code, msg, data }，直接取 list / total
     const data = await buyerAdminApi.getAppeals(params)
     list.value = data.list || []
@@ -191,15 +198,14 @@ function onStatusChange() {
   load()
 }
 
-// 日期客户端过滤（当前页）
-const displayList = computed(() => {
-  if (!dateRange.value || dateRange.value.length !== 2) return list.value
-  const [start, end] = dateRange.value
-  return list.value.filter((r) => {
-    const day = String(r.createdAt).slice(0, 10)
-    return day >= start && day <= end
-  })
-})
+// 查询/改日期：回到第 1 页再查（服务端筛后总页数会变，停在第 3 页容易查到空页）
+function onQuery() {
+  page.value = 1
+  load()
+}
+
+// ⚠️ 原「日期客户端过滤（当前页）」的 displayList 已删除（2026-09-21）：
+// 服务端筛后表格直接绑定 list，避免两处过滤口径并存。
 
 function openDetail(row) {
   detail.value = row

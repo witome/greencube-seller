@@ -1,0 +1,34 @@
+
+== 1. open browser ==
+- [Snapshot](.playwright-cli\page-2026-09-21T04-27-19-426Z.yml)
+
+== 2. 注入 admin_token 并进入 /appeals ==
+### Page
+- Page URL: http://localhost:5190/appeals
+- Page Title: 绿立方 · 运营管理后台
+
+== 3. 不带日期：点查询 → 抓请求 URL + 行数 + 截图 ==
+```js
+await (async page => { const reqs = []; page.on('request', r => { const u = String(r.url()); if (u.includes('/admin/appeals')) reqs.push(u.split('/api/v1').pop()) }); await page.locator('.el-button--primary').first().click(); await page.waitForTimeout(2500); const r = await page.evaluate(() => JSON.stringify({ rows: document.querySelectorAll('.el-table__body tbody tr').length, total: (document.querySelector('.el-pagination__total')||{}).innerText || null, dateInputs: [...document.querySelectorAll('.el-date-editor input')].map(i => i.value) })); await page.screenshot({path:'C:/Users/Administrator/Documents/绿立方开发/backend/自测证据/shots-appeals-20260921/51-appeals-no-date.png', fullPage: true}); return JSON.stringify({requests: reqs, dom: JSON.parse(r)}) })(page);
+```
+
+== 4. 选 2026-09-01 ~ 2026-09-18（无数据区间）→ 抓请求 URL + 截图 ==
+- Console: 0 errors, 1 warnings
+### Events
+- New console entries: .playwright-cli\console-2026-09-21T04-27-19-187Z.log#L1-L6
+
+== 5. 改成 2026-09-19 ~ 2026-09-19（有数据区间）→ 抓请求 URL + 截图 ==
+- Console: 0 errors, 2 warnings
+### Events
+- New console entries: .playwright-cli\console-2026-09-21T04-27-19-187Z.log#L7-L12
+
+== 6. close browser ==
+
+
+=== screenshots ===
+total 144
+drwxr-xr-x 1 Administrator 197121     0 Sep 21 12:27 .
+drwxr-xr-x 1 Administrator 197121     0 Sep 21 12:26 ..
+-rw-r--r-- 1 Administrator 197121 49672 Sep 21 12:27 51-appeals-no-date.png
+-rw-r--r-- 1 Administrator 197121 37848 Sep 21 12:27 52-appeals-range-empty.png
+-rw-r--r-- 1 Administrator 197121 48932 Sep 21 12:27 53-appeals-range-hit.png

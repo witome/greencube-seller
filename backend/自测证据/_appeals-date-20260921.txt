@@ -1,0 +1,21 @@
+== 运营登录 ==
+  code=0 role=admin
+
+== 接口 total 与 SQL 真值对照（pageSize=50 一次取全）==
+  ✅ 不传日期（= 改前行为）         接口total=2   SQL真值=2   返回id=[6,5]
+  ✅ 09-19~09-19（当天）                  接口total=2   SQL真值=2   返回id=[6,5]
+  ✅ 仅 startDate=09-19                      接口total=2   SQL真值=2   返回id=[6,5]
+  ✅ 仅 endDate=09-19                        接口total=2   SQL真值=2   返回id=[6,5]
+  ✅ 09-01~09-18（无数据）               接口total=0   SQL真值=0   返回id=[]
+  ✅ 09-20~09-20（数据之后）            接口total=0   SQL真值=0   返回id=[]
+  ✅ 倒置区间 09-19~09-18                 接口total=0   SQL真值=0   返回id=[]
+  ✅ 非法格式 startDate=abc（应忽略） 接口total=2   SQL真值=2   返回id=[6,5]
+  ✅ 配合 status=1（已处理）           接口total=1   SQL真值=1   返回id=[5]
+
+== 分页行为：pageSize=1 时 total 仍按整段筛选算（证明是服务端筛）==
+  pageSize=1 page=1 → total=2 本页条数=1 id=6
+  pageSize=1 page=2 → total=2 本页条数=1 id=5
+
+== 库内申诉数据（全部）==
+  5	1	2026-09-19 07:52:56.962
+  6	0	2026-09-19 07:53:02.784
