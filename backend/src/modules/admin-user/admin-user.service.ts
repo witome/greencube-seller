@@ -25,11 +25,16 @@ export class AdminUserService {
     // 采购方管理：默认返回全部（待审核/已驳回/已开通），传 status 则按状态筛选
     const where: any = status ? { accountStatus: status } : {}
 
-    const [total, rows] = await Promise.all([
+    const now = Date.now()
+    const [total, overdueCount, rows] = await Promise.all([
       this.prisma.purchaser.count({ where }),
+      // 超时统计：待审核 且 注册超过 24 小时（与下方 list 行级 overdue 判定完全同口径）
+      this.prisma.purchaser.count({
+        where: { accountStatus: AccountStatus.PENDING, registeredAt: { lt: new Date(now - 24 * 3600 * 1000) } },
+      }),
       this.prisma.purchaser.findMany({
         where,
-        orderBy: { registeredAt: 'asc' }, // 越早越靠前（超时预警优先）
+        orderBy: { registeredAt: 'desc' }, // 最新在前（2026-09-21 大辉拍板：新提交要一眼看到；超时预警改由统计卡承担）
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
@@ -38,7 +43,6 @@ export class AdminUserService {
       }),
     ])
 
-    const now = Date.now()
     const list = rows.map((p) => {
       const overdue = p.accountStatus === AccountStatus.PENDING && now - p.registeredAt.getTime() > 24 * 3600 * 1000
       const latestLog = p.verificationLogs[0]
@@ -57,7 +61,7 @@ export class AdminUserService {
       }
     })
 
-    return { total, list }
+    return { total, list, stats: { overdueCount } }
   }
 
   // ────────────────────────────────────────

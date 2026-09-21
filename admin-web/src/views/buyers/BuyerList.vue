@@ -9,6 +9,10 @@
         <div class="admin-buyers-stat-num admin-buyers-num-orange">{{ fmtNum(stats.pending) }}</div>
         <div class="admin-buyers-stat-lbl">待审核</div>
       </div>
+      <div class="admin-buyers-stat" @click="filterBy(1)">
+        <div class="admin-buyers-stat-num admin-buyers-num-red">{{ fmtNum(stats.overdue) }}</div>
+        <div class="admin-buyers-stat-lbl">超时（待审超24h）</div>
+      </div>
       <div class="admin-buyers-stat" @click="filterBy(3)">
         <div class="admin-buyers-stat-num admin-buyers-num-blue">{{ fmtNum(stats.appeal) }}</div>
         <div class="admin-buyers-stat-lbl">待申诉复核</div>
@@ -235,7 +239,7 @@ const pageSize = 10
 const loading = ref(false)
 const statusFilter = ref('')
 const keyword = ref('')
-const stats = ref({ pending: null, appeal: null })
+const stats = ref({ pending: null, appeal: null, overdue: null })
 
 // ── 核实详情 ──
 const verifyDrawer = ref(false)
@@ -328,8 +332,11 @@ async function loadStats() {
   try {
     const p = await buyerAdminApi.getPendingBuyers({ status: 1, page: 1, pageSize: 1 })
     stats.value.pending = p?.total ?? 0
+    // 超时口径由后端统一给出：待审核 且 注册超过 24 小时（与列表行级 overdue 判定同口径）
+    stats.value.overdue = p?.stats?.overdueCount ?? 0
   } catch (e) {
     stats.value.pending = -1
+    stats.value.overdue = -1
   }
   try {
     const a = await buyerAdminApi.getPendingBuyers({ status: 3, page: 1, pageSize: 1 })
@@ -509,6 +516,9 @@ onMounted(() => {
 }
 .admin-buyers-num-blue {
   color: #3b7cff;
+}
+.admin-buyers-num-red {
+  color: #f56c6c;
 }
 .admin-buyers-stat-lbl {
   font-size: 12px;

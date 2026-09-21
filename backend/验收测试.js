@@ -58,8 +58,9 @@ async function main() {
   check('未激活下单被拦截(3001)', deny.code === 3001)
 
   // 运营审核通过
-  // 队列按 registeredAt 升序、pageSize 上限 50；测试数据按拍板保留不清理，
-  // 库里采购方会不断累积，本次新注册的记录会落到最后一页 → 逐页找（不能只看第 1 页）
+  // 2026-09-21 大辉拍板：队列改为 registeredAt 倒序（最新在前，pageSize 上限 50）；
+  // 下方断言按手机号全页遍历匹配、不依赖顺序，倒序后新注册记录在第一页即命中，遍历保留作防御。
+  // 测试数据按拍板保留不清理，库里采购方会不断累积。
   const found = await (async () => {
     const first = await call('GET', '/admin/buyers/pending?pageSize=50', null, at)
     const pages = Math.max(1, Math.ceil((first.data?.total || 0) / 50))
