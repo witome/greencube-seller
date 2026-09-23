@@ -2,12 +2,12 @@
   <view class="kefu-page">
     <scroll-view class="chat-body" scroll-y :scroll-into-view="scrollTo" scroll-with-animation>
       <view class="chat-time">今天</view>
-      <view class="notice">🤖 智能客服在线，直接发送想买的菜和数量，自动生成订单草稿</view>
+      <view class="notice">🤖 智能下单助手在线，发送想买的菜和数量即可生成订单草稿<br>💬 也可把本页转发给同事或采购群，对方点一下就能下单</view>
 
       <!-- 欢迎气泡 -->
       <view class="bubble-row">
         <view class="bubble-av">🤖</view>
-        <view class="bubble">您好，我是辉崧鲜配智能客服～<br>告诉我您要买什么，比如「土豆50斤，白菜两颗，明天早上送到」，我帮您整理成订单。</view>
+        <view class="bubble">您好，我是辉崧鲜配智能下单助手～<br>告诉我您要买什么，比如「土豆50斤，白菜两颗，明天早上送到」，我帮您整理成订单。</view>
       </view>
 
       <!-- 消息列表 -->
@@ -65,6 +65,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { onShareAppMessage } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 
 const input = ref('')
@@ -109,6 +110,16 @@ const goConfirm = (parse) => {
   uni.setStorageSync('aiDraft', parse)
   uni.navigateTo({ url: '/pages/buyer/ai-confirm' })
 }
+
+// ── 分享入口（2026-09-23）──
+// 老板可以把这一页直接转发给客户、或丢进「XX餐馆采购群」，客户点一下卡片就落在本页，
+// 说一句话即可出订单草稿。不需要后端、不需要 access_token、不需要小程序码。
+// ⚠️ 微信的限制：**小程序正式发布前，分享出去的卡片只有「项目成员」能打开** ——
+//    非成员会看到「暂无此权限」，这不是 bug（详见 vault《开发配套-AI下单升级方案》）。
+onShareAppMessage(() => ({
+  title: '说一句话就能下单 · 辉崧鲜配',
+  path: '/pages/buyer/kefu',
+}))
 </script>
 
 <style lang="scss" scoped>

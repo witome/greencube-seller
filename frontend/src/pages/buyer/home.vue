@@ -30,7 +30,7 @@
         <view class="buyer-home-grid-item" @tap="go('/pages/buyer/bill')"><view class="buyer-home-grid-ico buyer-home-ico-purple">🧾</view><view class="buyer-home-grid-label">对账单</view></view>
         <view class="buyer-home-grid-item" @tap="go('/pages/buyer/aftersale')"><view class="buyer-home-grid-ico buyer-home-ico-red">🛡️</view><view class="buyer-home-grid-label">售后申请</view></view>
         <view class="buyer-home-grid-item" @tap="todo('优惠券：暂无可用')"><view class="buyer-home-grid-ico buyer-home-ico-orange">🎫</view><view class="buyer-home-grid-label">优惠券</view></view>
-        <view class="buyer-home-grid-item" @tap="go('/pages/buyer/kefu')"><view class="buyer-home-grid-ico buyer-home-ico-blue">💬</view><view class="buyer-home-grid-label">AI 客服下单</view></view>
+        <view class="buyer-home-grid-item" @tap="go('/pages/buyer/kefu')"><view class="buyer-home-grid-ico buyer-home-ico-blue">💬</view><view class="buyer-home-grid-label">智能下单助手</view></view>
       </view>
     </view>
 

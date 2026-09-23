@@ -79,8 +79,8 @@
         <view class="buyer-mine-menu-item" @tap="go('/pages/buyer/kefu')">
           <view class="buyer-mine-menu-ico buyer-mine-ico-teal">💬</view>
           <view class="buyer-mine-menu-main">
-            <view class="buyer-mine-menu-t">联系客服</view>
-            <view class="buyer-mine-menu-d">在线客服</view>
+            <view class="buyer-mine-menu-t">智能下单助手</view>
+            <view class="buyer-mine-menu-d">说一句话就能下单</view>
           </view>
           <view class="buyer-mine-arrow">›</view>
         </view>
