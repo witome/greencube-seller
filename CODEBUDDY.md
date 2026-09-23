@@ -79,6 +79,7 @@ cd backend && node -e "fetch('http://127.0.0.1:3001/api/v1/auth/wx-login',{metho
 
 - **项目根必须是编译产物**：`frontend/dist/dev/mp-weixin`（或 `dist/build/mp-weixin`），**不是 `src/`**。改前端后先 `cd frontend && npm run dev:mp-weixin`（常驻重编译）或 `npm run build:mp-weixin`，再刷新模拟器。
 - **命令一律走 PowerShell 包装**（本机实测：git-bash 直接调 `wechatide.cmd`，含空格/括号的参数会被拆坏，报 `'C:\Program' 不是内部或外部命令`）：
+  > ⚠️ 下面这组是 **Hermes / 人用 bash** 的写法。**WorkBuddy 的沙箱禁止从 Bash 里调 PowerShell**（会被安全策略拦），它应改用**自己的 PowerShell 工具**执行同样命令 —— 详见本节末尾「实测补充」。
 
 ```bash
 PS="C:\Program Files (x86)\Tencent\微信web开发者工具\wechatide.cmd"
