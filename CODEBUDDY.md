@@ -97,6 +97,15 @@ powershell -NoProfile -Command "& '$PS' -c WorkBuddy get_simulator_console --pro
 - `upload` = 发布体验版，属发布动作，**不许自动点**；云开发工具（`cloud_*`）本项目用不到，忽略。
 - 全部 45 个工具的完整参数：`C:\Program Files (x86)\Tencent\微信web开发者工具\resources\app.asar.unpacked\wechatide-skill\wechatide-tools\references\tools.yaml`
 
+### 实测补充（2026-09-23，3 页自测跑通后记下）
+
+- **门禁要带版本号**：`check_wechatide_status` 不加 `--skill-version` 会返回 `versionRelation: skip_check` + 警告；带上当前 skill 版本（`0.3.9`，见 `wechatide-skill/SKILL.md` frontmatter）才返回 `equal`。已登录态下 `open_project_window` 通常直接 `success: true, type: "reuse"`，**不弹授权框**。
+- **必须用 PowerShell 工具执行**，不要在 Bash 里写 `powershell -NoProfile -Command "..."` —— 本机安全策略会直接拦掉这条 Bash 命令（`Invoking PowerShell from Bash bypasses PowerShell security checks`）。
+- **PowerShell 工具 stdout 不回显**：每条命令末尾接 `*>&1 | Out-File "$env:TEMP\xxx.txt" -Encoding utf8`，再用 Read 读文件。`wechatide.cmd` 会把进度写 stderr（表现为 `NativeCommandError` 噪声），**别被吓到**，看 JSON 的 `ok` 字段为准。
+- ⚠️ **`automation_evaluate --fn-source` 里不能出现双引号**：外层 shell 会把 `"token"` 的引号吃掉 → 运行时报 `Uncaught token is not defined`。改成不含引号的写法，例如用 `wx.getStorageInfoSync().keys` 取存储键列表，而不是 `wx.getStorageSync("token")`。
+- 截图要用 `--wait 2`（或 `--wait-for-selector`）再拍，否则可能拍到空白帧。
+- 首次跑通记录（3 页：登录 / 采购方首页 / 商品列表）与踩坑详见 `自测证据/小程序自测-对照表.md`（该目录不入库，只留在磁盘）。
+
 ## 八条已拍板决策（不得推翻）
 
 1. **下单即自动拆单**——下单落 `status=10`，事务内按供货优先级写 `order_item.supplier_id`；运营核单确认/调整，可重新拆单
