@@ -73,6 +73,30 @@ cd backend && node -e "fetch('http://127.0.0.1:3001/api/v1/auth/wx-login',{metho
 - 演示账号：运营 `admin`｜供应商 `demo_supplier`｜配送员 `courier`｜采购方任意 code（新号走注册+审核）
 - 真机调试：微信开发者工具，本机 IP `192.168.1.78`；AppID 已配在 `frontend/src/manifest.json`（密钥问大辉）
 
+## 🧪 小程序自测通道（微信开发者工具 Skills，2026-09-23 已实测跑通）
+
+小程序端不该只靠人点：开发者工具里已内置官方 `wechatide` CLI，Agent 能编译、开项目窗口、点元素、截模拟器画面、读 console/network、断言当前路由。**这是「验收要双重证据」里"真实操作"那一条在小程序端的落地手段。**
+
+- **项目根必须是编译产物**：`frontend/dist/dev/mp-weixin`（或 `dist/build/mp-weixin`），**不是 `src/`**。改前端后先 `cd frontend && npm run dev:mp-weixin`（常驻重编译）或 `npm run build:mp-weixin`，再刷新模拟器。
+- **命令一律走 PowerShell 包装**（本机实测：git-bash 直接调 `wechatide.cmd`，含空格/括号的参数会被拆坏，报 `'C:\Program' 不是内部或外部命令`）：
+
+```bash
+PS="C:\Program Files (x86)\Tencent\微信web开发者工具\wechatide.cmd"
+P="C:/Users/Administrator/Documents/绿立方开发/frontend/dist/dev/mp-weixin"
+powershell -NoProfile -Command "& '$PS' -c WorkBuddy open_project_window --project '$P'"
+powershell -NoProfile -Command "& '$PS' -c WorkBuddy simulator_open_page --project '$P' --page pages/login/index"
+powershell -NoProfile -Command "& '$PS' -c WorkBuddy simulator_screenshot --project '$P' --path 'C:/Users/Administrator/AppData/Local/Temp/shot.jpg'"
+powershell -NoProfile -Command "& '$PS' -c WorkBuddy automation_evaluate --project '$P' --fn-source 'function(){return getCurrentPages().map(function(p){return p.route})}'"
+powershell -NoProfile -Command "& '$PS' -c WorkBuddy automation_element_action --project '$P' --action tap --selector '.reg-link' --wait-for-selector '.reg-link'"
+powershell -NoProfile -Command "& '$PS' -c WorkBuddy get_simulator_console --project '$P' --command 'grep -n .'"
+```
+
+- **前提**：开发者工具已启动且已登录（`check_wechatide_status` 要返回 `openid` 且 `versionRelation: equal`）；**每个 clientName 首次连接会弹一次授权框**，需大辉点确认。
+- **截图要看到才算数**：`simulator_open_page` 之后立刻截图可能拍到空白帧，等 2~3 秒或用 `--wait-for-selector` 再拍。
+- **后端没起来时，登录/注册按钮点了不会跳转**（它先调 `/auth/wx-login`）——先确认 `http://127.0.0.1:3001` 在线，再判是不是页面 bug。
+- `upload` = 发布体验版，属发布动作，**不许自动点**；云开发工具（`cloud_*`）本项目用不到，忽略。
+- 全部 45 个工具的完整参数：`C:\Program Files (x86)\Tencent\微信web开发者工具\resources\app.asar.unpacked\wechatide-skill\wechatide-tools\references\tools.yaml`
+
 ## 八条已拍板决策（不得推翻）
 
 1. **下单即自动拆单**——下单落 `status=10`，事务内按供货优先级写 `order_item.supplier_id`；运营核单确认/调整，可重新拆单
