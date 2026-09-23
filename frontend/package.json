@@ -5,7 +5,10 @@
   "private": true,
   "scripts": {
     "dev:mp-weixin": "uni -p mp-weixin",
+    "prebuild:mp-weixin": "node scripts/require-api-base.mjs",
     "build:mp-weixin": "uni build -p mp-weixin",
+    "build:self:mp": "node scripts/build-self-mp.mjs",
+    "build:prod:mp": "node scripts/build-prod-mp.mjs",
     "dev:h5": "uni",
     "build:h5": "uni build"
   },

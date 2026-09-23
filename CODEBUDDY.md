@@ -77,13 +77,18 @@ cd backend && node -e "fetch('http://127.0.0.1:3001/api/v1/auth/wx-login',{metho
 
 小程序端不该只靠人点：开发者工具里已内置官方 `wechatide` CLI，Agent 能编译、开项目窗口、点元素、截模拟器画面、读 console/network、断言当前路由。**这是「验收要双重证据」里"真实操作"那一条在小程序端的落地手段。**
 
-- **项目根必须是编译产物**：`frontend/dist/dev/mp-weixin`（或 `dist/build/mp-weixin`），**不是 `src/`**。改前端后先 `cd frontend && npm run dev:mp-weixin`（常驻重编译）或 `npm run build:mp-weixin`，再刷新模拟器。
+- **自测必须用自测包，不许碰出货目录**（2026-09-23 定，起因：自测构建把 9/21 那份连生产的出货包覆盖成了连局域网版）：
+  - 自测包 = `cd frontend && npm run build:self:mp` → 产物在 **`frontend/dist/self/mp-weixin`**（连本机后端 `192.168.1.78:3001`，**不碰** `dist/build`）
+  - 出货包 = `npm run build:prod:mp` → 产物在 `dist/build/mp-weixin`（连生产域名，构建后**自动校验**：域名对不对、有没有混进局域网地址、调试浮窗删没删干净、appid 对不对）
+  - 🚫 **禁止裸跑 `npm run build:mp-weixin`**：已被 `prebuild:mp-weixin` 钩子拦住（不带接口地址直接报错退出）。为什么不用它：uni CLI 在 vite 加载前就会**清空输出目录**，裸跑一次哪怕报错，出货包也已经没了。
+  - 🚫 **禁止拿 `dist/build/mp-weixin` 做自测**，也禁止拿 `dist/self/mp-weixin` 上传微信
+- **项目根是编译产物**：自测用 `frontend/dist/self/mp-weixin`，**不是 `src/`**；改完前端先 `npm run build:self:mp` 再刷新模拟器。
 - **命令一律走 PowerShell 包装**（本机实测：git-bash 直接调 `wechatide.cmd`，含空格/括号的参数会被拆坏，报 `'C:\Program' 不是内部或外部命令`）：
   > ⚠️ 下面这组是 **Hermes / 人用 bash** 的写法。**WorkBuddy 的沙箱禁止从 Bash 里调 PowerShell**（会被安全策略拦），它应改用**自己的 PowerShell 工具**执行同样命令 —— 详见本节末尾「实测补充」。
 
 ```bash
 PS="C:\Program Files (x86)\Tencent\微信web开发者工具\wechatide.cmd"
-P="C:/Users/Administrator/Documents/绿立方开发/frontend/dist/dev/mp-weixin"
+P="C:/Users/Administrator/Documents/绿立方开发/frontend/dist/self/mp-weixin"
 powershell -NoProfile -Command "& '$PS' -c WorkBuddy open_project_window --project '$P'"
 powershell -NoProfile -Command "& '$PS' -c WorkBuddy simulator_open_page --project '$P' --page pages/login/index"
 powershell -NoProfile -Command "& '$PS' -c WorkBuddy simulator_screenshot --project '$P' --path 'C:/Users/Administrator/AppData/Local/Temp/shot.jpg'"
