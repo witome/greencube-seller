@@ -2,7 +2,7 @@
   <view class="kefu-page">
     <scroll-view class="chat-body" scroll-y :scroll-into-view="scrollTo" scroll-with-animation>
       <view class="chat-time">今天</view>
-      <view class="notice">🤖 智能下单助手在线，发送想买的菜和数量即可生成订单草稿<br>💬 也可把本页转发给同事或采购群，对方点一下就能下单</view>
+      <view class="notice">🤖 智能下单助手在线，发送想买的菜和数量即可生成订单草稿<br>🎤 按住左下角话筒说话也行<br>💬 也可把本页转发给同事或采购群，对方点一下就能下单</view>
 
       <!-- 欢迎气泡 -->
       <view class="bubble-row">
@@ -57,15 +57,34 @@
 
     <!-- 输入栏 -->
     <view class="chat-input">
+      <view
+        v-if="voiceReady"
+        class="mic-btn"
+        :class="{ rec: recording, off: sending }"
+        @touchstart="onMicStart"
+        @touchend="onMicStop"
+        @touchcancel="onMicStop"
+      >
+        <text class="mic-ico">🎤</text>
+      </view>
       <input v-model="input" placeholder="输入想买的菜品和数量…" confirm-type="send" @confirm="send" />
       <view class="send-btn" :class="{ disabled: !input.trim() || sending }" @tap="send">发送</view>
+    </view>
+
+    <!-- 录音浮层 -->
+    <view v-if="recording" class="rec-mask">
+      <view class="rec-box">
+        <view class="rec-mic">🎤</view>
+        <view class="rec-title">{{ recText || '正在听您说话…' }}</view>
+        <view class="rec-tip">松开即识别并生成订单草稿 · 最长 30 秒</view>
+      </view>
     </view>
   </view>
 </template>
 
 <script setup>
 import { ref } from 'vue'
-import { onShareAppMessage } from '@dcloudio/uni-app'
+import { onShareAppMessage, onHide, onUnload } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 
 const input = ref('')
@@ -111,6 +130,123 @@ const goConfirm = (parse) => {
   uni.navigateTo({ url: '/pages/buyer/ai-confirm' })
 }
 
+// ── 语音下单：微信官方「同声传译」插件（WechatSI）── 2026-09-24
+// 老板在市场/厨房手上是湿的，打字慢 → 按住话筒说一句「土豆50斤、白菜两颗」松开即出草稿卡。
+// 两道前置，缺一不可：
+//   ① 公众平台「设置 → 第三方设置 → 插件管理」已添加「同声传译」(provider wx069ba97219f66d99) —— 已办
+//   ② manifest.json 的 mp-weixin.plugins 里声明 WechatSI，**版本号必须与后台给的一致**
+// 任一不满足时 requirePlugin 会直接抛错 —— 这里必须兜住（否则整页白屏）；兜住后话筒按钮不出现，
+// 文字下单、分享入口等其余功能完全不受影响。
+const voiceReady = ref(false)
+const recording = ref(false)
+const recText = ref('')
+let recManager = null
+let recSafetyTimer = null
+
+function bindRecordEvents() {
+  if (!recManager) return
+  // 中间结果（部分基础库会回调；官方文档只保证 onStop 的 result）
+  recManager.onRecognize = (res) => { recText.value = String((res && res.result) || recText.value || '') }
+  recManager.onStop = (res) => {
+    clearTimeout(recSafetyTimer)
+    // 页面已隐藏/卸载时主动停过录音 → 这里不再喂给解析（避免在销毁的页面上发请求）
+    if (!recording.value) return
+    recording.value = false
+    const text = String((res && res.result) || '').trim()
+    recText.value = ''
+    if (!text) { uni.showToast({ title: '没听清，请再说一遍', icon: 'none' }); return }
+    input.value = text
+    send() // 直接送进 AI 解析出草稿卡；成单还要在确认页人工点一次，不会有误单风险
+  }
+  recManager.onError = (err) => {
+    clearTimeout(recSafetyTimer)
+    recording.value = false
+    recText.value = ''
+    const code = (err && err.retcode) || 0
+    const msg = code === -30001 ? '没有麦克风权限，请在「设置」里打开'
+      : code === -40001 ? '说得太快啦，缓一下再试'
+      : code === -30011 ? '还在识别上一句，稍等一下'
+      : `语音识别失败(${code})，请改用打字或重试`
+    uni.showToast({ title: msg, icon: 'none' })
+  }
+}
+
+// #ifdef MP-WEIXIN
+try {
+  // 插件未声明/未授权时 requirePlugin 抛错 → 话筒按钮不出现
+  if (typeof requirePlugin === 'function') {
+    const si = requirePlugin('WechatSI')
+    if (si && typeof si.getRecordRecognitionManager === 'function') {
+      recManager = si.getRecordRecognitionManager()
+      bindRecordEvents()
+      voiceReady.value = true
+    }
+  }
+} catch (e) {
+  console.warn('[语音下单] 同声传译插件不可用，已隐藏语音入口：', e && e.message)
+}
+// #endif
+
+// 麦克风权限：已授权直接用；被拒过一次后不能再弹窗，得引导去设置页
+const ensureRecordAuth = () => new Promise((resolve) => {
+  uni.getSetting({
+    success: (r) => {
+      const cur = r.authSetting && r.authSetting['scope.record']
+      if (cur === true) return resolve(true)
+      if (cur === false) {
+        uni.showModal({
+          title: '需要麦克风权限',
+          content: '语音下单要用麦克风听懂您说的话，请在设置里打开',
+          confirmText: '去设置',
+          success: (m) => {
+            if (!m.confirm) return resolve(false)
+            uni.openSetting({
+              success: (o) => resolve(!!(o.authSetting && o.authSetting['scope.record'])),
+              fail: () => resolve(false),
+            })
+          },
+          fail: () => resolve(false),
+        })
+        return
+      }
+      uni.authorize({ scope: 'scope.record', success: () => resolve(true), fail: () => resolve(false) })
+    },
+    fail: () => resolve(true), // 拿不到设置就交给 start() 自己报错
+  })
+})
+
+const onMicStart = async () => {
+  if (!recManager || recording.value || sending.value) return
+  const ok = await ensureRecordAuth()
+  if (!ok) { uni.showToast({ title: '没有麦克风权限，无法语音下单', icon: 'none' }); return }
+  recText.value = ''
+  recording.value = true
+  try {
+    recManager.start({ lang: 'zh_CN', duration: 30000 })
+  } catch (e) {
+    recording.value = false
+    uni.showToast({ title: '录音启动失败，请重试', icon: 'none' })
+    return
+  }
+  // 兜底：插件万一没回调 onStop/onError，别让浮层卡住
+  recSafetyTimer = setTimeout(() => { if (recording.value) { recording.value = false; recText.value = '' } }, 35000)
+}
+
+const onMicStop = () => {
+  if (!recording.value || !recManager) return
+  try { recManager.stop() } catch (e) { clearTimeout(recSafetyTimer); recording.value = false }
+}
+
+// 离开页面必须停掉录音（否则后台还在录、回调回来页面已销毁）
+const stopVoiceIfNeeded = () => {
+  if (!recording.value) return
+  clearTimeout(recSafetyTimer)
+  recording.value = false // 先置 false → onStop 回来时会被开头的判断挡住
+  try { recManager && recManager.stop() } catch (e) { /* 忽略：离开页面时的失败无意义 */ }
+}
+onHide(stopVoiceIfNeeded)
+onUnload(stopVoiceIfNeeded)
+
 // ── 分享入口（2026-09-23）──
 // 老板可以把这一页直接转发给客户、或丢进「XX餐馆采购群」，客户点一下卡片就落在本页，
 // 说一句话即可出订单草稿。不需要后端、不需要 access_token、不需要小程序码。
@@ -150,8 +286,21 @@ onShareAppMessage(() => ({
 .draft-body .b { font-weight: 700; }
 .draft-link { padding: 10px 12px; border-top: 1px solid $bg-soft; color: $info; font-weight: 700; font-size: 13px; }
 
-.chat-input { position: sticky; bottom: 0; display: flex; gap: 8px; padding: 8px 10px; background: $bg-soft; border-top: 1px solid $border; }
+.chat-input { position: sticky; bottom: 0; display: flex; gap: 8px; padding: 8px 10px; background: $bg-soft; border-top: 1px solid $border; align-items: center; }
 .chat-input input { flex: 1; border: none; border-radius: 8px; padding: 9px 12px; font-size: 13px; background: #fff; }
 .send-btn { flex: none; background: $brand; color: #fff; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; }
 .send-btn.disabled { opacity: 0.5; }
+
+/* 语音下单：按住说话 */
+.mic-btn { flex: none; width: 40px; height: 36px; border-radius: 8px; background: #fff; border: 1px solid $border; display: flex; align-items: center; justify-content: center; }
+.mic-btn .mic-ico { font-size: 17px; }
+.mic-btn.rec { background: $brand; border-color: $brand; }
+.mic-btn.rec .mic-ico { transform: scale(1.15); }
+.mic-btn.off { opacity: 0.45; }
+
+.rec-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 99; }
+.rec-box { width: 240px; background: #fff; border-radius: 14px; padding: 22px 18px; text-align: center; }
+.rec-mic { font-size: 40px; line-height: 1; }
+.rec-title { margin-top: 12px; font-size: 14px; color: $text-body; font-weight: 600; min-height: 20px; }
+.rec-tip { margin-top: 8px; font-size: 11px; color: $text-second; }
 </style>

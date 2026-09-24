@@ -12,7 +12,14 @@
     },
     "usingComponents": true,
     "permission": {
-      "scope.userLocation": { "desc": "配送路线与站点导航" }
+      "scope.userLocation": { "desc": "配送路线与站点导航" },
+      "scope.record": { "desc": "语音说出采买清单，自动生成订单草稿" }
+    },
+    "plugins": {
+      "WechatSI": {
+        "version": "0.3.5",
+        "provider": "wx069ba97219f66d99"
+      }
     }
   },
   "vueVersion": "3"
