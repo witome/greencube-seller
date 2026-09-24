@@ -25,6 +25,40 @@ export function resolveDeliveryDate(text: string | null | undefined): DeliveryDa
   return { label: '明天', iso: isoOf(1) }
 }
 
+/** 这句话有没有明确提到配送时间（今天/明天/后天）——多轮口径：没提就沿用草稿原值，不许被默认值覆盖 */
+export function hasDateMention(text: string | null | undefined): boolean {
+  return /(今天|今日|明天|明日|后天)/.test(String(text || ''))
+}
+
+/**
+ * 由 ISO 日期还原出「今天/明天/后天」的展示口径（多轮沿用草稿日期时用）。
+ * 不是这三天之一（如用户手改过更远的日期）就原样显示 MM-DD，不瞎猜。
+ */
+export function resolveDeliveryDateFromIso(iso: string | null | undefined): DeliveryDate | null {
+  const s = String(iso || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
+  const isoOf = (offset: number) => {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  }
+  if (s === isoOf(0)) return { label: '今天', iso: s }
+  if (s === isoOf(1)) return { label: '明天', iso: s }
+  if (s === isoOf(2)) return { label: '后天', iso: s }
+  return { label: s.slice(5), iso: s }
+}
+
+/**
+ * 多轮口径下这一轮的配送日期（唯一实现）：
+ * - 这句话（或模型填的日期）提到了时间 → 用它
+ * - 没提 → 沿用草稿原值；草稿也没有（首句）→ 走默认明天
+ */
+export function resolveTurnDeliveryDate(raw: string, modelDate: string | undefined, draftDate: string | undefined): DeliveryDate {
+  if (hasDateMention(raw) || hasDateMention(modelDate)) return resolveDeliveryDate(modelDate || raw)
+  return resolveDeliveryDateFromIso(draftDate) || resolveDeliveryDate(raw)
+}
+
 /** 中文数字 → 阿拉伯数字（一/二/两/三…十、十五、五十、一百二 等） */
 const CN_DIGIT: Record<string, number> = {
   零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,

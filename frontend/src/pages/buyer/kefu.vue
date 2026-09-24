@@ -2,12 +2,12 @@
   <view class="kefu-page">
     <scroll-view class="chat-body" scroll-y :scroll-into-view="scrollTo" scroll-with-animation>
       <view class="chat-time">今天</view>
-      <view class="notice">🤖 智能下单助手在线，发送想买的菜和数量即可生成订单草稿<br>🎤 按住左下角话筒说话也行<br>💬 也可把本页转发给同事或采购群，对方点一下就能下单</view>
+      <view class="notice">🤖 智能下单助手在线，发送想买的菜和数量即可整理订单草稿<br>💬 可以一句一句来（「土豆5斤」→「再加5斤土豆」），草稿会一直累加；要改说「土豆改成20斤」<br>🎤 按住左下角话筒说话也行<br>💬 也可把本页转发给同事或采购群，对方点一下就能下单</view>
 
       <!-- 欢迎气泡 -->
       <view class="bubble-row">
         <view class="bubble-av">🤖</view>
-        <view class="bubble">您好，我是辉崧鲜配智能下单助手～<br>告诉我您要买什么，比如「土豆50斤，白菜两颗，明天早上送到」，我帮您整理成订单。</view>
+        <view class="bubble">您好，我是辉崧鲜配智能下单助手～<br>告诉我您要买什么，比如「土豆50斤，白菜两颗，明天早上送到」，我帮您整理成订单。<br>后面还想加菜，直接接着说就行。</view>
       </view>
 
       <!-- 消息列表 -->
@@ -18,37 +18,59 @@
           <view class="bubble">{{ m.text }}</view>
         </view>
 
-        <!-- AI 识别结果 -->
-        <view v-else-if="m.role === 'ai'" class="bubble-row">
+        <!-- 系统提示（清空草稿等） -->
+        <view v-else-if="m.role === 'sys'" class="sys-tip">{{ m.text }}</view>
+
+        <!-- AI 识别结果：只报「本次变化」，完整清单永远看下面那张草稿卡 -->
+        <view v-else class="bubble-row">
           <view class="bubble-av">🤖</view>
           <view class="bubble">
-            <template v-if="m.parse.items.length">
-              收到！已为您识别出以下商品：
+            <!-- 需要反问（口径：不确定就反问，草稿不动） -->
+            <template v-if="m.needClarify">
+              ❓ {{ m.needClarify }}<br><text class="ai-hint">草稿先没动，直接回我是哪个就行</text>
+            </template>
+            <!-- 请求异常 -->
+            <template v-else-if="m.error">
+              抱歉，刚才没听清（网络或服务异常）。草稿没变，可以再说一遍～
+            </template>
+            <!-- 本次有变化 -->
+            <template v-else-if="m.changes.length">
+              收到！本次改动：
               <view class="ai-list">
-                <view v-for="(it, i) in m.parse.items" :key="i" class="ai-item">
-                  <text class="ai-item-emoji">{{ emojiOf(it.name) }}</text>
-                  <text class="ai-item-name">{{ it.name }}</text>
-                  <text class="ai-item-qty">{{ it.qtyText }}</text>
-                  <text class="ai-item-amt">约 ¥{{ it.amount.toFixed(2) }}</text>
+                <view v-for="(c, i) in m.changes" :key="i" class="ai-item">
+                  <text class="ai-item-emoji">{{ changeIcon(c) }}</text>
+                  <text class="ai-item-name">{{ c.text }}</text>
                 </view>
-                <view class="ai-item ai-item-date">📅 {{ m.parse.deliveryDateLabel }}（{{ m.parse.deliveryDate }}）送达 · 合计预估 ¥{{ m.parse.total.toFixed(2) }}</view>
-                <view v-if="hasWeigh(m.parse)" class="ai-item ai-item-tip">💡 称重商品以实际称重为准，多退少补</view>
+                <view v-if="m.unmatched.length" class="ai-item ai-item-tip">🤔 没认出来的：{{ m.unmatched.join('、') }}</view>
               </view>
             </template>
+            <!-- 没变化 -->
             <template v-else>
-              抱歉，暂时没识别出可下单的商品，换个说法试试～比如「土豆10斤」
+              <template v-if="m.unmatched.length">这几样我还没对上商品：{{ m.unmatched.join('、') }}，换个说法试试～</template>
+              <template v-else>好的，记下了（这一句清单没有变化）</template>
             </template>
           </view>
         </view>
+      </view>
 
-        <!-- 草稿卡片 -->
-        <view v-if="m.role === 'ai' && m.parse.items.length" class="bubble-row">
-          <view class="bubble-av">🤖</view>
-          <view class="bubble draft-bubble">
-            <view class="draft-head">📋 订单草稿已生成</view>
-            <view class="draft-body">共 {{ m.parse.items.length }} 项 · 预估合计 ¥{{ m.parse.total.toFixed(2) }}<br>点击下方核对商品和数量，<text class="b">可直接修改</text>后确认下单</view>
-            <view class="draft-link" @tap="goConfirm(m.parse)">🔗 查看并确认订单 ›</view>
+      <!-- 唯一的一张实时草稿卡：每句话之后都更新成合并后的完整清单 -->
+      <view v-if="draft && draft.items.length" class="bubble-row">
+        <view class="bubble-av">🤖</view>
+        <view class="bubble draft-bubble">
+          <view class="draft-head">
+            <text>📋 当前订单草稿（{{ draft.items.length }} 项）</text>
+            <text class="draft-clear" @tap="clearDraft">清空重来</text>
           </view>
+          <view class="draft-list">
+            <view v-for="(it, i) in draft.items" :key="i" class="ai-item">
+              <text class="ai-item-emoji">{{ emojiOf(it.name) }}</text>
+              <text class="ai-item-name">{{ it.name }}</text>
+              <text class="ai-item-qty">{{ it.qtyText }}</text>
+            </view>
+            <view class="ai-item ai-item-date">📅 {{ draft.deliveryDateLabel }}（{{ draft.deliveryDate }}）送达 · 预估合计 ¥{{ draft.total.toFixed(2) }}</view>
+            <view v-if="hasWeigh(draft)" class="ai-item ai-item-tip">💡 称重商品以实际称重为准，多退少补</view>
+          </view>
+          <view class="draft-link" @tap="goConfirm">🔗 查看并确认订单 ›</view>
         </view>
       </view>
 
@@ -91,6 +113,11 @@ const input = ref('')
 const messages = ref([])
 const sending = ref(false)
 const scrollTo = ref('')
+// 整段对话就是**一张草稿**（2026-09-24）：后面每句话都作用在它上面。
+// ⚠️ 前端**不做合并**——合并只有服务端一处实现（parser/draft.ts），这里只负责把服务端返回的
+// 合并结果整份换上来。前端要是自己再拼一遍，就又会回到「同一张单两个数」的老毛病。
+// ⚠️ 不落缓存：退出小程序再进来就是新的草稿（口径 4，不带历史原话）。
+const draft = ref(null)
 
 const emojiOf = (name) => {
   const map = [
@@ -103,9 +130,18 @@ const emojiOf = (name) => {
 
 const hasWeigh = (parse) => (parse.items || []).some((it) => it.weighType === 1)
 
+const changeIcon = (c) => (c.type === 'remove' ? '➖' : c.type === 'clear' ? '🗑️' : c.type === 'set' ? '✏️' : '➕')
+
 const scrollBottom = () => {
   setTimeout(() => { scrollTo.value = 'chat-bottom' }, 50)
 }
+
+/** 把当前草稿行回传给服务端（只带草稿，不带历史原话） */
+const draftPayload = () => ({
+  draft: (draft.value?.items || []).map((it) => ({ productId: it.productId, qty: it.qty, unit: it.unit, name: it.name })),
+  draftDeliveryDate: draft.value?.deliveryDate || '',
+  draftRemark: draft.value?.remark || '',
+})
 
 const send = async () => {
   const text = input.value.trim()
@@ -115,19 +151,46 @@ const send = async () => {
   sending.value = true
   scrollBottom()
   try {
-    const parse = await buyerApi.aiParse(text)
-    messages.value.push({ role: 'ai', parse })
+    const parse = await buyerApi.aiParse(text, draftPayload())
+    // 服务端已经把这句话合并到草稿上了 —— 整份换上来即可（前端不合并）
+    draft.value = parse
+    messages.value.push({
+      role: 'ai',
+      changes: parse.changes || [],
+      needClarify: parse.needClarify || '',
+      unmatched: parse.unmatched || [],
+    })
   } catch (e) {
-    messages.value.push({ role: 'ai', parse: { items: [], total: 0 } })
+    // 错误已由 request.js 统一提示；这里只留一条可见回复，草稿保持不变
+    messages.value.push({ role: 'ai', error: true, changes: [], needClarify: '', unmatched: [] })
   } finally {
     sending.value = false
     scrollBottom()
   }
 }
 
-const goConfirm = (parse) => {
-  uni.setStorageSync('aiDraft', parse)
+// 写进确认页的必须是**合并后的完整草稿**（不是某一句的解析结果）
+const goConfirm = () => {
+  const d = draft.value
+  if (!d || !(d.items || []).length) return
+  uni.setStorageSync('aiDraft', { ...d, items: d.items.map((it) => ({ ...it })) })
   uni.navigateTo({ url: '/pages/buyer/ai-confirm' })
+}
+
+// 清空重来（口径 3）：只清本地这一张草稿，下一句从空草稿开始
+const clearDraft = () => {
+  if (!draft.value || !(draft.value.items || []).length) return
+  uni.showModal({
+    title: '清空重来',
+    content: '会把这张草稿里的商品全部清掉，然后重新说一遍。确定吗？',
+    confirmText: '清空',
+    success: (r) => {
+      if (!r.confirm) return
+      draft.value = null
+      messages.value.push({ role: 'sys', text: '已清空草稿，重新说要买什么吧' })
+      scrollBottom()
+    },
+  })
 }
 
 // ── 语音下单：微信官方「同声传译」插件（WechatSI）── 2026-09-24
@@ -313,14 +376,15 @@ onShareAppMessage(() => ({
 .ai-item-emoji { font-size: 14px; }
 .ai-item-name { font-weight: 600; }
 .ai-item-qty { color: $text-second; }
-.ai-item-amt { color: $danger; margin-left: auto; font-weight: 600; }
 .ai-item-date { color: $text-second; }
 .ai-item-tip { color: $text-second; font-size: 11px; }
+.ai-hint { color: $text-second; font-size: 11px; }
+.sys-tip { text-align: center; font-size: 11px; color: $text-second; margin: 10px 0; }
 
 .draft-bubble { padding: 0; overflow: hidden; width: 74%; }
-.draft-head { background: $brand-soft; padding: 10px 12px; font-size: 12px; color: $brand; font-weight: 700; }
-.draft-body { padding: 10px 12px; font-size: 12px; color: $text-body; line-height: 1.8; }
-.draft-body .b { font-weight: 700; }
+.draft-head { background: $brand-soft; padding: 10px 12px; font-size: 12px; color: $brand; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.draft-clear { color: $text-second; font-weight: 400; text-decoration: underline; flex: none; }
+.draft-list { padding: 8px 12px; font-size: 12px; line-height: 2; }
 .draft-link { padding: 10px 12px; border-top: 1px solid $bg-soft; color: $info; font-weight: 700; font-size: 13px; }
 
 .chat-input { position: sticky; bottom: 0; display: flex; gap: 8px; padding: 8px 10px; background: $bg-soft; border-top: 1px solid $border; align-items: center; }

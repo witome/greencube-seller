@@ -51,7 +51,10 @@ export const buyerApi = {
   // 货到付款「我已付款」声明（2026-09-19 卡L）：⚠️ 只登记「客户称已付」，不是核销
   claimPaid: (id) => post(`/buyer/order/${id}/claim-paid`),
   setUrgent: (id, urgent) => post(`/order/${id}/urgent`, { urgent }), // 加急 1 / 取消加急 0
-  aiParse: (text) => post('/ai/parse', { text }),                 // AI 客服下单解析
+  // AI 客服下单解析
+  // ctx 可选（2026-09-24 多轮上下文）：{ draft:[{productId,qty,unit,name}], draftDeliveryDate, draftRemark }
+  // 传了 draft = 这句话作用在当前草稿上，返回合并后的完整 items；不传 = 老单句口径（行为不变）
+  aiParse: (text, ctx) => post('/ai/parse', ctx ? { text, ...ctx } : { text }),
   // 对账单/售后
   getBill: (period) => get(`/buyer/bill/${period}`),
   submitAftersale: (data) => post('/buyer/aftersale', data),
