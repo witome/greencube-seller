@@ -142,6 +142,8 @@ const recording = ref(false)
 const recText = ref('')
 let recManager = null
 let recSafetyTimer = null
+let fingerDown = false // 手指是否还按在话筒上（首次授权弹窗会吃掉松手，靠它兜住）
+let stopping = false // 已发出 stop()、等回调 —— 防重复 stop（插件会回 -30012）
 
 function bindRecordEvents() {
   if (!recManager) return
@@ -149,6 +151,7 @@ function bindRecordEvents() {
   recManager.onRecognize = (res) => { recText.value = String((res && res.result) || recText.value || '') }
   recManager.onStop = (res) => {
     clearTimeout(recSafetyTimer)
+    stopping = false
     // 页面已隐藏/卸载时主动停过录音 → 这里不再喂给解析（避免在销毁的页面上发请求）
     if (!recording.value) return
     recording.value = false
@@ -160,16 +163,20 @@ function bindRecordEvents() {
   }
   recManager.onError = (err) => {
     clearTimeout(recSafetyTimer)
+    stopping = false
+    // 离开页面时主动 stop 会回 -30012（当前无识别任务）—— 这种"已经不在录了"的报错直接吞掉，别弹给用户
+    if (!recording.value) return
     recording.value = false
     recText.value = ''
     const code = (err && err.retcode) || 0
-    const msg = code === -30001 ? '没有麦克风权限，请在「设置」里打开'
+    const msg = code === -30001 ? '录音失败（请检查麦克风权限），可改用打字'
       : code === -40001 ? '说得太快啦，缓一下再试'
       : code === -30011 ? '还在识别上一句，稍等一下'
       : `语音识别失败(${code})，请改用打字或重试`
     uni.showToast({ title: msg, icon: 'none' })
   }
 }
+
 
 // #ifdef MP-WEIXIN
 try {
@@ -216,34 +223,64 @@ const ensureRecordAuth = () => new Promise((resolve) => {
 })
 
 const onMicStart = async () => {
-  if (!recManager || recording.value || sending.value) return
+  if (!recManager || recording.value || stopping || sending.value) return
+  fingerDown = true
   const ok = await ensureRecordAuth()
+  // ⚠️ 首次会弹系统授权窗，手指必然已经离开 —— 此时绝不能开录（否则会一直录到 30 秒上限）
+  if (!fingerDown) {
+    uni.showToast({
+      title: ok ? '麦克风已开启，请按住话筒说话' : '没有麦克风权限，无法语音下单',
+      icon: 'none',
+    })
+    return
+  }
   if (!ok) { uni.showToast({ title: '没有麦克风权限，无法语音下单', icon: 'none' }); return }
   recText.value = ''
+  stopping = false
   recording.value = true
   try {
     recManager.start({ lang: 'zh_CN', duration: 30000 })
   } catch (e) {
+    clearTimeout(recSafetyTimer)
     recording.value = false
     uni.showToast({ title: '录音启动失败，请重试', icon: 'none' })
     return
   }
   // 兜底：插件万一没回调 onStop/onError，别让浮层卡住
-  recSafetyTimer = setTimeout(() => { if (recording.value) { recording.value = false; recText.value = '' } }, 35000)
+  recSafetyTimer = setTimeout(() => {
+    if (recording.value) {
+      recording.value = false
+      recText.value = ''
+      stopping = false
+      uni.showToast({ title: '录音超时，请重试', icon: 'none' })
+    }
+  }, 35000)
 }
 
 const onMicStop = () => {
-  if (!recording.value || !recManager) return
-  try { recManager.stop() } catch (e) { clearTimeout(recSafetyTimer); recording.value = false }
+  fingerDown = false
+  // stopping 幂等：touchend 与 touchcancel 可能连着来，重复 stop 会被插件拒（-30012）
+  if (!recording.value || stopping || !recManager) return
+  stopping = true
+  try {
+    recManager.stop()
+  } catch (e) {
+    clearTimeout(recSafetyTimer)
+    stopping = false
+    recording.value = false
+  }
 }
 
 // 离开页面必须停掉录音（否则后台还在录、回调回来页面已销毁）
 const stopVoiceIfNeeded = () => {
+  fingerDown = false
   if (!recording.value) return
   clearTimeout(recSafetyTimer)
-  recording.value = false // 先置 false → onStop 回来时会被开头的判断挡住
+  recording.value = false // 先置 false → onStop/onError 回来时会被开头的判断挡住
+  stopping = true
   try { recManager && recManager.stop() } catch (e) { /* 忽略：离开页面时的失败无意义 */ }
 }
+
 onHide(stopVoiceIfNeeded)
 onUnload(stopVoiceIfNeeded)
 
