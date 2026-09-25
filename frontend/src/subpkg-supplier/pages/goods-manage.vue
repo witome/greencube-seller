@@ -105,6 +105,20 @@
         </view>
       </view>
     </view>
+
+    <!-- 底部固定语音入口（2026-09-25 卡U，与原型①屏一致）：
+         插件不可用（H5 / 未声明 WechatSI）时按钮不出现，只剩打字入口 —— 与采购方 kefu.vue 同一策略 -->
+    <view class="voice-bar">
+      <view class="voice-hint">例：「西红柿三块八，今天有两百斤」</view>
+      <view v-if="voiceReady" class="voice-btn" @tap="goVoiceReport">
+        <view class="voice-btn-t">🎤 按住说话 改价 / 报量</view>
+        <view class="voice-btn-d">说完会念给你确认，认错了可以改</view>
+      </view>
+      <view v-else class="voice-typing">
+        <input v-model="voiceText" class="voice-ipt" placeholder="打字报量 / 改价，如：西红柿三块八，今天有两百斤" confirm-type="send" @confirm="goVoiceByText" />
+        <view class="voice-send" :class="{ disabled: !voiceText.trim() }" @tap="goVoiceByText">解析</view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -141,6 +155,36 @@ const stockValue = ref('')
 // 编辑（变更审核）
 const editTarget = ref(null)
 const editForm = ref({ name: '', supplyPrice: '', dailySupply: '' })
+
+// ── 底部语音入口（2026-09-25 卡U）──
+const voiceReady = ref(false)
+const voiceText = ref('')
+
+// #ifdef MP-WEIXIN
+try {
+  // 插件未声明/未授权时 requirePlugin 抛错 → 按钮不出现，只剩打字入口（与采购方 kefu.vue 同策略）
+  if (typeof requirePlugin === 'function') {
+    const si = requirePlugin('WechatSI')
+    if (si && typeof si.getRecordRecognitionManager === 'function') {
+      voiceReady.value = true
+    }
+  }
+} catch (e) {
+  console.warn('[语音报量] 同声传译插件不可用，已切换为打字入口：', e && e.message)
+}
+// #endif
+
+function goVoiceReport() {
+  uni.navigateTo({ url: '/subpkg-supplier/pages/voice-report' })
+}
+
+function goVoiceByText() {
+  const t = voiceText.value.trim()
+  if (!t) { uni.showToast({ title: '先输入报量 / 改价内容', icon: 'none' }); return }
+  uni.setStorageSync('voiceReportText', t)
+  voiceText.value = ''
+  uni.navigateTo({ url: '/subpkg-supplier/pages/voice-report' })
+}
 
 const iconOf = (s) => ({ on_sale: '🥬', changing: '🥬', pending: '🫚', rejected: '🥬', off_shelf: '📦' }[s] || '🥬')
 const icoBg = (s) => ({ on_sale: '#E6F9F0', changing: '#E6F9F0', pending: '#FFF3E6', rejected: '#FFEDED', off_shelf: '#F0F1F3' }[s] || '#E6F9F0')
@@ -273,4 +317,31 @@ onMounted(() => {
 .modal .ipt {
   background: $bg-soft; border-radius: 8px; padding: 10px 12px; text-align: left; margin-bottom: 4px;
 }
+
+/* ── 底部固定语音入口（卡U）：列表底部留白跟着加大，别让最后一行被盖住 ── */
+.page { padding-bottom: 180rpx; }
+.voice-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  background: #fff; border-top: 1px solid #EEF1F4;
+  padding: 16rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+  box-shadow: 0 -8rpx 28rpx rgba(0, 0, 0, 0.05);
+}
+.voice-hint { font-size: 20rpx; color: #8A9099; text-align: center; margin-bottom: 12rpx; }
+.voice-btn {
+  background: linear-gradient(120deg, #00B96B, #35C98D); color: #fff;
+  border-radius: 28rpx; padding: 22rpx; text-align: center;
+  box-shadow: 0 12rpx 32rpx rgba(0, 185, 107, 0.28);
+}
+.voice-btn-t { font-size: 32rpx; font-weight: 700; }
+.voice-btn-d { font-size: 20rpx; opacity: 0.92; margin-top: 6rpx; }
+.voice-typing { display: flex; gap: 12rpx; align-items: center; }
+.voice-ipt {
+  flex: 1; min-height: 72rpx; height: 72rpx; line-height: 72rpx;
+  background: #F5F6F8; border-radius: 16rpx; padding: 0 20rpx; font-size: 26rpx;
+}
+.voice-send {
+  flex: none; background: #00B96B; color: #fff; font-size: 26rpx; font-weight: 600;
+  padding: 16rpx 28rpx; border-radius: 16rpx;
+}
+.voice-send.disabled { opacity: 0.5; }
 </style>
