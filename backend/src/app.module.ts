@@ -31,6 +31,8 @@ import { RegisterModule } from './modules/register/register.module'
 import { AiModule } from './modules/ai/ai.module'
 import { UploadModule } from './modules/upload/upload.module'
 import { PaymentModule } from './modules/payment/payment.module'
+import { DemandModule } from './modules/demand/demand.module'
+import { WxModule } from './modules/wx/wx.module'
 
 @Module({
   imports: [
@@ -66,6 +68,9 @@ import { PaymentModule } from './modules/payment/payment.module'
     AiModule,
     UploadModule,
     PaymentModule,
+    WxModule,
+    // 采购需求登记 + 到货主动通知（2026-09-25）
+    DemandModule,
   ],
   providers: [
     // 全局统一响应包装

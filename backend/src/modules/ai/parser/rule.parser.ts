@@ -75,6 +75,12 @@ export class RuleParser implements IParser {
       hasUnmatched: this.hasUnmatched(raw, items, matchedKeywords),
       rawText: raw,
       parser: 'rule',
+      // ⚠️ 2026-09-25 补齐（**纯新增字段，hasUnmatched 的语义一个字没改**）：
+      //    原来规则版只给「有没有没认出来的」这个布尔，不给**菜名是什么** —— 于是
+      //    大模型没配 Key / 超时降级到规则版时，「采购需求登记」拿不到菜名，这条路就断了。
+      //    而规则版是**保底路径**（大模型永远不是单点），这条能力不能只在有 LLM 时才存在。
+      //    补上它之后：客户说「土豆50斤，荷兰豆20斤」→ 土豆进草稿、荷兰豆进采购需求。
+      unmatched: this.extractUnmatched(raw, matchedKeywords),
     }
   }
 
@@ -105,6 +111,25 @@ export class RuleParser implements IParser {
 
   // ── 备注提取：按标点切分，去掉含商品/数量/配送时间的片段 ──
   private extractRemark(text: string, matched: { keyword: string; index: number }[]): string {
+    return this.leftoverSegments(text, matched).join('，')
+  }
+
+  /**
+   * 「没能对上商品」的片段（2026-09-25 新增）—— 给采购需求登记用
+   *
+   * ⚠️ 与 remark 共用同一份切法（leftoverSegments）：两个字段都表示「这句话里
+   *    既不是商品、也不是纯数量、也不是配送时间」的剩余部分，切法必须一致，
+   *    否则会出现「备注里有荷兰豆、需求里没有」这种对不上的现象。
+   *
+   * 注意这里返回的是**原话片段**（如「荷兰豆20斤」），不做归一化 —— 归一化只有一处实现
+   * （demand.util.ts 的 normalizeDemandKey），在写库那一侧做。
+   */
+  private extractUnmatched(text: string, matched: { keyword: string; index: number }[]): string[] {
+    return this.leftoverSegments(text, matched)
+  }
+
+  /** 切出「既不是商品、也不是纯数量、也不是配送时间」的片段（remark / unmatched 共用） */
+  private leftoverSegments(text: string, matched: { keyword: string; index: number }[]): string[] {
     const segments = text.split(/[，,、。；;\s]+/).map((s) => s.trim()).filter(Boolean)
     const drop = (seg: string) => {
       // 含商品关键词
@@ -115,8 +140,7 @@ export class RuleParser implements IParser {
       if (/(今天|今日|明天|明日|后天|早上|上午|中午|下午|晚上|送到|送达|配送)/.test(seg)) return true
       return false
     }
-    const kept = segments.filter((s) => !drop(s))
-    return kept.join('，') || ''
+    return segments.filter((s) => !drop(s))
   }
 
   // ── 判断是否有未识别的内容（供前端提示） ──

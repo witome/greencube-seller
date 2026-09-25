@@ -30,6 +30,9 @@
         <el-menu-item index="/goods-manage">
           <el-icon><Box /></el-icon><span>商品管理</span>
         </el-menu-item>
+        <el-menu-item index="/demand">
+          <el-icon><Bell /></el-icon><span>采购需求</span>
+        </el-menu-item>
         <el-menu-item index="/categories">
           <el-icon><Menu /></el-icon><span>分类管理</span>
         </el-menu-item>

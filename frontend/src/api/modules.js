@@ -69,6 +69,22 @@ export const buyerApi = {
   getHomeContent: () => get('/buyer/home-content'),
 }
 
+/* ── 采购需求（客户要了、我们还没有的货）2026-09-25 ──
+ * ⚠️ 与「下单后供应商缺货」（order_item.qty_accepted）是**两条独立的线**，别混用。
+ * ⚠️ 上报走这里的 report 接口，**不在 /ai/parse 里写库**——/ai/parse 必须保持只读
+ *    （所有生产只读探针都依赖这条）。
+ */
+export const demandApi = {
+  // 授权配置：configured=false（运营还没配模板）时「到货通知我」按钮**不显示**
+  subscribeConfig: () => get('/buyer/demand/subscribe-config'),
+  // 上报没认出来的菜名（幂等；调用方必须 catch 后静默，绝不影响下单）
+  report: (items, source = 1) => post('/buyer/demand/report', { items, source }),
+  // 上报 wx.requestSubscribeMessage 的结果 → 落授权额度（服务端只能靠它知道能不能发）
+  subscribe: (data) => post('/buyer/demand/subscribe', data),
+  // 我的需求（名称/状态/最后时间/是否已通知）
+  mine: () => get('/buyer/demand/mine'),
+}
+
 /* ── 运营端 ── */
 export const adminApi = {
   // 采购方管理（含注册-审核）

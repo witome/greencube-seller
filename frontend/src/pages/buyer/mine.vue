@@ -84,6 +84,15 @@
           </view>
           <view class="buyer-mine-arrow">›</view>
         </view>
+        <!-- 采购需求（2026-09-25）：客户要了但我们还没上架的菜，会记在这里 -->
+        <view class="buyer-mine-menu-item" @tap="go('/pages/buyer/my-demands')">
+          <view class="buyer-mine-menu-ico buyer-mine-ico-teal">📩</view>
+          <view class="buyer-mine-menu-main">
+            <view class="buyer-mine-menu-t">我的需求</view>
+            <view class="buyer-mine-menu-d">没上架的菜记在这儿，到货通知你</view>
+          </view>
+          <view class="buyer-mine-arrow">›</view>
+        </view>
       </view>
 
       <!-- 退出登录 -->

@@ -588,3 +588,129 @@ model PaymentRecord {
   @@index([orderId])
   @@map("payment_record")
 }
+
+// ══════════════════════════════════════════
+// 4. 采购需求（客户要了、我们**还没有**的货）
+// ══════════════════════════════════════════
+//
+// ⚠️ 口径边界（务必保持）——这条线**不是**「下单后供应商缺货」那条线。
+//   · 本域 = 客户还没下单、我们商品库里压根没有这个菜（或该菜已下架）
+//   · `order_item.qty_accepted` 那套 = 已经下单了、到货不够
+//   两者是**完全独立**的两条线：不共用表、不共用页面、不互相回写。
+//   把两者混在一起会让「谁欠谁多少」彻底算不清，所以这里连字段都不复用。
+//
+// 数据来源四种（口径 1）：① AI 对话里对不上的菜名（主，自动）② 已有商品但已下架
+//   ③ 后台手动新增（电话/微信来的需求）④ 客户侧搜索无结果（**二期，不做**）
+//
+// ⚠️ 只读语义护栏（口径 2）：`POST /api/v1/ai/parse` **永远不写库**（只 findMany 商品）。
+//   上报走前端单独调 `POST /buyer/demand/report`。为什么必须这样：所有生产只读探针
+//   （巡检脚本、冒烟、Hermes 复核）都依赖「打 /ai/parse 不会产生任何写」这条前提，
+//   一旦在里面插一条写库，只读探针就会开始偷偷改生产数据。**不要动这条。**
+
+/// 采购需求·汇总（按归一化菜名聚合，后台「几人在要 / 共几次」看这张）
+model PurchaseDemand {
+  id BigInt @id @default(autoincrement())
+  /// 归一化键（唯一）。**唯一实现只有一处**：demand/demand.util.ts 的 normalizeDemandKey()
+  /// 规则：去首尾空格 → 全角转半角 → 去所有空格 → 去首尾量词/单位 → 英文小写。
+  /// ⚠️ 近似词**不自动合并**（自动合并容易把两样菜并成一条）→ 后台给「合并到…」手动按钮。
+  demandKey String @unique @map("demand_key") @db.VarChar(64)
+  /// 显示名（首次上报时的原话，后台可改；改名**不回写** demandKey）
+  name String @db.VarChar(64)
+  /// 0 待采购 / 1 已下单采购中 / 2 已到货 / 3 已放弃
+  status Int @default(0) @db.TinyInt
+  /// 总次数（= 该需求下明细行数，每次上报重算）
+  demandCount Int @default(0) @map("demand_count")
+  /// 去重人数（= 该需求下去重 purchaser 数，每次上报重算）
+  purchaserCount Int @default(0) @map("purchaser_count")
+  firstAt DateTime @default(now()) @map("first_at")
+  lastAt DateTime @default(now()) @map("last_at")
+  /// 命中的**已下架**商品 id（口径 1②；未收录为 NULL）。纯标量，不声明 relation，
+  /// 与 order_item.supplier_id 同为「跨聚合按约定引用」的写法。
+  productId BigInt? @map("product_id")
+  /// 运营备注（采购渠道 / 报价 / 为什么放弃…）
+  note String? @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items PurchaseDemandItem[]
+  notifyLogs DemandNotifyLog[]
+
+  @@index([status, lastAt])
+  @@map("purchase_demand")
+}
+
+/// 采购需求·明细（谁 / 何时 / 要多少 / 原话片段）
+model PurchaseDemandItem {
+  id BigInt @id @default(autoincrement())
+  demandId BigInt @map("demand_id")
+  /// 采购方档案 id（purchaser.id）。纯标量引用，同 order_item.supplier_id 的写法
+  purchaserId BigInt @map("purchaser_id")
+  /// 上报账号 user_id（提报人；purchaser.user_id 唯一，二者 1:1）——发通知要它换 openid
+  userId BigInt @map("user_id")
+  /// ⚠️ **只存被识别成菜名的那一段**，绝不存整句对话。
+  /// 为什么要卡这个：客户原话里常带电话 / 地址 / 人名（「朝阳路3号老王要两斤荷兰豆 138…」），
+  /// 整句进清单=把客户隐私塞进运营导出 CSV 里。这里只留菜名片段（≤32 字）。
+  rawText String @map("raw_text") @db.VarChar(64)
+  qtyText String? @map("qty_text") @db.VarChar(32)
+  unit String? @db.VarChar(10)
+  qty Decimal? @db.Decimal(10, 2)
+  /// 0 未收录 / 1 已有商品·已下架（口径 1②）
+  kind Int @default(0) @db.TinyInt
+  /// 1 AI 对话（自动）/ 2 后台手填（电话、微信来的需求）
+  source Int @default(1) @db.TinyInt
+  createdAt DateTime @default(now()) @map("created_at")
+
+  demand PurchaseDemand @relation(fields: [demandId], references: [id])
+
+  @@index([demandId])
+  @@index([purchaserId])
+  @@map("purchase_demand_item")
+}
+
+/// 到货通知·发送记录（逐人一行，只记真实发送结果）
+/// ⚠️ 口径 5：发不出去的人**不群发、不假装发过**——他们没有 result='ok' 的行，
+///    进小程序「我的 → 我的需求」列表 + 后台标「待其主动来访」。
+model DemandNotifyLog {
+  id BigInt @id @default(autoincrement())
+  demandId BigInt @map("demand_id")
+  purchaserId BigInt @map("purchaser_id")
+  /// 1 订阅消息 / 2 客服消息 / 3 仅站内列表（= 没发出去，只登记原因）
+  channel Int @db.TinyInt
+  templateId String? @map("template_id") @db.VarChar(64)
+  /// ok / fail
+  result String @db.VarChar(8)
+  /// 微信返回的 errcode（45015 = 客服消息已超 48 小时窗口）
+  errCode Int? @map("err_code")
+  errMsg String? @map("err_msg") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  demand PurchaseDemand @relation(fields: [demandId], references: [id])
+
+  @@index([demandId])
+  @@index([purchaserId])
+  @@map("demand_notify_log")
+}
+
+/// 到货通知·订阅授权额度（每人每模板一行）
+///
+/// ⚠️ 这张表是「口径 4 + 验收⑦」的**必要落地**：`wx.requestSubscribeMessage` 只在**客户端**
+///   发生，服务端不知道用户点了同意还是拒绝，只能靠 `POST /buyer/demand/subscribe`
+///   把结果报上来。而「能不能发订阅消息」= 该用户该模板**还剩几次额度**（微信口径：
+///   用户每同意一次，授予**一次**发送机会，发一次扣一次），所以必须逐人留一行额度。
+///   没有这张表就没法实现「预览里分『可发 / 发不了』两类名单」。
+model DemandSubscribeQuota {
+  id BigInt @id @default(autoincrement())
+  purchaserId BigInt @map("purchaser_id")
+  templateId String @map("template_id") @db.VarChar(64)
+  /// 剩余可发次数（用户每同意一次 +1，成功发出一条 -1；不会小于 0）
+  quota Int @default(0)
+  /// 最近一次授权时刻（用户在授权弹窗点「允许」的时刻，服务端侧记录 = 上报时刻）
+  acceptedAt DateTime? @map("accepted_at")
+  /// 最近一次成功发送时刻
+  notifiedAt DateTime? @map("notified_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([purchaserId, templateId])
+  @@map("demand_subscribe_quota")
+}

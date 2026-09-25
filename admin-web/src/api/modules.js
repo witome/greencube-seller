@@ -125,3 +125,31 @@ export const aftersaleAdminApi = {
   detail: (id) => request.get(`/admin/aftersale/${id}`),
   handle: (id, data) => request.post(`/admin/aftersale/${id}/handle`, data),
 }
+
+/* ── 采购需求（2026-09-25：客户要了、我们还没有的货） ──
+ * ⚠️ 与「下单后供应商缺货」（order_item.qty_accepted）是两条独立的线，别混。
+ * 排序默认按「要的人多优先」；传 sort:'recent' 切「最近优先」。
+ */
+export const demandAdminApi = {
+  list: (params) => request.get('/admin/demand', { params }),
+  detail: (id) => request.get(`/admin/demand/${id}`),
+  update: (id, data) => request.put(`/admin/demand/${id}`, data),
+  merge: (id, targetId) => request.post(`/admin/demand/${id}/merge`, { targetId }),
+  create: (data) => request.post('/admin/demand', data),
+  notifyPreview: (id) => request.get(`/admin/demand/${id}/notify-preview`),
+  notify: (id) => request.post(`/admin/demand/${id}/notify`),
+  // CSV 导出：后端直接回 text/csv（带 UTF-8 BOM），**绕开了 axios 的 { code, msg, data } 解包**，
+  // 所以这里用原生 fetch 拿原始字节，不走 request 实例。
+  // ⚠️ 必须是 arrayBuffer()，**不能用 text()**：fetch 的 text() 按规范会**吃掉 BOM**，
+  //    再拿去做 Blob 下载，导出的 CSV 就丢了 BOM → Excel 双击变乱码（2026-09-25 实测踩到）。
+  exportCsv: async (params) => {
+    const qs = new URLSearchParams(
+      Object.entries(params || {}).filter(([, v]) => v !== '' && v != null),
+    ).toString()
+    const res = await fetch(`/api/v1/admin/demand/export${qs ? '?' + qs : ''}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('admin_token') || ''}` },
+    })
+    if (!res.ok) throw new Error('导出失败')
+    return res.arrayBuffer()
+  },
+}

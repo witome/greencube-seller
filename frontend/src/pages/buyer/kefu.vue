@@ -49,6 +49,20 @@
               <template v-if="m.unmatched.length">这几样我还没对上商品：{{ m.unmatched.join('、') }}，换个说法试试～</template>
               <template v-else>好的，记下了（这一句清单没有变化）</template>
             </template>
+
+            <!-- 采购需求登记（2026-09-25）：没认出来的菜 → 已记下 + 「到货通知我」
+                 只在服务端**真的登记成功**（demandRecorded）时才出现——
+                 上报失败就退回原来的样子，不做「假装记下了」。
+                 授权弹窗只能在用户刚说完话的这一刻弹（口径 4：此时转化最高，失败也不打扰他）。 -->
+            <view v-if="m.demandRecorded" class="demand-note">
+              <view class="demand-note-t">🤔 我还没上架，已帮你记下，到货通知你 📩</view>
+              <view
+                v-if="demandTmplId"
+                class="demand-note-btn"
+                :class="{ done: m.notifySubscribed }"
+                @tap="onSubscribeDemand(m)"
+              >{{ m.notifySubscribed ? '✅ 已开启到货通知' : '到货通知我' }}</view>
+            </view>
           </view>
         </view>
       </view>
@@ -106,8 +120,8 @@
 
 <script setup>
 import { ref } from 'vue'
-import { onShareAppMessage, onHide, onUnload } from '@dcloudio/uni-app'
-import { buyerApi } from '@/api/modules'
+import { onLoad, onShareAppMessage, onHide, onUnload } from '@dcloudio/uni-app'
+import { buyerApi, demandApi } from '@/api/modules'
 
 const input = ref('')
 const messages = ref([])
@@ -118,6 +132,67 @@ const scrollTo = ref('')
 // 合并结果整份换上来。前端要是自己再拼一遍，就又会回到「同一张单两个数」的老毛病。
 // ⚠️ 不落缓存：退出小程序再进来就是新的草稿（口径 4，不带历史原话）。
 const draft = ref(null)
+
+// ── 采购需求登记 + 到货通知授权（2026-09-25）──
+// 「到货通知我」按钮要不要显示，取决于**服务端有没有配到货通知模板**（口径 8：
+// 绝不写死模板 id）。拿不到配置就不显示按钮 —— 宁可不显示，也不给客户一个点了没用的按钮。
+const demandTmplId = ref('')
+
+onLoad(async () => {
+  try {
+    const cfg = await demandApi.subscribeConfig()
+    demandTmplId.value = cfg && cfg.configured ? cfg.templateId || '' : ''
+  } catch (e) {
+    demandTmplId.value = ''
+  }
+})
+
+/** 上报「没认出来的菜」→ 后台「采购需求」；**失败静默**，气泡退回原来的样子 */
+const recordDemand = async (msg, unmatched) => {
+  try {
+    // ⚠️ 只上报**被识别成菜名的那一段**（unmatched 每项就是菜名），
+    //    绝不把客户整句原话塞上去 —— 原话里常带电话/地址，会被后台导出成 CSV 发出去
+    await demandApi.report(unmatched.map((t) => ({ rawText: t })), 1)
+    msg.demandRecorded = true
+  } catch (e) {
+    msg.demandRecorded = false
+  }
+}
+
+/** 点「到货通知我」→ 拉起微信订阅授权 → 把结果报给服务端落额度 */
+const onSubscribeDemand = (msg) => {
+  const tmpl = demandTmplId.value
+  if (!tmpl) return
+  // H5 / 非微信环境没有这个 API → 给一句人话提示，别留「点了没反应」的假按钮
+  if (typeof uni.requestSubscribeMessage !== 'function') {
+    uni.showToast({ title: '请在微信小程序里开启到货通知', icon: 'none' })
+    return
+  }
+  uni.requestSubscribeMessage({
+    tmplIds: [tmpl],
+    success: async (res) => {
+      const accepted = []
+      const rejected = []
+      Object.keys(res || {}).forEach((k) => {
+        if (k === 'errMsg') return
+        if (res[k] === 'accept') accepted.push(k)
+        else rejected.push(k)
+      })
+      msg.notifySubscribed = accepted.includes(tmpl)
+      // ⚠️ 服务端**只能**靠这次上报知道能不能发（授权只发生在客户端）
+      try {
+        await demandApi.subscribe({ templateId: tmpl, accepted, rejected })
+      } catch (e) {
+        /* 上报失败不打断客户：下次补授权还能把额度加上 */
+      }
+      uni.showToast({
+        title: msg.notifySubscribed ? '已开启，到货就通知你' : '好的，需要时可在「我的需求」里再开',
+        icon: 'none',
+      })
+    },
+    fail: () => uni.showToast({ title: '开启失败，稍后可在「我的需求」里再试', icon: 'none' }),
+  })
+}
 
 const emojiOf = (name) => {
   const map = [
@@ -154,12 +229,25 @@ const send = async () => {
     const parse = await buyerApi.aiParse(text, draftPayload())
     // 服务端已经把这句话合并到草稿上了 —— 整份换上来即可（前端不合并）
     draft.value = parse
-    messages.value.push({
+    const aiMsg = {
       role: 'ai',
       changes: parse.changes || [],
       needClarify: parse.needClarify || '',
       unmatched: parse.unmatched || [],
-    })
+      demandRecorded: false,
+      notifySubscribed: false,
+    }
+    messages.value.push(aiMsg)
+    // ── 采购需求登记（2026-09-25）──────────────────────────────
+    // 客户要的菜我们没收录 → 上报给后台整理成采购清单（口径 1①）。
+    // ⚠️ 三条纪律：
+    //   ① **不在 /ai/parse 里写库** —— 那条接口必须保持只读（所有生产只读探针都依赖它），
+    //      所以登记走这里单独调 report 接口；
+    //   ② **失败一律静默** —— 登记不成功也绝不能让客户的正常下单受影响；
+    //   ③ 只有**真的登记成功**才显示「已帮你记下」，不做假装记下。
+    if (!parse.needClarify && (parse.unmatched || []).length) {
+      await recordDemand(aiMsg, parse.unmatched)
+    }
   } catch (e) {
     // 错误已由 request.js 统一提示；这里只留一条可见回复，草稿保持不变
     messages.value.push({ role: 'ai', error: true, changes: [], needClarify: '', unmatched: [] })
@@ -380,6 +468,15 @@ onShareAppMessage(() => ({
 .ai-item-tip { color: $text-second; font-size: 11px; }
 .ai-hint { color: $text-second; font-size: 11px; }
 .sys-tip { text-align: center; font-size: 11px; color: $text-second; margin: 10px 0; }
+
+/* 采购需求登记提示 + 「到货通知我」（2026-09-25） */
+.demand-note { margin-top: 10px; padding-top: 8px; border-top: 1px dashed $bg-soft; }
+.demand-note-t { font-size: 12px; color: $brand-deep; line-height: 1.6; }
+.demand-note-btn {
+  margin-top: 8px; display: inline-block; background: $brand; color: #fff;
+  font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: 16px;
+}
+.demand-note-btn.done { background: $bg-soft; color: $text-second; }
 
 .draft-bubble { padding: 0; overflow: hidden; width: 74%; }
 .draft-head { background: $brand-soft; padding: 10px 12px; font-size: 12px; color: $brand; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
