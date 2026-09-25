@@ -7,18 +7,7 @@
       <!-- 没听清 / 反问提示（兜底 A：连说两次不行 → 提示改用打字） -->
       <view v-if="tipMessage" class="tip-warn">⚠️ {{ tipMessage }}</view>
 
-      <!-- 按住说话（原型②屏；插件不可用时整个不出现，只剩打字入口 —— 与采购方同一策略） -->
-      <view
-        v-if="voiceReady"
-        class="mic-hold"
-        :class="{ rec: recording }"
-        @touchstart.prevent="onMicStart"
-        @touchend.prevent="onMicStop"
-        @touchcancel="onMicStop"
-      >
-        <view class="mic-hold-t">🎤 按住说话 改价 / 报量</view>
-        <view class="mic-hold-d">{{ recording ? '松手结束' : '说完会念给你确认，认错了可以改' }}</view>
-      </view>
+      <!-- 卡V：主按钮已移到屏幕底部固定条（见下方 .mic-bar），说话流里只留打字与例句 -->
 
       <view class="card">
         <view class="card-title">⌨️ 打字也可以</view>
@@ -145,6 +134,23 @@
       </view>
     </template>
 
+    <!-- ══════════ 底部固定条（卡V：说话态主按钮固定到底部，拇指够得着）══════════ -->
+    <!-- 只在说话态 + 语音插件可用时出现（H5/无插件整条不出现，与商品管理页①屏同一策略）；
+         录音期间保持挂载不摘除（touchend 必须还能落回这个节点），视觉被 z-index 更高的录音浮层盖住 -->
+    <view v-if="mode === 'listen' && voiceReady" class="mic-bar">
+      <view class="mic-hint">例：「西红柿三块八，今天有两百斤」</view>
+      <view
+        class="mic-hold"
+        :class="{ rec: recording }"
+        @touchstart.prevent="onMicStart"
+        @touchend.prevent="onMicStop"
+        @touchcancel="onMicStop"
+      >
+        <view class="mic-hold-t">🎤 按住说话 改价 / 报量</view>
+        <view class="mic-hold-d">{{ recording ? '松手结束' : '说完会念给你确认，认错了可以改' }}</view>
+      </view>
+    </view>
+
     <!-- 录音浮层（原型②屏：浮层从底部升起） -->
     <view v-if="recording" class="rec-mask" @touchmove.stop.prevent>
       <view class="rec-panel">
@@ -156,8 +162,8 @@
       </view>
     </view>
 
-    <!-- 页面级安全区占位 -->
-    <view class="page-pad"></view>
+    <!-- 页面级安全区占位（说话态加高：盖住底部固定条 + 安全区，滚到底例句卡不被压住） -->
+    <view class="page-pad" :class="{ tall: mode === 'listen' && voiceReady }"></view>
   </view>
 </template>
 
@@ -542,13 +548,24 @@ onUnload(stopVoiceIfNeeded)
 <style lang="scss" scoped>
 .page { min-height: 100vh; background: #F5F6F8; padding: 20rpx 24rpx 0; box-sizing: border-box; }
 .page-pad { height: calc(200rpx + env(safe-area-inset-bottom)); }
+/* 卡V：说话态留白 = 底部固定条实高（约 230rpx）+ 安全区 + 余量，滚到底例句卡不被压住 */
+.page-pad.tall { height: calc(300rpx + env(safe-area-inset-bottom)); }
 
 .notice { background: #E6F9F0; color: #00995A; font-size: 24rpx; line-height: 1.7; padding: 16rpx 20rpx; border-radius: 12rpx; margin-bottom: 20rpx; }
+
+/* 底部固定条（卡V；视觉沿用商品管理页 .voice-bar 同一套） */
+.mic-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  background: #fff; border-top: 1px solid #EEF1F4;
+  padding: 16rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+  box-shadow: 0 -8rpx 28rpx rgba(0, 0, 0, 0.05);
+}
+.mic-hint { font-size: 20rpx; color: #8A9099; text-align: center; margin-bottom: 12rpx; }
 
 /* 按住说话大按钮（真机；H5 无插件不出现） */
 .mic-hold {
   background: linear-gradient(120deg, #00B96B, #35C98D); color: #fff;
-  border-radius: 28rpx; padding: 28rpx; text-align: center; margin-bottom: 20rpx;
+  border-radius: 28rpx; padding: 22rpx; text-align: center;
   box-shadow: 0 12rpx 32rpx rgba(0, 185, 107, 0.28);
 }
 .mic-hold.rec { background: #1F2329; box-shadow: none; opacity: 0.92; }
