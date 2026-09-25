@@ -52,7 +52,37 @@
       </view>
       <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="form.supplyPrice" class="ipt" type="digit" placeholder="如 2.20（元/斤，提交后审核）" /></view></view>
       <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="form.dailySupply" class="ipt" type="digit" placeholder="如 200（斤）" /></view></view>
-      <view class="form-row"><view class="fr-l">资质证明</view><view class="fr-r muted">＋ 上传检疫合格证等（肉类/水产必填）</view></view>
+      <!-- 卡Z1：封面图（一期一张，点选可重选）+ 资质证明（真上传，上限5张） -->
+      <view class="form-row form-top">
+        <view class="fr-l">封面图</view>
+        <view class="fr-r">
+          <view v-if="!formCover && !coverPicking" class="cover-empty" @tap="pickFormCover">📷 点击选封面图<small>建议实拍：光线好、菜新鲜、别带包装袋</small></view>
+          <view v-else class="cover-picked" @tap="pickFormCover">
+            <view class="cover-thumb">
+              <image v-if="formCover" :src="fullUrl(formCover)" mode="aspectFill" class="cover-thumb-img" />
+              <view v-else class="cover-thumb-img cover-loading"></view>
+              <view class="cam-badge lg">📷</view>
+            </view>
+            <view class="cover-meta">
+              <view class="cover-meta-t">{{ coverPicking ? '上传中…' : '已选 1 张 · 点击可重选' }}</view>
+              <view class="cover-meta-d">随申请一起提交，走运营审核</view>
+            </view>
+          </view>
+        </view>
+      </view>
+      <view class="form-row form-top">
+        <view class="fr-l">资质证明</view>
+        <view class="fr-r">
+          <view class="pic-grid">
+            <view v-for="(p, i) in formQual" :key="i" class="pic">
+              <image :src="fullUrl(p)" mode="aspectFill" class="pic-img" @tap="previewPhotos(formQual, p)" />
+              <view class="pic-x" @tap.stop="formQual.splice(i, 1)">✕</view>
+            </view>
+            <view v-if="formQual.length < 5" class="pic-add" @tap="addQual">＋</view>
+          </view>
+          <view class="muted" style="font-size:11px;margin-top:4px;">营业执照、检疫合格证等（肉类/水产必填，最多 5 张，点图可查看）</view>
+        </view>
+      </view>
       <view class="row-btns">
         <view class="pbtn primary" @tap="submit">提交申请</view>
       </view>
@@ -61,7 +91,13 @@
     <!-- 我的商品列表 -->
     <view class="section-title">我的商品（{{ goods.length }}）</view>
     <view v-for="g in goods" :key="g.id" class="list-item">
-      <view class="li-ico" :style="{ background: icoBg(g.status) }">{{ iconOf(g.status) }}</view>
+      <!-- 卡Z1：封面缩略图（有 cover 显真图，无 cover 回退 emoji；点相机角标换图，免审即时） -->
+      <view class="li-thumb" @tap.stop="onTapCover(g)">
+        <image v-if="g.cover" :src="fullUrl(g.cover)" mode="aspectFill" class="li-img" />
+        <view v-else class="li-ico" :style="{ background: icoBg(g.status) }">{{ iconOf(g.status) }}</view>
+        <view v-if="coverUploadingId === g.id" class="thumb-spin"></view>
+        <view class="cam-badge">📷</view>
+      </view>
       <view class="li-main">
         <view class="li-t">
           {{ g.name }}
@@ -165,7 +201,8 @@
 import { ref, onMounted } from 'vue'
 import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { supplierApi } from '@/api/modules'
-import { post } from '@/api/request'
+import { post, put, fullUrl } from '@/api/request'
+import { pickPhotos, uploadPhoto, previewPhotos } from '@/utils/photo-upload'
 import { createVoiceHold } from '@/utils/voice-record'
 import VoiceConfirm from '@/components/VoiceConfirm.vue'
 
@@ -197,6 +234,83 @@ const stockValue = ref('')
 // 编辑（变更审核）
 const editTarget = ref(null)
 const editForm = ref({ name: '', supplyPrice: '', dailySupply: '' })
+
+// ── 换封面（卡Z1：免审即时生效，走 PUT /supplier-goods/:id/cover）──
+const coverUploadingId = ref(null) // 正在上传的商品 id：盖转圈 + 防重复点击
+
+function onTapCover(g) {
+  if (coverUploadingId.value) return // 上传中整页只允许一个在传，防连点并发写
+  uni.showActionSheet({
+    itemList: ['拍照', '从相册选择'],
+    success: ({ tapIndex }) => changeCover(g, tapIndex === 0 ? ['camera'] : ['album']),
+    fail: () => {}, // 用户点了取消
+  })
+}
+
+async function changeCover(g, sourceType) {
+  try {
+    const paths = await pickPhotos({ count: 1, sourceType })
+    const path = paths && paths[0]
+    if (!path) return
+    coverUploadingId.value = g.id
+    try {
+      const url = await uploadPhoto(path) // 压缩（≤300KB）→ POST /upload/image
+      await put(`/supplier-goods/${g.id}/cover`, { cover: url })
+      g.cover = url // 就地替换缩略图，不整页刷新
+      uni.showToast({ title: '封面已更新（已生效）', icon: 'none' })
+    } finally {
+      coverUploadingId.value = null
+    }
+  } catch (e) {
+    coverUploadingId.value = null
+    if (e && e.cancelled) return // 用户取消选图
+    if (e && e.msg) uni.showToast({ title: e.msg, icon: 'none' }) // 网络/图片过大等可读提示；业务错误 request 层已 toast
+  }
+}
+
+// ── 新商品表单：封面 + 资质证明（卡Z1：把「＋ 上传检疫合格证」死文案接上真上传）──
+const formCover = ref('') // 相对地址 /uploads/xxx
+const formQual = ref([])
+const coverPicking = ref(false)
+const qualUploading = ref(false)
+
+async function pickFormCover() {
+  if (coverPicking.value) return
+  try {
+    const paths = await pickPhotos({ count: 1 })
+    if (!paths || !paths[0]) return
+    coverPicking.value = true
+    try {
+      formCover.value = await uploadPhoto(paths[0])
+    } finally {
+      coverPicking.value = false
+    }
+  } catch (e) {
+    coverPicking.value = false
+    if (e && e.cancelled) return
+    if (e && e.msg) uni.showToast({ title: e.msg, icon: 'none' })
+  }
+}
+
+async function addQual() {
+  if (qualUploading.value) return
+  const remain = 5 - formQual.value.length
+  if (remain <= 0) { uni.showToast({ title: '资质证明最多 5 张', icon: 'none' }); return }
+  try {
+    const paths = await pickPhotos({ count: remain })
+    if (!paths || !paths.length) return
+    qualUploading.value = true
+    try {
+      for (const p of paths) formQual.value.push(await uploadPhoto(p))
+    } finally {
+      qualUploading.value = false
+    }
+  } catch (e) {
+    qualUploading.value = false
+    if (e && e.cancelled) return
+    if (e && e.msg) uni.showToast({ title: e.msg, icon: 'none' })
+  }
+}
 
 // ── 底部语音入口（卡W：真·按住录音，共享实现 utils/voice-record.js，全仓唯一）──
 // 卡X：松手/打字不再跳页 —— 就地解析后升起 VoiceConfirm 抽屉（确认→提交→结果→关闭全在本页）
@@ -330,10 +444,15 @@ async function submit() {
     weighType: form.value.weighType,
     supplyPrice: price,
     dailySupply: supply,
+    // 卡Z1：封面 + 资质证明（资质照片走 apply 已有的 images 字段，原型⑦屏口径）一并提交
+    cover: formCover.value || undefined,
+    images: formQual.value.length ? formQual.value : undefined,
   })
   uni.showToast({ title: '已提交，等待运营审核', icon: 'none' })
   showForm.value = false
   form.value = { name: '', categoryId: null, categoryName: '', weighType: 1, supplyPrice: '', dailySupply: '' }
+  formCover.value = ''
+  formQual.value = []
   load()
 }
 
@@ -391,6 +510,55 @@ onMounted(() => {
 .picker-val { color: $color-primary; }
 .muted { color: $text-placeholder; font-size: 12px; }
 .empty { text-align: center; color: $text-placeholder; padding: 60px 0; font-size: 13px; }
+
+/* ── 封面缩略图（卡Z1）：有 cover 显真图，无 cover 回退 emoji；点角标换图 ── */
+.li-thumb {
+  width: 46px; height: 46px; border-radius: 9px; flex-shrink: 0;
+  position: relative; overflow: visible; margin-right: 12px;
+}
+.li-img { width: 46px; height: 46px; border-radius: 9px; display: block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.cam-badge {
+  position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(17, 17, 17, 0.78); color: #fff; font-size: 9px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; border: 2px solid #fff; z-index: 2;
+}
+.cam-badge.lg { width: 24px; height: 24px; font-size: 12px; right: -6px; bottom: -6px; }
+.thumb-spin {
+  position: absolute; left: 0; top: 0; width: 46px; height: 46px; border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72); z-index: 3; overflow: hidden;
+}
+.thumb-spin::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px;
+  border-radius: 50%; border: 3px solid #E6F9F0; border-top-color: #00B96B;
+  animation: cover-spin 0.9s linear infinite;
+}
+@keyframes cover-spin { to { transform: rotate(360deg); } }
+
+/* 新商品表单：封面区 + 资质网格（原型⑦屏） */
+.form-top { align-items: flex-start; }
+.cover-empty {
+  border: 1.5px dashed #C9D2DA; border-radius: 9px; padding: 18px 12px; text-align: center;
+  color: #8A9099; font-size: 13px; display: flex; flex-direction: column; gap: 4px;
+}
+.cover-empty small { font-size: 11px; color: #B3B9C2; }
+.cover-picked { display: flex; align-items: center; gap: 10px; }
+.cover-thumb { width: 52px; height: 52px; border-radius: 9px; position: relative; flex-shrink: 0; }
+.cover-thumb-img { width: 52px; height: 52px; border-radius: 9px; display: block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.cover-thumb-img.cover-loading { background: #F0F1F3; }
+.cover-meta-t { font-size: 13px; font-weight: 600; color: $text-title; }
+.cover-meta-d { font-size: 10.5px; color: #8A9099; margin-top: 2px; }
+.pic-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.pic { width: 52px; height: 52px; border-radius: 9px; position: relative; }
+.pic-img { width: 52px; height: 52px; border-radius: 9px; display: block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.pic-x {
+  position: absolute; top: -6px; right: -6px; width: 17px; height: 17px; border-radius: 50%;
+  background: rgba(17, 17, 17, 0.78); color: #fff; font-size: 10px;
+  display: flex; align-items: center; justify-content: center; border: 2px solid #fff;
+}
+.pic-add {
+  width: 52px; height: 52px; border-radius: 9px; border: 1.5px dashed #C9D2DA;
+  display: flex; align-items: center; justify-content: center; font-size: 20px; color: #B3B9C2;
+}
 
 /* 弹层 */
 .mask {

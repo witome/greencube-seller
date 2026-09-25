@@ -39,4 +39,11 @@ export class ApplyGoodsDto {
   @IsOptional()
   @IsArray()
   qualification?: string[]
+
+  /// 封面图（2026-09-25 卡Z1）：可选；地址合法性（/uploads/ 或生产域名白名单）在 service 层校验，
+  /// 与 PUT :productId/cover 用同一套规则
+  @IsOptional()
+  @IsString()
+  @MaxLength(255, { message: '封面地址过长' })
+  cover?: string
 }

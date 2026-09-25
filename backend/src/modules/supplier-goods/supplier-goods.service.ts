@@ -13,6 +13,23 @@ const ProductStatus = {
   OFF_SHELF: 2, // 已下架
 } as const
 
+/// 封面地址白名单（2026-09-25 卡Z1）：只接受本站上传地址，防外链/防注入。
+/// ① 相对路径：/uploads/ 开头（POST /upload/image 的返回格式）
+/// ② 绝对地址：仅限生产域名 https://api.hsfresh.com/uploads/…（http(s) 皆收，路径必须在 /uploads/ 下）
+export function isValidCoverUrl(cover: unknown): cover is string {
+  if (typeof cover !== 'string' || !cover.trim()) return false
+  const s = cover.trim()
+  if (s.startsWith('/uploads/')) return true
+  try {
+    const u = new URL(s)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+    if (u.hostname !== 'api.hsfresh.com') return false
+    return u.pathname.startsWith('/uploads/')
+  } catch {
+    return false
+  }
+}
+
 @Injectable()
 export class SupplierGoodsService {
   constructor(private prisma: PrismaService, private audit: AuditService) {}
@@ -71,6 +88,7 @@ export class SupplierGoodsService {
       return {
         id: Number(p.id),
         name: p.name,
+        cover: p.cover ?? null,
         supplyPrice: Number(link.supplyPrice),
         dailySupply: Number(link.dailySupply),
         unit: p.unit,
@@ -93,6 +111,11 @@ export class SupplierGoodsService {
   // ────────────────────────────────────────
   async apply(userId: bigint, dto: ApplyGoodsDto) {
     const supplier = await this.getSupplier(userId)
+
+    // 封面地址合法性（卡Z1）：与 PUT :productId/cover 同一套白名单
+    if (dto.cover !== undefined && !isValidCoverUrl(dto.cover)) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '封面地址不合法')
+    }
 
     // ⚠️ 分类授权校验：供应商只能在自己被授权的分类发布商品
     const authorized = await this.prisma.supplierCategory.findFirst({
@@ -119,6 +142,7 @@ export class SupplierGoodsService {
           unit: dto.unit ?? '斤',
           specText: dto.specText,
           images: dto.images,
+          cover: dto.cover, // 卡Z1：新品提交可带封面（随审核一起过，不走免审通道）
           // ⚠️ 销售价由运营审核后按加价比例设定，此处占位 0
           salePrice: 0,
           markupRate: 0,
@@ -152,6 +176,7 @@ export class SupplierGoodsService {
             dailySupply: dto.dailySupply,
             images: dto.images,
             qualification: dto.qualification,
+            cover: dto.cover,
           },
           status: 0,
         },
@@ -245,5 +270,43 @@ export class SupplierGoodsService {
     })
 
     return { productId, dailySupply: dto.dailySupply, effectiveImmediately: true }
+  }
+
+  // ────────────────────────────────────────
+  // 📷 换封面（免审即时生效，2026-09-25 卡Z1）
+  // 照片不涉价格/数量口径 → 不建 applications、不走审核队列；归属校验 + 地址白名单 + 留痕
+  // ────────────────────────────────────────
+  async updateCover(userId: bigint, productId: number, cover: string) {
+    const supplier = await this.getSupplier(userId)
+
+    // 地址白名单：只收本站上传地址（/uploads/ 或生产域名），其它一律业务错误
+    if (!isValidCoverUrl(cover)) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '封面地址不合法')
+    }
+
+    // 归属校验：必须是本供应商名下商品，否则按资源不存在处理
+    const link = await this.prisma.productSupplierLink.findUnique({
+      where: { productId_supplierId: { productId: BigInt(productId), supplierId: supplier.id } },
+      include: { product: true },
+    })
+    if (!link) throw new BizException(ErrorCode.NOT_FOUND, '该商品不存在或不属于本供应商')
+
+    const coverBefore = link.product.cover ?? null
+    await this.prisma.product.update({
+      where: { id: link.productId },
+      data: { cover: cover.trim() },
+    })
+
+    // 留痕：与 VOICE_SUPPLIER_REPORT 同一写法（谁、哪个商品、换图前后）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'SUPPLIER_COVER_UPDATE',
+      entity: 'product',
+      entityId: productId,
+      before: { cover: coverBefore, supplierId: Number(supplier.id) },
+      after: { cover: cover.trim(), supplierId: Number(supplier.id) },
+    })
+
+    return { productId, cover: cover.trim(), effectiveImmediately: true }
   }
 }

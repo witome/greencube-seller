@@ -22,14 +22,16 @@ export const remainCount = (current, max = MAX_PHOTOS) => Math.max(0, max - (cur
 /**
  * 拍照 / 选图，返回本地临时路径数组（尚未上传）
  * 用户取消时 reject({ cancelled: true })，调用方应静默忽略
+ * sourceType（2026-09-25 卡Z1 小幅扩展）：可指定 ['camera'] 或 ['album']，
+ * 默认两者都给（原行为不变）；商品管理页换封面走 showActionSheet 后按选择传入
  */
-export function pickPhotos({ count = MAX_PHOTOS } = {}) {
+export function pickPhotos({ count = MAX_PHOTOS, sourceType = ['camera', 'album'] } = {}) {
   return new Promise((resolve, reject) => {
     uni.chooseImage({
       count,
       sizeType: ['compressed'],
       // 相机 + 相册：现场能拍，也能补选已拍好的照片（H5 端为文件选择）
-      sourceType: ['camera', 'album'],
+      sourceType,
       success: (res) => resolve(res.tempFilePaths || []),
       fail: (err) => reject({ cancelled: true, err }),
     })

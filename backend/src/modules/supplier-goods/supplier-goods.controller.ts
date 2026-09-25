@@ -45,4 +45,11 @@ export class SupplierGoodsController {
   async quickStock(@CurrentUser('userId') userId: bigint, @Param('productId') productId: string, @Body() dto: QuickStockDto) {
     return this.service.quickStock(userId, Number(productId), dto)
   }
+
+  /// 📷 换封面（免审即时生效，卡Z1：照片不涉价格口径，不走审核队列）
+  @Put(':productId/cover')
+  @Roles(Role.SUPPLIER)
+  async updateCover(@CurrentUser('userId') userId: bigint, @Param('productId') productId: string, @Body() body: { cover?: string }) {
+    return this.service.updateCover(userId, Number(productId), String(body?.cover ?? ''))
+  }
 }

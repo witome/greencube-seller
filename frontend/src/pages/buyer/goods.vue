@@ -22,7 +22,11 @@
       <!-- 商品流 -->
       <scroll-view scroll-y class="goods-list" :style="{ paddingBottom: selectedCount > 0 ? '122px' : '70px' }" @scrolltolower="loadMore">
         <view v-for="g in goodsList" :key="g.id" class="goods-card" @tap="goDetail(g.id)">
-          <view class="gc-cover">{{ g.name.slice(0, 1) }}</view>
+          <!-- 卡Z1：有封面显真图，无封面回退首字占位（不许白块/破图） -->
+          <view class="gc-cover">
+            <image v-if="g.cover" :src="fullUrl(g.cover)" mode="aspectFill" class="gc-cover-img" />
+            <text v-else>{{ g.name.slice(0, 1) }}</text>
+          </view>
           <view class="gc-main">
             <view class="gc-name">{{ g.name }}</view>
             <view class="gc-spec">{{ g.specText || (g.weighType === 1 ? '称重' : '固定规格') }}</view>
@@ -68,6 +72,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
+import { fullUrl } from '@/api/request'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
@@ -194,7 +199,8 @@ onShow(() => {
 .cate-item.on { background: #fff; color: $color-primary; font-weight: 700; }
 .goods-list { flex: 1; min-width: 0; height: 100%; padding: 8px 6px; box-sizing: border-box; }
 .goods-card { display: flex; gap: 10px; padding: 10px; background: #fff; border-radius: 8px; margin-bottom: 10px; }
-.gc-cover { width: 64px; height: 64px; border-radius: 8px; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
+.gc-cover { width: 64px; height: 64px; border-radius: 8px; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; overflow: hidden; }
+.gc-cover-img { width: 64px; height: 64px; display: block; }
 .gc-main { flex: 1; min-width: 0; }
 .gc-name { font-size: 15px; font-weight: 600; color: $text-title; }
 .gc-spec { font-size: 11px; color: $text-second; margin: 4px 0 8px; }

@@ -1,7 +1,10 @@
 <template>
   <view class="page" v-if="goods">
-    <!-- 封面占位 -->
-    <view class="gd-cover">{{ goods.name.slice(0, 1) }}</view>
+    <!-- 封面（卡Z1：有封面显真图，无封面回退首字占位） -->
+    <view class="gd-cover">
+      <image v-if="goods.cover" :src="fullUrl(goods.cover)" mode="aspectFill" class="gd-cover-img" />
+      <text v-else>{{ goods.name.slice(0, 1) }}</text>
+    </view>
 
     <view class="card">
       <view class="gd-name">{{ goods.name }}</view>
@@ -33,6 +36,7 @@
 import { ref, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
+import { fullUrl } from '@/api/request'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
 
 const goods = ref(null)
@@ -68,7 +72,8 @@ onLoad(async (opts) => {
 </script>
 
 <style lang="scss" scoped>
-.gd-cover { height: 200px; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 72px; border-radius: 8px; margin-bottom: 10px; }
+.gd-cover { height: 200px; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 72px; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.gd-cover-img { width: 100%; height: 200px; display: block; }
 .gd-name { font-size: 18px; font-weight: 700; color: $text-title; }
 .gd-price { color: #fa5151; font-size: 22px; font-weight: 700; margin: 8px 0; }
 .gd-unit { font-size: 13px; font-weight: 400; color: $text-second; }
