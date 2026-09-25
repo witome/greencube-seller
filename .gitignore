@@ -20,3 +20,8 @@ tmp/
 .playwright-cli/
 frontend/project.config.json
 frontend/project.private.config.json
+
+# 运行时上传的图片（后台收款码/凭证/资质图…）—— 属运行数据，不入库
+backend/uploads/
+# 一次性数据修复的留痕（订单 id 清单），非源码
+backend/fix-created-ids.json
