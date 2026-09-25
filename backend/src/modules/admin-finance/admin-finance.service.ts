@@ -121,15 +121,22 @@ export class AdminFinanceService {
     // 走原生 SQL 的原因：global_key 是生成列，Prisma schema 表达不了（声明了就报 3105），
     // 因此 Prisma 的 upsert 没有可用的唯一选择器（where 必须是 unique 字段）。
     // 不用 VALUES() 函数，把参数写两遍：避免 MySQL 8.0.20+ 的弃用告警，且 5.7 也兼容。
+    //
+    // ⚠️ 时间列用 **UTC_TIMESTAMP(3)**，不是 NOW(3)**（2026-09-25 统一，卡C）：
+    //    本机 MySQL 会话时区是 SYSTEM(+08)，`NOW(3)` 给的是**本地时间**；
+    //    而 Prisma 读写 `datetime(3)` 一律按 **UTC** 解释 —— 用 NOW(3) 写进去的值会被
+    //    当成 UTC 读，**整列偏 8 小时**（实测：写完后 updated_at 比 UTC 快 479 分钟，
+    //    运营在后台看到的是「8 小时后更新的」）。
+    //    这条与 demand 模块同一口径，全仓原生 SQL 写时间列一律 UTC_TIMESTAMP(3)。
     let savedId: bigint
     try {
       await this.prisma.$executeRaw`
         INSERT INTO service_fee_config (category_id, rate, updated_by, updated_at)
-        VALUES (${categoryId}, ${dto.rate}, ${userId}, NOW(3))
+        VALUES (${categoryId}, ${dto.rate}, ${userId}, UTC_TIMESTAMP(3))
         ON DUPLICATE KEY UPDATE
           rate = ${dto.rate},
           updated_by = ${userId},
-          updated_at = NOW(3)
+          updated_at = UTC_TIMESTAMP(3)
       `
 
       // 写入后回读该分类的唯一一行（唯一键保证至多一行）

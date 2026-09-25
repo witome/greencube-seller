@@ -261,6 +261,28 @@
           ⚠️ 运营还没配置到货通知模板（WX_SUBSCRIBE_TMPL_DEMAND），现在发不出去。
         </div>
 
+        <!-- 这次到底会发什么：字段映射来自哪里 + 用的是哪个单价（发之前就能核对） -->
+        <el-descriptions v-if="notifyPreview.template" :column="1" border size="small" class="admin-demand-tmpl-box">
+          <el-descriptions-item label="模板字段映射">
+            <el-tag size="small" :type="notifyPreview.template.source === 'discovered' ? 'success' : 'warning'">
+              {{ notifyPreview.template.sourceText }}
+            </el-tag>
+            <span class="admin-demand-field-map">{{ fieldMapText }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="notifyPreview.template.warn" label="⚠️ 降级原因">
+            <span style="color: #b88230">{{ notifyPreview.template.warn }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="商品单价">
+            <template v-if="notifyPreview.price && notifyPreview.price.ready">
+              <b>{{ notifyPreview.price.text }}</b>
+              <span class="admin-demand-field-map">（{{ notifyPreview.price.sourceText }}）</span>
+            </template>
+            <span v-else style="color: #f56c6c">
+              商品表里查不到这个菜的在售商品 → 请先到「商品管理」把它上架并确认单价，否则「商品单价」这一栏没法填
+            </span>
+          </el-descriptions-item>
+        </el-descriptions>
+
         <!-- 发送前：三类名单 -->
         <template v-if="!notifyResult">
           <div class="admin-demand-sub-title">
@@ -322,7 +344,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { demandAdminApi } from '../../api/modules'
 
@@ -361,6 +383,18 @@ const notifyResult = ref(null)
 
 const STATUS_TYPE = { 0: 'warning', 1: 'primary', 2: 'success', 3: 'info' }
 const statusType = (s) => STATUS_TYPE[s] || 'info'
+
+/** 把字段映射渲染成「thing1←{name}｜amount2←{price}｜thing3←{note}」这种一眼能核对的样子 */
+const fieldMapText = computed(() => {
+  const f = notifyPreview.value?.template?.fields
+  if (!f) return ''
+  return (
+    ' ｜ ' +
+    Object.entries(f)
+      .map(([k, v]) => `${k} ← ${v}`)
+      .join('｜')
+  )
+})
 
 function fmtTime(s) {
   if (!s) return '-'
@@ -634,4 +668,6 @@ onMounted(load)
   background: #fdf6ec; border-radius: 8px; padding: 10px 12px; font-size: 12px;
   color: #b88230; line-height: 1.8; margin-top: 12px;
 }
+.admin-demand-tmpl-box { margin-bottom: 4px; }
+.admin-demand-field-map { font-size: 12px; color: #909399; }
 </style>

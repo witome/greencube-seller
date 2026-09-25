@@ -1,7 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
-import { WxService } from '../wx/wx.service'
+import { WxService, wxErrorText } from '../wx/wx.service'
+import {
+  TmplKeyword,
+  extractVarName,
+  fillerFor,
+  formatFieldValue,
+  isNumericFieldType,
+  normalizeFieldType,
+} from '../wx/wx.format'
 import { BizException, ErrorCode } from '../../common/constants/error-codes'
 import { normalizeDemandKey, cleanDemandName, sanitizeRawText } from './demand.util'
 import {
@@ -52,12 +60,71 @@ const CUSTOM_WINDOW_MS = 48 * 60 * 60 * 1000
  */
 export const ADMIN_ENTERED_PURCHASER_ID = 0
 
-/** 订阅消息字段映射兜底（公众平台模板字段名若不同，用 .env 覆盖，页面/代码都不写死） */
-const DEFAULT_TMPL_FIELDS = { thing1: '{name}', time2: '{time}', thing3: '{note}' }
+/**
+ * 订阅消息字段映射兜底（2026-09-25 更新）
+ *
+ * ⚠️ 这只是**最后兜底**：正常路径是「调微信 gettemplate 自动探测真实字段名」，
+ *    其次才是 .env 的 WX_SUBSCRIBE_TMPL_DEMAND_FIELDS 显式覆盖。
+ *    真实模板是「预约商品到货通知」（一次性订阅），字段＝商品名称 / 商品单价 / 温馨提示，
+ *    所以兜底按这个形状给（字段名仍可能与真实不符 → 那会走 47003 的人话提示，不会静默发错）。
+ */
+const DEFAULT_TMPL_FIELDS = { thing1: '{name}', amount2: '{price}', thing3: '{note}' }
+
+/** 字段映射来源 → 给运营看的中文说明 */
+export const TEMPLATE_SOURCE_TEXT: Record<string, string> = {
+  env: '来自 .env 的 WX_SUBSCRIBE_TMPL_DEMAND_FIELDS（人工指定，优先级最高）',
+  discovered: '来自微信模板自动探测（按字段中文名自动映射）',
+  default: '自动探测失败 → 默认兜底映射（可能与真实模板不符，请检查）',
+}
+
+/** 单价来源 → 给运营看的中文说明 */
+export const PRICE_SOURCE_TEXT: Record<string, string> = {
+  linked_product: '需求关联的商品（含已下架）',
+  matched_on_sale: '按菜名匹配到的**在售**商品',
+  matched_off_shelf: '按菜名匹配到的已下架商品',
+}
+
+/**
+ * 模板字段中文名 → 变量（卡里的自动映射规则）
+ * ⚠️ 顺序有意义：先匹配更具体的词，「商品名称」不会落到 price 上。
+ */
+const VAR_MATCHERS: Array<{ var: string; re: RegExp }> = [
+  { var: 'price', re: /单价|价格|金额|价钱|售价|费用/ },
+  { var: 'name', re: /名称|名字|商品|菜名|品名/ },
+  { var: 'note', re: /温馨提示|提示|备注|说明|通知|其他/ },
+]
+
+/** 按字段中文名挑变量；挑不出返回 null（该字段会用兜底文案） */
+function matchVariable(fieldName: string): string | null {
+  const n = String(fieldName || '').trim()
+  if (!n) return null
+  for (const m of VAR_MATCHERS) if (m.re.test(n)) return m.var
+  return null
+}
+
+/** 字段类型兜底字面量（模板里有我们没映射上的字段，也必须给值，否则微信判「缺字段」） */
+function literalFor(type: string): string {
+  return fillerFor(type)
+}
+
+/** 某个 data key 的字段类型：优先查探测结果，查不到就按 key 的字母前缀推（thing1 → thing） */
+function keywordType(key: string, keywords: TmplKeyword[]): string {
+  const hit = keywords.find((k) => k.key === key)
+  return hit ? hit.type : normalizeFieldType(key)
+}
+
+/** 字段映射缓存：10 分钟内不重复探测（模板几乎不变） */
+const FIELDS_CACHE_MS = 10 * 60 * 1000
 
 @Injectable()
 export class DemandService {
   private readonly logger = new Logger(DemandService.name)
+
+  /** 模板字段映射缓存（避免每次通知都去探测一遍） */
+  private fieldsCache: {
+    at: number
+    value: { fields: Record<string, string>; source: 'env' | 'discovered' | 'default'; keywords: TmplKeyword[]; warn?: string }
+  } | null = null
 
   constructor(
     private prisma: PrismaService,
@@ -558,6 +625,11 @@ export class DemandService {
     const canSubscribe = rows.filter((r) => r.channel === DemandChannel.SUBSCRIBE)
     const canCustom = rows.filter((r) => r.channel === DemandChannel.CUSTOM)
     const cannot = rows.filter((r) => !r.canSend)
+
+    // 把「这次到底会发什么」摊给运营看：字段映射来自哪里、用了哪个单价
+    const fieldInfo = this.templateConfigured() ? await this.resolveTemplateFields() : null
+    const priceInfo = this.templateConfigured() ? await this.priceOf(demand) : null
+
     return {
       demandId: Number(demand.id),
       name: demand.name,
@@ -565,6 +637,25 @@ export class DemandService {
       statusText: DEMAND_STATUS_TEXT[demand.status] ?? '未知',
       templateConfigured: this.templateConfigured(),
       templateId: this.subscribeTemplateId() || null,
+      template: fieldInfo
+        ? {
+            source: fieldInfo.source,
+            sourceText: TEMPLATE_SOURCE_TEXT[fieldInfo.source] ?? fieldInfo.source,
+            fields: fieldInfo.fields,
+            keywords: fieldInfo.keywords,
+            warn: fieldInfo.warn || '',
+          }
+        : null,
+      price: priceInfo
+        ? {
+            value: priceInfo.price,
+            text: priceInfo.price == null ? '' : `${priceInfo.price.toFixed(2)} 元/${priceInfo.unit}`,
+            unit: priceInfo.unit,
+            source: priceInfo.source,
+            sourceText: PRICE_SOURCE_TEXT[priceInfo.source] ?? priceInfo.source,
+            ready: priceInfo.price != null,
+          }
+        : null,
       canSubscribe: canSubscribe.map((c) => this.publicCapability(c)),
       canCustom: canCustom.map((c) => this.publicCapability(c)),
       cannot: cannot.map((c) => this.publicCapability(c)),
@@ -577,37 +668,189 @@ export class DemandService {
     }
   }
 
-  /** 组装订阅消息字段（模板字段名走配置，避免写死/猜测） */
-  private subscribeData(demand: any): Record<string, { value: string }> {
-    const now = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const time = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
-    const vars: Record<string, string> = {
-      name: demand.name,
-      time,
-      note: demand.note || '已到货，点开小程序即可下单',
-    }
-
-    let fields: Record<string, string> = DEFAULT_TMPL_FIELDS
+  /**
+   * 解析出「发送时要用的字段映射」
+   *
+   * 优先级（高 → 低）：
+   *   ① `.env` 的 WX_SUBSCRIBE_TMPL_DEMAND_FIELDS —— 运营显式指定，永远最高
+   *   ② **微信侧自动探测**：调 gettemplate 拿真实模板字段，按字段中文名映射
+   *      （名称→name、单价/价格/金额→price、温馨提示/备注/说明→note）
+   *   ③ 硬编码默认映射 —— 探测失败时的最后兜底
+   *
+   * ⚠️ ②③ 都只在**探测/配置出问题**时才用，且**一定落日志**：
+   *    探测失败绝不能把通知整体干掉（卡里的硬要求），但也绝不能不声不响地用错映射 ——
+   *    真发错了微信会回 47003，那时日志里必须能查到「当时用的是哪套映射」。
+   */
+  private async resolveTemplateFields(force = false): Promise<{
+    fields: Record<string, string>
+    source: 'env' | 'discovered' | 'default'
+    keywords: TmplKeyword[]
+    warn?: string
+  }> {
     const conf = (process.env.WX_SUBSCRIBE_TMPL_DEMAND_FIELDS || '').trim()
     if (conf) {
       try {
         const parsed = JSON.parse(conf)
-        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) fields = parsed
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+          return { fields: parsed, source: 'env', keywords: [] }
+        }
       } catch {
-        // 配置写坏了就退回默认，并在日志里说清（绝不让解析失败把整个通知干掉）
-        this.logger.warn('WX_SUBSCRIBE_TMPL_DEMAND_FIELDS 不是合法 JSON，本次按默认字段映射发送')
+        this.logger.warn('WX_SUBSCRIBE_TMPL_DEMAND_FIELDS 不是合法 JSON，改用自动探测/默认映射')
       }
     }
 
-    const out: Record<string, { value: string }> = {}
-    for (const [field, tpl] of Object.entries(fields)) {
-      let v = String(tpl)
-      for (const [k, val] of Object.entries(vars)) v = v.split(`{${k}}`).join(val)
-      // 微信 thing/time 类型字段有长度限制，统一截到 20 字（time 格式 16 字符，不受影响）
-      out[field] = { value: v.slice(0, 20) }
+    if (!force && this.fieldsCache && Date.now() - this.fieldsCache.at < FIELDS_CACHE_MS) {
+      return this.fieldsCache.value
     }
-    return out
+
+    const tmplId = this.subscribeTemplateId()
+    if (!tmplId) {
+      const value = { fields: { ...DEFAULT_TMPL_FIELDS }, source: 'default' as const, keywords: [] }
+      this.fieldsCache = { at: Date.now(), value }
+      return value
+    }
+
+    let keywords: TmplKeyword[] = []
+    let warn = ''
+    try {
+      const r = await this.wx.getTemplateKeywords(tmplId)
+      if (r.ok && r.keywords.length) {
+        keywords = r.keywords
+      } else {
+        warn = r.reason || '模板字段探测失败'
+        this.logger.warn(`模板字段自动探测失败，降级到默认映射：${warn}`)
+      }
+    } catch (e: any) {
+      warn = e?.message || String(e)
+      this.logger.warn(`模板字段自动探测异常，降级到默认映射：${warn}`)
+    }
+
+    let value: { fields: Record<string, string>; source: 'env' | 'discovered' | 'default'; keywords: TmplKeyword[]; warn?: string }
+    if (keywords.length) {
+      const used = new Set<string>()
+      const fields: Record<string, string> = {}
+      for (const kw of keywords) {
+        if (kw.type === 'const') continue // 常量字段由模板自己填，不用我们传
+        const varName = matchVariable(kw.name)
+        if (varName && !used.has(varName)) {
+          used.add(varName)
+          fields[kw.key] = `{${varName}}`
+        } else {
+          // 模板里有我们没映射上的字段 —— 也必须给值，否则微信判「缺字段」= 47003
+          fields[kw.key] = literalFor(kw.type)
+        }
+      }
+      const missing = ['name', 'price', 'note'].filter((v) => !used.has(v))
+      if (missing.length) {
+        this.logger.warn(`模板字段自动映射未覆盖变量：${missing.join(', ')}（这些字段会用兜底文案）`)
+      }
+      this.logger.log(`字段映射来源=自动探测：${JSON.stringify(fields)}`)
+      value = { fields, source: 'discovered', keywords }
+    } else {
+      this.logger.warn(`字段映射来源=默认兜底：${JSON.stringify(DEFAULT_TMPL_FIELDS)}（探测失败原因：${warn || '未知'}）`)
+      value = { fields: { ...DEFAULT_TMPL_FIELDS }, source: 'default', keywords: [], warn }
+    }
+    this.fieldsCache = { at: Date.now(), value }
+    return value
+  }
+
+  /**
+   * 取这个需求的「商品单价」——**只从商品表读，不接受手填、不接受模型填**
+   *
+   * 顺序：① demand.productId 命中的商品（含已下架）→ ② 按归一化菜名在商品表里找**在售**的
+   *       （正常流程就是这样：采回来先上架，再点「已到货 → 通知客户」）→ ③ 都没有则 null
+   */
+  private async priceOf(demand: any): Promise<{ price: number | null; unit: string; source: string }> {
+    const pick = (p: any, source: string) => ({
+      price: Number(p.salePrice),
+      unit: p.unit || '斤',
+      source,
+    })
+    if (demand.productId) {
+      const p = await this.prisma.product.findUnique({ where: { id: demand.productId } })
+      if (p && Number.isFinite(Number(p.salePrice))) return pick(p, 'linked_product')
+    }
+    const all = await this.prisma.product.findMany({
+      select: { id: true, name: true, unit: true, salePrice: true, status: true },
+    })
+    const sameKey = all.filter((p) => normalizeDemandKey(p.name) === demand.demandKey)
+    const onSale = sameKey.find((p) => p.status === 1)
+    if (onSale) return pick(onSale, 'matched_on_sale')
+    if (sameKey.length) return pick(sameKey[0], 'matched_off_shelf')
+    return { price: null, unit: '', source: 'none' }
+  }
+
+  /**
+   * 组装订阅消息的 data（**唯一实现**）：先定映射，再逐字段按类型格式化
+   *
+   * ⚠️ 给不出合法值时的两条路（**都不许把 47003 抛给用户**）：
+   *   · 文本字段缺单价 → 用「以小程序为准」兜住（车还在跑，客户能理解）
+   *   · **数字字段缺单价 → 礼貌拒绝并告诉运营怎么修**：这个菜还没上架/没定单价，
+   *     硬塞 0 元是**假的**（客户会照着 0 元来问），所以宁可不发。
+   *     这不是"发不出去"，而是「口径 6：到货商品要先手动上架，再一键通知」的必然顺序。
+   */
+  private async buildSubscribeData(demand: any): Promise<{
+    data: Record<string, { value: string }>
+    source: string
+    keywords: TmplKeyword[]
+    price: number | null
+    unit: string
+    notes: string[]
+  }> {
+    const { fields, source, keywords } = await this.resolveTemplateFields()
+    const priceInfo = await this.priceOf(demand)
+    const note = (demand.note || '').trim() || '已到货 可下单'
+    const notes: string[] = []
+
+    const valueOf = (varName: string): string | number | null => {
+      if (varName === 'name') return demand.name
+      if (varName === 'price') return priceInfo.price
+      if (varName === 'note') return note
+      return null
+    }
+
+    const data: Record<string, { value: string }> = {}
+    for (const [key, tpl] of Object.entries(fields)) {
+      const type = keywordType(key, keywords)
+      const varName = extractVarName(String(tpl))
+      let raw: string | number | null = varName ? valueOf(varName) : String(tpl)
+
+      if (raw == null || String(raw).trim() === '') {
+        if (varName === 'price') {
+          if (isNumericFieldType(type)) {
+            throw new BizException(
+              ErrorCode.PARAM_ERROR,
+              `这个菜还没有单价（商品表里查不到「${demand.name}」的在售商品）。` +
+                `到货通知模板要求填「商品单价」，请先到「商品管理」把它上架并确认单价，再回来通知客户。`,
+            )
+          }
+          raw = '以小程序为准'
+          notes.push('该模板的单价字段是文本类型，没有单价时用「以小程序为准」兜底')
+        } else if (varName) {
+          const r = formatFieldValue(type, null)
+          if (!r.ok) {
+            throw new BizException(ErrorCode.PARAM_ERROR, `到货通知发不出去：${r.reason}`)
+          }
+          raw = r.value
+        } else {
+          raw = literalFor(type)
+        }
+      }
+
+      const r = formatFieldValue(type, raw)
+      if (!r.ok) {
+        // 就地修正失败 → 用人话拒绝，绝不把微信的 47003 甩给运营
+        throw new BizException(
+          ErrorCode.PARAM_ERROR,
+          `到货通知发不出去：字段「${key}」${r.reason}。请检查 .env 的 WX_SUBSCRIBE_TMPL_DEMAND_FIELDS 与模板字段类型。`,
+        )
+      }
+      if (r.fixed) notes.push(`字段「${key}」已就地修正：${r.fixed}`)
+      data[key] = { value: r.value }
+    }
+
+    if (notes.length) this.logger.warn(`到货通知字段修正：${notes.join('；')}`)
+    return { data, source, keywords, price: priceInfo.price, unit: priceInfo.unit, notes }
   }
 
   private async logNotify(
@@ -649,7 +892,10 @@ export class DemandService {
     }
 
     const rows = await this.capabilities(demand.id)
-    const data = this.subscribeData(demand)
+    // 字段映射 + 逐字段按类型格式化（唯一实现）；给不出合法值时这里会以**人话**拒绝，
+    // 而不是发出去让微信回 47003
+    const built = await this.buildSubscribeData(demand)
+    const data = built.data
     const failures: any[] = []
     let notified = 0
 
@@ -659,6 +905,10 @@ export class DemandService {
       if (r.channel === DemandChannel.SUBSCRIBE) {
         const res = await this.wx.sendSubscribeMessage(r.openid, tmpl, data, 'pages/buyer/my-demands')
         if (res.ok) {
+          // ⚠️ 额度**只在微信返回 ok 时 -1**（卡 A5）：
+          //    一次性订阅的规则是「用户每同意一次 → 授予一次发送机会」，
+          //    失败（43101 拒收 / 47003 字段错）时微信并没有把这次机会用掉，
+          //    我们也绝不能扣 —— 否则客户明明授权过，却因为我们自己的字段错被白扣一次。
           await this.prisma.$executeRaw`
             UPDATE demand_subscribe_quota
                SET quota = GREATEST(quota - 1, 0), notified_at = UTC_TIMESTAMP(3), updated_at = UTC_TIMESTAMP(3)
@@ -667,16 +917,9 @@ export class DemandService {
           await this.logNotify(demand.id, r.purchaserId, DemandChannel.SUBSCRIBE, tmpl, 'ok')
           notified++
         } else {
-          await this.logNotify(
-            demand.id,
-            r.purchaserId,
-            DemandChannel.SUBSCRIBE,
-            tmpl,
-            'fail',
-            res.errcode,
-            res.errmsg,
-          )
-          failures.push({ ...who, channel: '订阅消息', reason: `微信返回 ${res.errcode}：${res.errmsg}` })
+          const human = wxErrorText(res.errcode, res.errmsg)
+          await this.logNotify(demand.id, r.purchaserId, DemandChannel.SUBSCRIBE, tmpl, 'fail', res.errcode, human)
+          failures.push({ ...who, channel: '订阅消息', reason: human })
         }
         continue
       }
@@ -689,12 +932,9 @@ export class DemandService {
           notified++
         } else {
           // 45015 = 已超 48 小时窗口（口径 4：先试发、按错误码判定）
-          const reason =
-            res.errcode === 45015
-              ? '客服消息已超 48 小时窗口'
-              : `微信返回 ${res.errcode}：${res.errmsg}`
-          await this.logNotify(demand.id, r.purchaserId, DemandChannel.CUSTOM, tmpl, 'fail', res.errcode, res.errmsg)
-          failures.push({ ...who, channel: '客服消息', reason })
+          const human = wxErrorText(res.errcode, res.errmsg)
+          await this.logNotify(demand.id, r.purchaserId, DemandChannel.CUSTOM, tmpl, 'fail', res.errcode, human)
+          failures.push({ ...who, channel: '客服消息', reason: human })
         }
         continue
       }
@@ -709,7 +949,15 @@ export class DemandService {
       action: 'DEMAND_NOTIFY',
       entity: 'purchase_demand',
       entityId: demand.id,
-      after: { notified, failed: failures.length, templateId: tmpl, demandName: demand.name },
+      after: {
+        notified,
+        failed: failures.length,
+        templateId: tmpl,
+        demandName: demand.name,
+        fieldSource: built.source,
+        fieldKeys: Object.keys(built.data),
+        price: built.price,
+      },
     })
 
     return {

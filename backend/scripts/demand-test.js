@@ -71,28 +71,56 @@ async function newBuyer(tag) {
   const code = `${tag}_${ts}_${++buyerSeq}`
   const login = await call('POST', '/auth/wx-login', { code })
   const token = login.data.token
-  const phone = '13' + String(ts).slice(-8) + (buyerSeq % 10)
-  const reg = await call(
-    'POST',
-    '/buyer/register',
-    {
-      shopName: `需求验收${buyerSeq}号店`,
-      contact: `验收${buyerSeq}`,
-      phone,
-      address: `验收路${buyerSeq}号`,
-    },
-    token,
-  )
-  return {
-    code,
-    token,
-    userId: login.data.userId,
-    purchaserId: reg.data && reg.data.purchaserId,
-    openid: `dev_${code}`,
+
+  // ⚠️ 手机号必须**真唯一**，而且必须是 11 位（校验规则拒绝 12 位）。
+  //    踩过的坑：最初用「13 + ts后8位 + 序号取模10」→ 第 11 个账号序号回到 1，**撞号**；
+  //    register 一失败 purchaserId 就是 undefined，后面 report/subscribe 全部静默失效，
+  //    表现成「这个人怎么没进通知名单」这种极难查的假红。
+  //    所以：随机 6 位 + 3 位序号（11 位），并在撞号时重试。
+  let reg = null
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const phone = '13' + String(Math.floor(Math.random() * 1000000)).padStart(6, '0') + String(buyerSeq).padStart(3, '0')
+    reg = await call(
+      'POST',
+      '/buyer/register',
+      {
+        shopName: `需求验收${buyerSeq}号店`,
+        contact: `验收${buyerSeq}`,
+        phone,
+        address: `验收路${buyerSeq}号`,
+      },
+      token,
+    )
+    if (reg.code === 0 && reg.data && reg.data.purchaserId) return { code, token, userId: login.data.userId, purchaserId: reg.data.purchaserId, openid: `dev_${code}` }
+    if (reg.code !== 3009 && reg.code !== 1001) break // 不是「手机号占用/格式」就不必重试
   }
+  throw new Error(`造采购方失败（code=${code}）：` + JSON.stringify(reg))
 }
 
 const report = (token, items) => call('POST', '/buyer/demand/report', { items, source: 1 }, token)
+
+/** 造一个在售商品（用于验「{price} 取商品表真实单价」+ 让 amount 字段有值可填） */
+async function ensureProduct(at, name, salePrice, unit = '斤') {
+  const created = await call(
+    'POST',
+    '/admin/goods',
+    {
+      name,
+      categoryId: 1,
+      weighType: 1,
+      unit,
+      supplierId: 1,
+      supplyPrice: Math.max(0.01, Number((salePrice - 1).toFixed(2))),
+      dailySupply: 100,
+      markupRate: 0.3,
+      salePrice,
+    },
+    at,
+  )
+  if (created.code !== 0) throw new Error('造商品失败：' + JSON.stringify(created))
+  const p = await prisma.product.findFirst({ where: { name }, orderBy: { id: 'desc' } })
+  return { id: Number(p.id), price: Number(p.salePrice), unit: p.unit, status: p.status }
+}
 
 async function main() {
   console.log('='.repeat(64))
@@ -283,6 +311,9 @@ async function main() {
     const P5 = await newBuyer('wxrefuse5') // 已授权但微信侧拒收 → 订阅消息 43101
 
     for (const p of [P1, P2, P3, P4, P5]) await report(p.token, [{ rawText: notifyDish }])
+    // 到货通知模板的「商品单价」字段要求有真实单价 → 先把它上架（正是口径 6 的顺序：先上架再通知）
+    const notifyProd = await ensureProduct(at, notifyDish, 3.5)
+    console.log(`     已为该菜上架商品：#${notifyProd.id} 单价 ${notifyProd.price} 元/${notifyProd.unit}（status=${notifyProd.status}）`)
     const notifyDemand = (await call('GET', `/admin/demand?keyword=${encodeURIComponent(notifyDish)}`, null, at)).data.list[0]
 
     // 授权额度：真实走 /buyer/demand/subscribe（这条接口本身也在验）
@@ -450,6 +481,190 @@ async function main() {
     const mineRow = mine.list.find((x) => x.id === notifyDemand.id)
     console.log(`     P1「我的需求」：${JSON.stringify(mineRow)}`)
     ok('客户侧能看到这条需求且 notified=true', !!mineRow && mineRow.notified === true, mineRow)
+
+    // ══════════════════════════════════════════
+    section('⑧ 模板字段自动探测 + 自动映射（真实模板：预约商品到货通知 / 一次性订阅）')
+    // 真实模板 id 由环境变量给；假微信按 FAKE_TMPL_ID 返回同一套模板
+    const realTmplId = TMPL
+    const fmtDish = `格式${ts}菜`
+    const fmtProd = await ensureProduct(at, fmtDish, 5.8)
+    console.log(`     造菜「${fmtDish}」并上架：#${fmtProd.id} 单价 ${fmtProd.price} 元/${fmtProd.unit}（status=${fmtProd.status}）`)
+
+    // P6 字段错(47003) / P7 拒收(43101) / P8 正常
+    const P6 = await newBuyer('wxbadfield6')
+    const P7 = await newBuyer('wxrefuse7')
+    const P8 = await newBuyer('ok8')
+    for (const p of [P6, P7, P8]) {
+      // ⚠️ 故意夹带 price / salePrice —— DTO 白名单必须把它们剥掉（口径 A2：单价系统回填，不许手填/模型填）
+      await report(p.token, [{ rawText: fmtDish, price: 999, salePrice: 999, unitPrice: 999 }])
+    }
+    const fmtDemand = (await call('GET', `/admin/demand?keyword=${encodeURIComponent(fmtDish)}`, null, at)).data.list[0]
+    await call('PUT', `/admin/demand/${fmtDemand.id}`, { note: '这是一条特别特别长的温馨提示文案用来验证截断逻辑' }, at)
+    for (const p of [P6, P7, P8]) {
+      await call('POST', '/buyer/demand/subscribe', { templateId: realTmplId, accepted: [realTmplId] }, p.token)
+    }
+
+    // ⑧-① 自动探测：字段名从微信模板里问出来，再按**中文名**映射到变量
+    const pv8 = (await call('GET', `/admin/demand/${fmtDemand.id}/notify-preview`, null, at)).data
+    console.log('     模板信息：' + JSON.stringify(pv8.template))
+    console.log('     单价信息：' + JSON.stringify(pv8.price))
+    ok(
+      `字段映射来源=自动探测（discovered），关键词=${(pv8.template.keywords || []).map((k) => `${k.name}=${k.key}(${k.type})`).join(' / ')}`,
+      pv8.template.source === 'discovered',
+      pv8.template,
+    )
+    ok(
+      '自动按中文名映射：商品名称→{name}、商品单价→{price}、温馨提示→{note}',
+      pv8.template.fields.thing1 === '{name}' &&
+        pv8.template.fields.amount2 === '{price}' &&
+        pv8.template.fields.thing3 === '{note}',
+      pv8.template.fields,
+    )
+    ok(
+      `单价来自商品表真实单价（${JSON.stringify(pv8.price)}）`,
+      pv8.price.ready === true &&
+        Math.abs(pv8.price.value - fmtProd.price) < 0.01 &&
+        pv8.price.source === (fmtProd.status === 1 ? 'matched_on_sale' : 'matched_off_shelf'),
+      pv8.price,
+    )
+
+    // ⑧-② 实发一人（P8 正常）→ 看假微信收到的 data 是否按类型格式化
+    await fetch(`${FAKE_WX}/__reset`)
+    const n8 = await call('POST', `/admin/demand/${fmtDemand.id}/notify`, null, at)
+    console.log('     实发结果：' + JSON.stringify(n8.data))
+    const fake8 = await (await fetch(`${FAKE_WX}/__log`)).json()
+    const sent8 = fake8.calls.find((c) => c.kind === 'subscribe' && String(c.touser).includes('ok8'))
+    console.log('     假微信收到的订阅消息 data：' + JSON.stringify(sent8 && sent8.data))
+    ok('确实发出去了 1 条（P8）', !!sent8 && sent8.templateId === realTmplId && sent8.page === 'pages/buyer/my-demands', sent8)
+    ok(
+      `thing 字段=菜名（≤20 字）：${sent8 && sent8.data && sent8.data.thing1 && sent8.data.thing1.value}`,
+      !!sent8 && sent8.data.thing1.value === fmtDish,
+    )
+    ok(
+      `amount 字段=带币种符号的两位小数：${sent8 && sent8.data && sent8.data.amount2 && sent8.data.amount2.value}（商品表真实单价 ${fmtProd.price}，客户端夹带的 999 被丢弃）`,
+      !!sent8 && sent8.data.amount2.value === `¥${fmtProd.price.toFixed(2)}` && !/999/.test(sent8.data.amount2.value),
+      sent8 && sent8.data.amount2,
+    )
+    ok(
+      `thing 温馨提示超 20 字被就地截断（实发 ${sent8 && sent8.data.thing3.value.length} 字）`,
+      !!sent8 && Array.from(sent8.data.thing3.value).length === 20,
+      sent8 && sent8.data.thing3,
+    )
+
+    // ⑧-③ 47003（字段名不匹配）→ 人话提示 + 落库 + **不扣额度**（卡 A4）
+    const f8 = (n8.data.failures || []).find((x) => x.purchaserId === P6.purchaserId)
+    console.log('     47003 的失败原因：' + JSON.stringify(f8 && f8.reason))
+    ok(
+      '47003 给出**人话**提示（指向字段映射配置，而不是甩一个错误码）',
+      !!f8 && /47003/.test(f8.reason) && /WX_SUBSCRIBE_TMPL_DEMAND_FIELDS/.test(f8.reason),
+      f8,
+    )
+    const log8 = await prisma.demandNotifyLog.findMany({ where: { demandId: BigInt(fmtDemand.id) } })
+    const l47003 = log8.find((l) => l.errCode === 47003)
+    const l43101 = log8.find((l) => l.errCode === 43101)
+    console.log('     demand_notify_log（47003）：' + JSON.stringify(l47003 && { channel: l47003.channel, result: l47003.result, errCode: l47003.errCode, errMsg: l47003.errMsg }))
+    console.log('     demand_notify_log（43101）：' + JSON.stringify(l43101 && { channel: l43101.channel, result: l43101.result, errCode: l43101.errCode, errMsg: l43101.errMsg }))
+    ok('47003 逐人落 demand_notify_log（channel=1 fail + 人话 errMsg）', !!l47003 && l47003.channel === 1 && l47003.result === 'fail' && /47003/.test(l47003.errMsg || ''))
+    ok('43101 逐人落 demand_notify_log（channel=1 fail + 人话 errMsg）', !!l43101 && l43101.channel === 1 && l43101.result === 'fail' && /43101/.test(l43101.errMsg || ''))
+
+    // ══════════════════════════════════════════
+    section('⑨ 订阅额度只在微信返回 ok 时 -1（失败不扣额度）—— 卡 A5')
+    const q = async (purchaserId) => {
+      if (purchaserId == null) return undefined
+      const row = await prisma.demandSubscribeQuota.findUnique({
+        where: { purchaserId_templateId: { purchaserId: BigInt(purchaserId), templateId: realTmplId } },
+      })
+      return row?.quota
+    }
+    const quotas = {
+      成功_P8: await q(P8.purchaserId),
+      字段错47003_P6: await q(P6.purchaserId),
+      拒收43101_P7: await q(P7.purchaserId),
+      拒收43101_P5: await q(P5.purchaserId),
+      超窗口45015_P4: await q(P4.purchaserId),
+    }
+    console.log('     各人剩余额度：' + JSON.stringify(quotas))
+    ok('订阅消息成功 → 额度 -1（1 → 0）', quotas['成功_P8'] === 0, quotas)
+    ok('47003 字段错 → **不扣**额度（仍为 1）', quotas['字段错47003_P6'] === 1, quotas)
+    ok('43101 用户拒收 → **不扣**额度（仍为 1，两轮都失败也没被扣走）', quotas['拒收43101_P7'] === 1 && quotas['拒收43101_P5'] === 1, quotas)
+    ok('从未授权过的人（只走过客服消息 45015）→ 连额度行都不该有', quotas['超窗口45015_P4'] === undefined, quotas)
+
+    // 通用不变量：额度 = 用户同意次数 − 成功发出的订阅消息条数（永不为负）
+    // 授权一次的人：P1/P3/P5(⑦) + P6/P7/P8(⑧)；P2 是「拒绝」不产生额度行，P4 从没授权
+    const acceptedIds = [P1, P3, P5, P6, P7, P8].map((p) => Number(p.purchaserId))
+    const allQuota = await prisma.demandSubscribeQuota.findMany({ where: { templateId: realTmplId } })
+    const okCount = new Map()
+    const allLogs = log8.concat(await prisma.demandNotifyLog.findMany({ where: { demandId: BigInt(notifyDemand.id) } }))
+    for (const l of allLogs) {
+      if (l.channel === 1 && l.result === 'ok') okCount.set(Number(l.purchaserId), (okCount.get(Number(l.purchaserId)) || 0) + 1)
+    }
+    let invariant = true
+    const invDetail = []
+    for (const row of allQuota) {
+      const pid = Number(row.purchaserId)
+      if (!acceptedIds.includes(pid)) continue
+      const expect = Math.max(1 - (okCount.get(pid) || 0), 0)
+      if (row.quota !== expect) invariant = false
+      invDetail.push({ purchaserId: pid, quota: row.quota, expect })
+    }
+    console.log('     额度不变量（同意次数 − 成功条数）：' + JSON.stringify(invDetail))
+    ok(
+      `额度恒等于「同意次数 − 成功发出的订阅消息条数」，且不为负（核了 ${invDetail.length} 人）`,
+      invariant && invDetail.length === acceptedIds.length,
+      invDetail,
+    )
+
+    section('⑩ 纯函数：按字段类型格式化（wx.format，官方限制表）')
+    const fmtLib = require(path.join(BACKEND, 'dist', 'modules', 'wx', 'wx.format.js'))
+    const longThing = '两个字的菜名加上很多很多很多很多很多多余的描述'
+    const longPhrase = '一二三四五六七八九十一二三四五六七八九十'
+    const fmtCases = [
+      ['thing', '荷兰豆', '荷兰豆'],
+      ['thing', longThing, longThing.slice(0, 20)],
+      ['thing1', '荷兰豆', '荷兰豆'],
+      ['amount', 5.8, '¥5.80'],
+      ['amount', '¥5.8', '¥5.80'],
+      ['amount', '1200元', '¥1200.00'],
+      ['number', 5.8, '5.80'],
+      ['number2', '12', '12.00'],
+      ['phrase', longPhrase, longPhrase.slice(0, 16)],
+      ['character_string', 'A'.repeat(70), 'A'.repeat(64)],
+      ['letter', 'abc123', 'abc'],
+      ['time', '09:30:00', '09:30:00'],
+      ['unknown_type', 'X', 'X'],
+    ]
+    let fmtOk = 0
+    for (const [type, raw, expect] of fmtCases) {
+      const r = fmtLib.formatFieldValue(type, raw)
+      const got = r.ok ? r.value : `(FAIL ${r.reason})`
+      const hit = r.ok && got === expect
+      if (hit) fmtOk++
+      console.log(`     ${hit ? '✅' : '❌'} ${type}(${JSON.stringify(raw)}) → ${JSON.stringify(got)}（期望 ${JSON.stringify(expect)}）`)
+    }
+    ok(`格式化 ${fmtOk}/${fmtCases.length} 条命中官方限制`, fmtOk === fmtCases.length)
+
+    // 非法值必须**报错而不是硬发**（否则就是让微信回 47003）
+    const badNumber = fmtLib.formatFieldValue('number', '五斤')
+    console.log(`     number("五斤") → ${JSON.stringify(badNumber)}`)
+    ok('number 收到非数字 → ok=false 且给人话原因（不会硬发出去）', badNumber.ok === false && /不是合法数字/.test(badNumber.reason || ''), badNumber)
+    const nullThing = fmtLib.formatFieldValue('thing', null)
+    console.log(`     thing(null) → ${JSON.stringify(nullThing)}`)
+    ok('thing 没值 → ok=false（由业务层决定兜底文案/拒绝）', nullThing.ok === false, nullThing)
+    const nullTime = fmtLib.formatFieldValue('time', null, new Date(2026, 8, 25, 9, 30))
+    console.log(`     time(null) → ${JSON.stringify(nullTime)}`)
+    ok('time 没值 → 自动填当前时刻（HH:mm）', nullTime.ok === true && nullTime.value === '09:30', nullTime)
+
+    // 模板 content 解析（官方 gettemplate 不返回 kid 数组，字段名只能从 {{xxx.DATA}} 里取）
+    const kw = fmtLib.parseTemplateContent('商品名称:{{thing1.DATA}}\n商品单价:{{amount2.DATA}}\n温馨提示:{{thing3.DATA}}')
+    console.log('     parseTemplateContent → ' + JSON.stringify(kw))
+    ok(
+      '能从模板 content 里解析出 字段名/类型/序号/中文名',
+      kw.length === 3 &&
+        kw[0].key === 'thing1' && kw[0].type === 'thing' && kw[0].kid === 1 &&
+        kw[1].key === 'amount2' && kw[1].type === 'amount' &&
+        kw[2].name === '温馨提示',
+      kw,
+    )
   }
 
   // ── 收尾 ──

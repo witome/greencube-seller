@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { BizException, ErrorCode } from '../../common/constants/error-codes'
+import { parseTemplateContent, TmplKeyword } from './wx.format'
 
 /**
  * 微信服务端接口（小程序侧发送能力）
@@ -26,6 +27,45 @@ export interface WxSendResult {
   ok: boolean
   errcode: number
   errmsg: string
+}
+
+/** 模板关键字探测结果 */
+export interface TmplKeywordResult {
+  ok: boolean
+  keywords: TmplKeyword[]
+  template?: { priTmplId: string; title: string; type: number | string }
+  /** ok=false 时：人话原因（会落日志） */
+  reason?: string
+}
+
+/**
+ * 微信错误码 → 人话（**唯一实现**）
+ *
+ * 为什么必须翻译：运营在后台看到的是这一句话，看到「47003」只会一头雾水、
+ * 然后来问「为什么发不出去」。这里给的是**可行动**的说明。
+ * 原始 errmsg 会附在后面，方便排障（也是我们唯一能拿到的微信侧细节）。
+ */
+export function wxErrorText(errcode: number, errmsg?: string): string {
+  const raw = errmsg ? `（微信原话：${String(errmsg).slice(0, 120)}）` : ''
+  switch (Number(errcode)) {
+    case 43101:
+      return `客户已拒收订阅消息（43101），需要他自己重新点一次「到货通知我」授权${raw}`
+    case 45015:
+      return `客服消息已超 48 小时窗口（45015），只能等他主动打开小程序${raw}`
+    case 47003:
+      return (
+        `模板字段对不上（47003）：模板字段名/格式与代码里的映射不一致。` +
+        `请核对 .env 的 WX_SUBSCRIBE_TMPL_DEMAND_FIELDS（键必须是模板 content 里 {{xxx.DATA}} 的 xxx）${raw}`
+      )
+    case 40003:
+      return `客户的 openid 无效（40003），可能是账号数据有问题${raw}`
+    case 40037:
+      return `模板 id 不合法（40037），请核对 .env 的 WX_SUBSCRIBE_TMPL_DEMAND 是否被改过${raw}`
+    case 41030:
+      return `跳转页面不存在（41030），请确认小程序已发布且页面路径正确${raw}`
+    default:
+      return `微信返回 ${errcode}${raw}`
+  }
 }
 
 /** 缓存有效期安全余量：提前 5 分钟作废，避免拿到边界上就要过期的 token */
@@ -98,6 +138,96 @@ export class WxService {
   /** 供自测断言用：当前缓存是否命中（不暴露 token 值） */
   hasCachedToken(): boolean {
     return !!this.tokenCache && this.tokenCache.expireAt > Date.now()
+  }
+
+  // ────────────────────────────────────────────────────────────
+  // 模板关键字探测（2026-09-25 补：真实模板字段与最初假设不同）
+  // ────────────────────────────────────────────────────────────
+  //
+  // 为什么需要：公众号后台申请到的模板，字段名（`thing1` / `amount2` …）与字段顺序
+  // 只有微信知道。写死字段名 = 换一次模板就全挂；猜字段名 = 运营收到 47003 看不懂。
+  // 所以这里调官方「获取已有模板列表」把字段**问出来**，再按字段**中文名**自动映射到
+  // {name}/{price}/{note} 三个变量。
+  //
+  // 官方接口：GET /wxaapi/newtmpl/gettemplate?access_token=…
+  // 返回 data[] 里每项：priTmplId / title / content / example / type(2 一次性, 3 长期)
+  //   ⚠️ **返回里没有 kid/type 数组** —— 字段名必须从 content 的 `{{xxx.DATA}}` 里取
+  //      （`thing1` 就是发送时 data 的键，前半段是类型、尾数是序号）。
+  //   文档核对：https://developers.weixin.qq.com/miniprogram/dev/server/API/mp-message-management/
+  //             subscribe-message/api_getwxapubnewtemplate.html
+
+  /** 模板列表缓存（模板很少变，缓存 1 小时；也省掉每次通知都打一次微信） */
+  private tmplCache: { at: number; list: any[] } | null = null
+  private static readonly TMPL_CACHE_MS = 60 * 60 * 1000
+
+  /** 取模板列表（带缓存）。失败返回 null 并记日志，**绝不抛给业务** */
+  async getTemplateList(force = false): Promise<any[] | null> {
+    if (!force && this.tmplCache && Date.now() - this.tmplCache.at < WxService.TMPL_CACHE_MS) {
+      return this.tmplCache.list
+    }
+    let token: string
+    try {
+      token = await this.getAccessToken()
+    } catch (e: any) {
+      this.logger.warn(`取 access_token 失败，模板关键字探测跳过：${e?.message || e}`)
+      return null
+    }
+    let data: any
+    try {
+      const res = await fetch(`${this.apiBase}/wxaapi/newtmpl/gettemplate?access_token=${token}`)
+      data = await res.json()
+    } catch {
+      this.logger.warn('调用 wxaapi/newtmpl/gettemplate 失败（网络），模板关键字探测跳过')
+      return null
+    }
+    if (Number(data?.errcode ?? -1) !== 0 || !Array.isArray(data?.data)) {
+      this.logger.warn(`获取模板列表失败：errcode=${data?.errcode} errmsg=${data?.errmsg}`)
+      return null
+    }
+    this.tmplCache = { at: Date.now(), list: data.data }
+    return data.data
+  }
+
+  /** 仅供自测：清模板缓存 */
+  clearTemplateCache() {
+    this.tmplCache = null
+  }
+
+  /**
+   * 按 priTmplId 找到模板并解析出字段列表。
+   * ⚠️ **任何失败都不抛**，只返回 ok=false + 人话 reason —— 调用方据此降级到默认映射，
+   *    绝不允许「探测失败」把通知整体干掉。
+   */
+  async getTemplateKeywords(priTmplId: string): Promise<TmplKeywordResult> {
+    const id = String(priTmplId || '').trim()
+    if (!id) return { ok: false, keywords: [], reason: '未配置到货通知模板 id' }
+
+    const list = await this.getTemplateList()
+    if (!list) return { ok: false, keywords: [], reason: '拿不到模板列表（微信接口不可用或凭证异常）' }
+
+    const hit = list.find((t) => String(t?.priTmplId) === id)
+    if (!hit) {
+      return { ok: false, keywords: [], reason: `账号下的模板列表里没有 ${id}（模板可能被删了或 id 变了）` }
+    }
+    const keywords = parseTemplateContent(String(hit.content || ''))
+    if (!keywords.length) {
+      return {
+        ok: false,
+        keywords: [],
+        template: { priTmplId: id, title: String(hit.title || ''), type: hit.type },
+        reason: '模板 content 里解析不出任何 {{字段.DATA}}',
+      }
+    }
+    const template = { priTmplId: id, title: String(hit.title || ''), type: hit.type }
+    this.logger.log(
+      `模板关键字已探测：${template.title}（type=${hit.type}）→ ` +
+        keywords.map((k) => `${k.name}=${k.key}(${k.type})`).join(' / '),
+    )
+    if (Number(hit.type) !== 2) {
+      // 2=一次性订阅（我们自己记额度）；3=长期订阅（额度语义不同）—— 说清楚别猜
+      this.logger.warn(`该模板 type=${hit.type}（不是 2 一次性订阅），额度记账口径可能不适用，请核对`)
+    }
+    return { ok: true, keywords, template }
   }
 
   /**
