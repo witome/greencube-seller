@@ -146,6 +146,18 @@
         <view class="rec-hint">松手结束 · 最长 30 秒 · 说慢点、说清「哪个菜、多少钱、有多少」</view>
       </view>
     </view>
+    <!-- 确认/结果抽屉（卡X：松手/打字后就地升起，不跳页；确认→三选一→提交→结果→关闭全在抽屉内） -->
+    <VoiceConfirm
+      v-if="drawerOpen"
+      :raw-text="confirmData.rawText"
+      :draft="confirmData.draft"
+      :unmatched-details="confirmData.unmatchedDetails"
+      :candidates="confirmData.candidates"
+      :question="confirmData.question"
+      @close="onDrawerClose"
+      @submitted="onDrawerSubmitted"
+      @resay="onDrawerResay"
+    />
   </view>
 </template>
 
@@ -153,7 +165,9 @@
 import { ref, onMounted } from 'vue'
 import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { supplierApi } from '@/api/modules'
+import { post } from '@/api/request'
 import { createVoiceHold } from '@/utils/voice-record'
+import VoiceConfirm from '@/components/VoiceConfirm.vue'
 
 const goods = ref([])
 const loading = ref(false)
@@ -185,18 +199,20 @@ const editTarget = ref(null)
 const editForm = ref({ name: '', supplyPrice: '', dailySupply: '' })
 
 // ── 底部语音入口（卡W：真·按住录音，共享实现 utils/voice-record.js，全仓唯一）──
+// 卡X：松手/打字不再跳页 —— 就地解析后升起 VoiceConfirm 抽屉（确认→提交→结果→关闭全在本页）
 const voiceText = ref('')
 const voiceTyping = ref(false) // 形态①：打字是次选入口，点「⌨️ 打字报量」切换显示
+const parsing = ref(false)
+const drawerOpen = ref(false)
+const confirmData = ref({ rawText: '', draft: [], unmatchedDetails: [], candidates: [], question: '' })
+
 const voice = createVoiceHold({
   onDone: (text) => {
     const t = String(text || '').trim()
-    if (!t) return
-    // 做法 A：松手 → 经现有通道把文字交给语音报价页（onLoad 消费后清 key，自动解析进确认页）
-    uni.setStorageSync('voiceReportText', t)
-    uni.navigateTo({ url: '/subpkg-supplier/pages/voice-report' })
+    if (t) parseText(t) // 卡X：松手 → 就地解析开抽屉（不再 setStorageSync 跳页）
   },
   onFail: (msg, meta) => {
-    // 识别空/失败：不跳页，就地兜底；连说两次没听清 → 提示并就地切到打字
+    // 识别空/失败：不跳页，就地兜底（文案由共享实现给）；连说两次没听清 → 就地切到打字（卡W 行为保留）
     uni.showToast({ title: msg, icon: 'none' })
     if (meta && meta.escalated) voiceTyping.value = true
   },
@@ -205,18 +221,55 @@ const voiceReady = voice.ready
 const recording = voice.recording
 const recText = voice.partial
 const waveBars = voice.waveBars
-const onMicStart = voice.handleStart
+const onMicStart = () => { if (parsing.value || drawerOpen.value) return; voice.handleStart() }
 const onMicStop = voice.handleStop
 const onMicMove = voice.handleMove
 onHide(() => voice.stopForLeave())
 onUnload(() => voice.stopForLeave())
 
+// ── 解析（走 /ai/supplier-parse；确认态计算在 VoiceConfirm 组件内，本页不碰）──
+async function parseText(text) {
+  const t = (text || '').trim()
+  if (!t || parsing.value) return
+  parsing.value = true
+  try {
+    const res = await post('/ai/supplier-parse', { text: t })
+    if (!(res.draft || []).length && !(res.unmatchedDetails || []).length && !(res.unmatched || []).length && !res.needClarify) {
+      uni.showToast({ title: '没认出可改的内容，试试「菜名 + 价格 / 数量」', icon: 'none' })
+      return
+    }
+    confirmData.value = {
+      rawText: res.rawText || t,
+      draft: res.draft || [],
+      unmatchedDetails: res.unmatchedDetails || [],
+      candidates: res.candidates || [],
+      question: res.needClarify || '',
+    }
+    drawerOpen.value = true
+  } catch (e) {
+    /* 错误已由 request.js 统一提示 */
+  } finally {
+    parsing.value = false
+  }
+}
+
 function goVoiceByText() {
   const t = voiceText.value.trim()
   if (!t) { uni.showToast({ title: '先输入报量 / 改价内容', icon: 'none' }); return }
-  uni.setStorageSync('voiceReportText', t)
   voiceText.value = ''
-  uni.navigateTo({ url: '/subpkg-supplier/pages/voice-report' })
+  parseText(t) // 卡X：就地抽屉，不跳页
+}
+
+// ── 抽屉事件（卡X：关闭后刷新列表，改量后立刻看到新数字）──
+function onDrawerClose() {
+  drawerOpen.value = false
+  load()
+}
+function onDrawerSubmitted() { /* 结果在组件内展示；关闭时统一刷新 */ }
+function onDrawerResay() {
+  drawerOpen.value = false
+  voiceTyping.value = false // 回到按住说话状态（就地）
+  load() // 结果轮「再报一条」走这里，把已提交的数字刷进列表
 }
 
 const iconOf = (s) => ({ on_sale: '🥬', changing: '🥬', pending: '🫚', rejected: '🥬', off_shelf: '📦' }[s] || '🥬')
