@@ -143,6 +143,7 @@
         class="mic-hold"
         :class="{ rec: recording }"
         @touchstart.prevent="onMicStart"
+        @touchmove.prevent="onMicMove"
         @touchend.prevent="onMicStop"
         @touchcancel="onMicStop"
       >
@@ -172,6 +173,7 @@ import { ref, computed } from 'vue'
 import { onLoad, onHide, onUnload } from '@dcloudio/uni-app'
 import { post } from '@/api/request'
 import { supplierApi } from '@/api/modules'
+import { createVoiceHold } from '@/utils/voice-record'
 
 /**
  * 供应商「语音报量 / 改价」（2026-09-25 卡U，原型②③④屏）
@@ -376,170 +378,22 @@ function again() {
 }
 
 // ════════════════════════════════════════════════════════════
-// 语音识别（微信同声传译插件 WechatSI）—— 照搬 pages/buyer/kefu.vue 已修好的那套
-// 四处已修的坑必须一起搬：首次授权吃掉松手 / onError 主动停录守卫 / stop 幂等 / 超时兜底
+// 语音识别（卡W：录音逻辑已抽到 utils/voice-record.js 唯一共享实现，本页只接回调）
+// 全部兜底都在共享实现里：fingerDown 首次授权 / onError 仍在录守卫 / stop 幂等(-30012)
+// / 超时给提示 / onHide+onUnload 停录 / touchmove 防误滚 —— 本页零重复
 // ════════════════════════════════════════════════════════════
-const voiceReady = ref(false)
-const recording = ref(false)
-const recText = ref('')
-let recManager = null
-let recSafetyTimer = null
-let fingerDown = false // 手指是否还按在按钮上（首次授权弹窗会吃掉松手，靠它兜住）
-let stopping = false // 已发出 stop()、等回调 —— 防重复 stop（插件会回 -30012）
-
-// 录音浮层波形（纯装饰，随机高度营造「正在听」的感觉）
-const waveBars = ref([14, 30, 42, 22, 36, 16, 28, 12])
-let waveTimer = null
-function startWave() {
-  waveTimer = setInterval(() => {
-    waveBars.value = waveBars.value.map(() => 10 + Math.floor(Math.random() * 34))
-  }, 180)
-}
-function stopWave() {
-  clearInterval(waveTimer)
-  waveTimer = null
-}
-
-// #ifdef MP-WEIXIN
-try {
-  // 插件未声明/未授权时 requirePlugin 抛错 → 话筒入口不出现，打字入口完全不受影响
-  if (typeof requirePlugin === 'function') {
-    const si = requirePlugin('WechatSI')
-    if (si && typeof si.getRecordRecognitionManager === 'function') {
-      recManager = si.getRecordRecognitionManager()
-      bindRecordEvents()
-      voiceReady.value = true
-    }
-  }
-} catch (e) {
-  console.warn('[语音报量] 同声传译插件不可用，已隐藏语音入口：', e && e.message)
-}
-// #endif
-
-function bindRecordEvents() {
-  if (!recManager) return
-  recManager.onRecognize = (res) => { recText.value = String((res && res.result) || recText.value || '') }
-  recManager.onStop = (res) => {
-    clearTimeout(recSafetyTimer)
-    stopping = false
-    stopWave()
-    // 页面已隐藏/卸载时主动停过录音 → 不再喂给解析
-    if (!recording.value) return
-    recording.value = false
-    const text = String((res && res.result) || '').trim()
-    recText.value = ''
-    if (!text) {
-      failCount++
-      tipMessage.value = failCount >= 2 ? '连着两次没听清，建议改用打字' : '没听清，请再说一遍'
-      return
-    }
-    parse(text)
-  }
-  recManager.onError = (err) => {
-    clearTimeout(recSafetyTimer)
-    stopping = false
-    stopWave()
-    // 离开页面时主动 stop 会回 -30012（当前无识别任务）—— 吞掉，别弹给用户
-    if (!recording.value) return
-    recording.value = false
-    recText.value = ''
-    const code = (err && err.retcode) || 0
-    const msg = code === -30001 ? '录音失败（请检查麦克风权限），可改用打字'
-      : code === -40001 ? '说得太快啦，缓一下再试'
-      : code === -30011 ? '还在识别上一句，稍等一下'
-      : `语音识别失败(${code})，请改用打字或重试`
-    tipMessage.value = msg
-  }
-}
-
-// 麦克风权限（照搬 kefu.vue：已授权直接用；被拒过一次后引导去设置页）
-const ensureRecordAuth = () => new Promise((resolve) => {
-  uni.getSetting({
-    success: (r) => {
-      const cur = r.authSetting && r.authSetting['scope.record']
-      if (cur === true) return resolve(true)
-      if (cur === false) {
-        uni.showModal({
-          title: '需要麦克风权限',
-          content: '语音报量要用麦克风听懂您说的话，请在设置里打开',
-          confirmText: '去设置',
-          success: (m) => {
-            if (!m.confirm) return resolve(false)
-            uni.openSetting({
-              success: (o) => resolve(!!(o.authSetting && o.authSetting['scope.record'])),
-              fail: () => resolve(false),
-            })
-          },
-          fail: () => resolve(false),
-        })
-        return
-      }
-      uni.authorize({ scope: 'scope.record', success: () => resolve(true), fail: () => resolve(false) })
-    },
-    fail: () => resolve(true),
-  })
+const voice = createVoiceHold({
+  onDone: (text) => parse(text),
+  onFail: (msg) => { tipMessage.value = msg }, // 空结果/错误/超时 → 内联提示（文案由共享实现给，与卡U 一致）
 })
-
-const onMicStart = async () => {
-  if (!recManager || recording.value || stopping || parsing.value) return
-  fingerDown = true
-  const ok = await ensureRecordAuth()
-  // ⚠️ 首次会弹系统授权窗，手指必然已经离开 —— 此时绝不能开录（否则会一直录到 30 秒上限）
-  if (!fingerDown) {
-    uni.showToast({ title: ok ? '麦克风已开启，请按住说话' : '没有麦克风权限，无法语音报量', icon: 'none' })
-    return
-  }
-  if (!ok) { uni.showToast({ title: '没有麦克风权限，无法语音报量', icon: 'none' }); return }
-  recText.value = ''
-  stopping = false
-  recording.value = true
-  try {
-    recManager.start({ lang: 'zh_CN', duration: 30000 })
-  } catch (e) {
-    clearTimeout(recSafetyTimer)
-    recording.value = false
-    stopWave()
-    uni.showToast({ title: '录音启动失败，请重试', icon: 'none' })
-    return
-  }
-  startWave()
-  // 兜底：插件万一没回调 onStop/onError，别让浮层卡住（坑④：超时要给提示，不静默）
-  recSafetyTimer = setTimeout(() => {
-    if (recording.value) {
-      recording.value = false
-      recText.value = ''
-      stopping = false
-      stopWave()
-      tipMessage.value = '录音超时，请重试'
-    }
-  }, 35000)
-}
-
-const onMicStop = () => {
-  fingerDown = false
-  // stopping 幂等：touchend 与 touchcancel 可能连着来，重复 stop 会被插件拒（-30012）
-  if (!recording.value || stopping || !recManager) return
-  stopping = true
-  try {
-    recManager.stop()
-  } catch (e) {
-    clearTimeout(recSafetyTimer)
-    stopping = false
-    recording.value = false
-    stopWave()
-  }
-}
-
-// 离开页面必须停掉录音（否则后台还在录、回调回来页面已销毁）
-const stopVoiceIfNeeded = () => {
-  fingerDown = false
-  stopWave()
-  if (!recording.value) return
-  clearTimeout(recSafetyTimer)
-  recording.value = false
-  stopping = true
-  try { recManager && recManager.stop() } catch (e) { /* 忽略：离开页面时的失败无意义 */ }
-}
+const voiceReady = voice.ready
+const recording = voice.recording
+const recText = voice.partial
+const waveBars = voice.waveBars
+const onMicStart = () => { if (parsing.value) return; voice.handleStart() } // 解析中不接新录音（卡U 语义）
+const onMicStop = voice.handleStop
+const onMicMove = voice.handleMove
+const stopVoiceIfNeeded = voice.stopForLeave
 
 onHide(stopVoiceIfNeeded)
 onUnload(stopVoiceIfNeeded)
