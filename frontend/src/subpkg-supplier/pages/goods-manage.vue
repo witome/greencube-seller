@@ -101,8 +101,22 @@
       <view class="li-main">
         <view class="li-t">
           {{ g.name }}
-          <view class="act-link" @tap="openEdit(g)">✏️ 编辑</view>
-          <view class="act-stock" @tap="openStock(g)">⚡ 改库存</view>
+          <!-- 卡Z2：已下架 → 编辑/改库存置灰（点了只给提示，后端本来也会拒） -->
+          <view class="act-link" :class="{ dim: g.status === 'off_shelf' }" @tap="tapEdit(g)">✏️ 编辑</view>
+          <view class="act-stock" :class="{ dim: g.status === 'off_shelf' }" @tap="tapStock(g)">⚡ 改库存</view>
+          <!-- 卡Z2：在售/变更中 → 下架；已下架 → 重新上架；待审核/已驳回（申请态）→ 删除 -->
+          <view
+            v-if="g.status === 'on_sale' || g.status === 'changing' || g.status === 'off_shelf'"
+            class="act-down"
+            :class="{ disabled: statusBusyId === g.id }"
+            @tap="askToggle(g)"
+          >{{ statusBusyId === g.id ? '处理中…' : (g.status === 'off_shelf' ? '⬆ 重新上架' : '⬇ 下架') }}</view>
+          <view
+            v-else
+            class="act-del"
+            :class="{ disabled: statusBusyId === g.id }"
+            @tap="askDelete(g)"
+          >🗑 删除</view>
         </view>
         <view class="li-d">
           供货价 ¥{{ g.supplyPrice }}/{{ g.unit }} · 日供 {{ g.dailySupply }}{{ g.unit }}
@@ -113,6 +127,30 @@
       <view class="tag" :class="tagType(g.status)">{{ g.statusText }}</view>
     </view>
     <view v-if="!loading && !goods.length" class="empty">暂无商品，点上方「提交新商品」添加</view>
+
+    <!-- 卡Z2：下架/上架/删除 二次确认抽屉（文案照原型④⑥） -->
+    <view v-if="confirmTarget" class="mask" @tap="confirmTarget = null">
+      <view class="sheet" @tap.stop>
+        <view class="sheet-title">
+          <template v-if="confirmTarget.type === 'del'">删除这条申请？</template>
+          <template v-else-if="confirmTarget.type === 'off'">下架「{{ confirmTarget.goods.name }}」？</template>
+          <template v-else>重新上架「{{ confirmTarget.goods.name }}」？</template>
+        </view>
+        <view class="sheet-body">
+          <template v-if="confirmTarget.type === 'del'">删除后无法恢复<br>（这条申请会被撤掉）</template>
+          <template v-else-if="confirmTarget.type === 'off'">下架后买家看不到这个菜；<b>历史订单不受影响</b>，随时可以重新上架</template>
+          <template v-else>重新上架后买家可以立刻看到这个菜，商品资料原样保留</template>
+        </view>
+        <view class="row-btns">
+          <view class="pbtn ghost" @tap="confirmTarget = null">再想想</view>
+          <view
+            class="pbtn"
+            :class="{ danger: confirmTarget.type === 'del', primary: confirmTarget.type !== 'del', disabled: statusBusyId === confirmTarget.goods.id }"
+            @tap="doConfirm"
+          >{{ confirmTarget.type === 'del' ? '确认删除' : confirmTarget.type === 'off' ? '确认下架' : '确认上架' }}</view>
+        </view>
+      </view>
+    </view>
 
     <!-- 快速改库存弹层（免审核即时生效） -->
     <view v-if="stockTarget" class="mask" @tap="stockTarget = null">
@@ -201,7 +239,7 @@
 import { ref, onMounted } from 'vue'
 import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { supplierApi } from '@/api/modules'
-import { post, put, fullUrl } from '@/api/request'
+import { post, put, del, fullUrl } from '@/api/request'
 import { pickPhotos, uploadPhoto, previewPhotos } from '@/utils/photo-upload'
 import { createVoiceHold } from '@/utils/voice-record'
 import VoiceConfirm from '@/components/VoiceConfirm.vue'
@@ -266,6 +304,55 @@ async function changeCover(g, sourceType) {
     if (e && e.cancelled) return // 用户取消选图
     if (e && e.msg) uni.showToast({ title: e.msg, icon: 'none' }) // 网络/图片过大等可读提示；业务错误 request 层已 toast
   }
+}
+
+// ── 下架/重新上架/删除（卡Z2，免审即时，接口 PUT :id/status 与 DELETE apply/:applyId）──
+const confirmTarget = ref(null) // { type: 'off' | 'on' | 'del', goods, applyId }
+const statusBusyId = ref(null) // 防连点：操作进行中的行 id，该行按钮禁用 + 确认按钮禁用
+
+function askToggle(g) {
+  if (statusBusyId.value === g.id) return // 该行操作进行中 → 禁用
+  confirmTarget.value = { type: g.status === 'off_shelf' ? 'on' : 'off', goods: g }
+}
+
+function askDelete(g) {
+  if (statusBusyId.value === g.id) return
+  confirmTarget.value = { type: 'del', goods: g, applyId: g.applyId }
+}
+
+async function doConfirm() {
+  const t = confirmTarget.value
+  if (!t || statusBusyId.value === t.goods.id) return // 防连点：进行中直接忽略
+  statusBusyId.value = t.goods.id
+  try {
+    if (t.type === 'del') {
+      await del(`/supplier-goods/apply/${t.applyId}`)
+      goods.value = goods.value.filter((x) => x.id !== t.goods.id) // 删除成功该行就地消失
+      uni.showToast({ title: '申请已删除', icon: 'none' })
+    } else {
+      const next = t.type === 'off' ? 0 : 1
+      await put(`/supplier-goods/${t.goods.id}/status`, { status: next })
+      // 成功后就地更新该行（不整页刷新）
+      t.goods.status = next === 0 ? 'off_shelf' : 'on_sale'
+      t.goods.statusText = next === 0 ? '已下架' : '在售'
+      uni.showToast({ title: next === 0 ? '已下架（免审即时）' : '已重新上架（免审即时）', icon: 'none' })
+    }
+    confirmTarget.value = null
+  } catch (e) {
+    if (e && e.msg) uni.showToast({ title: e.msg, icon: 'none' }) // 后端业务错误文案透出
+  } finally {
+    statusBusyId.value = null
+  }
+}
+
+// 已下架的行：编辑/改库存置灰，点了给可读提示（后端 quickStock/applyChange 本来也会拒）
+function tapEdit(g) {
+  if (g.status === 'off_shelf') { uni.showToast({ title: '商品已下架，请先重新上架再改价/改名', icon: 'none' }); return }
+  openEdit(g)
+}
+function tapStock(g) {
+  if (g.status === 'off_shelf') { uni.showToast({ title: '商品已下架，请先重新上架再改价/改名', icon: 'none' }); return }
+  openStock(g)
 }
 
 // ── 新商品表单：封面 + 资质证明（卡Z1：把「＋ 上传检疫合格证」死文案接上真上传）──
@@ -503,6 +590,11 @@ onMounted(() => {
 .filter-chips { margin-top: 8px; }
 .act-link { display: inline; color: $brand-deep; font-size: 12px; font-weight: 600; margin-left: 8px; }
 .act-stock { display: inline; color: $info; font-size: 12px; font-weight: 600; margin-left: 8px; }
+/* 卡Z2：下架/重新上架 / 删除 / 置灰 */
+.act-down { display: inline; color: #C87000; font-size: 12px; font-weight: 600; margin-left: 8px; }
+.act-del { display: inline; color: #FA5151; font-size: 12px; font-weight: 600; margin-left: 8px; }
+.act-link.dim, .act-stock.dim { color: #C0C6CC; }
+.act-down.disabled, .act-del.disabled, .pbtn.disabled { opacity: 0.45; pointer-events: none; }
 .form-row { display: flex; align-items: center; padding: 12px 0; font-size: 14px; }
 .fr-l { width: 76px; color: $text-second; flex-shrink: 0; }
 .fr-r { flex: 1; margin-left: 12px; min-width: 0; }
@@ -571,6 +663,15 @@ onMounted(() => {
 .modal .ipt {
   background: $bg-soft; border-radius: 8px; padding: 10px 12px; text-align: left; margin-bottom: 4px;
 }
+
+/* 卡Z2：底部确认抽屉（照原型④：后果说清 + 再想想/确认） */
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
+  background: #fff; border-radius: 24rpx 24rpx 0 0; padding: 28rpx 32rpx calc(28rpx + env(safe-area-inset-bottom));
+}
+.sheet-title { font-size: 30rpx; font-weight: 700; color: $text-title; margin-bottom: 14rpx; }
+.sheet-body { font-size: 25rpx; color: $text-second; line-height: 1.7; margin-bottom: 24rpx; }
+.sheet-body b { color: $text-title; }
 
 /* ── 底部固定语音入口（卡U 建，卡W 改真·按住）：列表底部留白跟着加大，别让最后一行被盖住 ── */
 .page { padding-bottom: 280rpx; }

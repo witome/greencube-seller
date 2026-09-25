@@ -5,12 +5,15 @@ import { ApplyGoodsDto } from './dto/apply-goods.dto'
 import { ChangeGoodsDto } from './dto/change-goods.dto'
 import { QuickStockDto } from './dto/quick-stock.dto'
 import { AuditService } from '../audit/audit.service'
+import { UpdateStatusDto } from './dto/update-status.dto'
 
-/// 商品状态（与 schema Product.status 对应）
+/// 商品状态（schema Product.status 权威口径：0 下架 / 1 在售 / 2 变更审核中）
+/// ⚠️ 新品的「待审核 / 已驳回」不再由 product.status 表达 —— 由该商品最新一条
+/// type=1 申请的 status 判定（0 待审核 / 1 通过 / 2 已驳回），与后台 admin-goods 口径一致
 const ProductStatus = {
-  PENDING: 0,  // 待审核（新品提交后）
-  ON_SALE: 1,  // 在售
-  OFF_SHELF: 2, // 已下架
+  OFF_SHELF: 0, // 已下架（新品提交后审核期间也是 0，展示态看申请记录）
+  ON_SALE: 1,   // 在售
+  CHANGING: 2,  // 变更审核中
 } as const
 
 /// 封面地址白名单（2026-09-25 卡Z1）：只接受本站上传地址，防外链/防注入。
@@ -70,17 +73,24 @@ export class SupplierGoodsService {
     let list = links.map((link) => {
       const p = link.product
       const pendingChange = p.applications.find((a) => a.type === 2 && a.status === 0)
-      const latestApply = p.applications.find((a) => a.type === 1)
+      const latestNewApply = p.applications.find((a) => a.type === 1)
 
-      // 供应商侧状态
+      // 供应商侧状态（卡Z2 收口，判定顺序）：
+      // ① 最新一条新品申请（type=1）若 待审核/已驳回 → 申请态优先展示（不带上下架按钮）
+      // ② 否则按 product.status：1 在售（有待审变更申请 → 变更审核中）/ 0 已下架 / 2 变更审核中
+      // ③ 其它未覆盖值一律按「已下架」兜底（不许崩、不许白屏）
       let status: string, statusText: string
-      if (p.status === ProductStatus.PENDING) {
-        status = latestApply?.status === 2 ? 'rejected' : 'pending'
-        statusText = latestApply?.status === 2 ? '已驳回' : '待审核'
+      if (latestNewApply && (latestNewApply.status === 0 || latestNewApply.status === 2)) {
+        status = latestNewApply.status === 0 ? 'pending' : 'rejected'
+        statusText = latestNewApply.status === 0 ? '待审核' : '已驳回'
       } else if (p.status === ProductStatus.ON_SALE) {
         status = pendingChange ? 'changing' : 'on_sale'
         statusText = pendingChange ? '变更审核中' : '在售'
+      } else if (p.status === ProductStatus.CHANGING) {
+        status = 'changing'
+        statusText = '变更审核中'
       } else {
+        // ProductStatus.OFF_SHELF 及其它未知值兜底
         status = 'off_shelf'
         statusText = '已下架'
       }
@@ -95,8 +105,10 @@ export class SupplierGoodsService {
         weighType: p.weighType,
         status,
         statusText,
+        // 卡Z2：最新新品申请 id（前端「删除」按钮需要，DELETE /supplier-goods/apply/:applyId）
+        applyId: latestNewApply ? Number(latestNewApply.id) : null,
         changeInfo: pendingChange ? pendingChange.diffs : null,
-        rejectReason: latestApply?.status === 2 ? latestApply.rejectReason : null,
+        rejectReason: latestNewApply?.status === 2 ? latestNewApply.rejectReason : null,
       }
     })
 
@@ -146,7 +158,8 @@ export class SupplierGoodsService {
           // ⚠️ 销售价由运营审核后按加价比例设定，此处占位 0
           salePrice: 0,
           markupRate: 0,
-          status: ProductStatus.PENDING,
+          // 新品待审：非在售（0=下架口径），展示态「待审核/已驳回」由申请记录判定（卡Z2）
+          status: ProductStatus.OFF_SHELF,
         },
       })
 
@@ -279,6 +292,12 @@ export class SupplierGoodsService {
   async updateCover(userId: bigint, productId: number, cover: string) {
     const supplier = await this.getSupplier(userId)
 
+    // 长度上限（卡Z2 修复）：≤255 与 ApplyGoodsDto @MaxLength(255) 同口径。
+    // 原先只查白名单，301 字符地址白名单放行 → Prisma 撞 VarChar(255) → 裸 5001
+    if (cover.trim().length > 255) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '封面地址过长')
+    }
+
     // 地址白名单：只收本站上传地址（/uploads/ 或生产域名），其它一律业务错误
     if (!isValidCoverUrl(cover)) {
       throw new BizException(ErrorCode.PARAM_ERROR, '封面地址不合法')
@@ -308,5 +327,126 @@ export class SupplierGoodsService {
     })
 
     return { productId, cover: cover.trim(), effectiveImmediately: true }
+  }
+
+  // ────────────────────────────────────────
+  // ⬇⬆ 自助下架 / 重新上架（免审即时，2026-09-25 卡Z2）
+  // 口径与后台 admin-goods#updateProductStatus 一致：0 下架 / 1 上架，不建 applications、
+  // 不进审核队列；留痕复用后台同款 action（PRODUCT_ON_SHELF / PRODUCT_OFF_SHELF）保持全库一致
+  // ────────────────────────────────────────
+  async updateStatus(userId: bigint, productId: number, dto: UpdateStatusDto) {
+    const supplier = await this.getSupplier(userId)
+
+    const status = Number(dto.status)
+    // 值校验：只收 0/1（与后台同款文案；service 层兜底，DTO 校验在前）
+    if (![0, 1].includes(status)) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '状态值不合法（0 下架 / 1 上架）')
+    }
+
+    // 归属校验：仅本人名下商品，否则按资源不存在处理（防跨档口探测）
+    const link = await this.prisma.productSupplierLink.findUnique({
+      where: { productId_supplierId: { productId: BigInt(productId), supplierId: supplier.id } },
+      include: {
+        product: { include: { applications: { orderBy: { createdAt: 'desc' } } } },
+      },
+    })
+    if (!link) throw new BizException(ErrorCode.NOT_FOUND, '该商品不存在或不属于本供应商')
+
+    // 拒绝「新品申请态」：最新 type=1 申请还在待审核/已驳回 → 不允许上下架
+    const latestNewApply = link.product.applications.find((a) => a.type === 1)
+    if (latestNewApply && (latestNewApply.status === 0 || latestNewApply.status === 2)) {
+      throw new BizException(
+        ErrorCode.PARAM_ERROR,
+        latestNewApply.status === 0
+          ? '待审核的商品不支持上下架，请等审核结果或删除申请'
+          : '已驳回的商品不支持上下架，请等审核结果或删除申请',
+      )
+    }
+
+    const statusBefore = link.product.status
+    await this.prisma.product.update({
+      where: { id: link.productId },
+      data: { status },
+    })
+
+    await this.audit.log({
+      operatorId: userId,
+      action: status === 1 ? 'PRODUCT_ON_SHELF' : 'PRODUCT_OFF_SHELF',
+      entity: 'product',
+      entityId: productId,
+      before: { status: statusBefore, supplierId: Number(supplier.id) },
+      after: { status, supplierId: Number(supplier.id) },
+    })
+
+    return { productId, status, effectiveImmediately: true }
+  }
+
+  // ────────────────────────────────────────
+  // 🗑 撤销/删除自建申请（2026-09-25 卡Z2）
+  // 仅本人、仅 待审核(0)/已驳回(2)；已通过 → 引导走下架；
+  // 新品申请(type=1) 零引用才真删（order_item / 其它 link / 其它申请 / 购物车 任一存在即拒），
+  // 一个事务内删 本人 link + 申请 + product（对齐卡B「多表写必须进事务」规矩）；
+  // 变更申请(type=2) 只删申请记录本身，不碰商品（变更申请挂的是在售商品，红线：在售商品不许删）
+  // ────────────────────────────────────────
+  async deleteApply(userId: bigint, applyId: number) {
+    const supplier = await this.getSupplier(userId)
+
+    const apply = await this.prisma.productApplication.findUnique({ where: { id: BigInt(applyId) } })
+    if (!apply || apply.supplierId !== supplier.id) {
+      throw new BizException(ErrorCode.NOT_FOUND, '该申请不存在或不属于本供应商')
+    }
+
+    if (apply.status === 1) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '已通过的商品请用下架，不能删除申请')
+    }
+    if (![0, 2].includes(apply.status)) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该申请当前状态不支持删除')
+    }
+
+    const applyIdNum = Number(apply.id)
+    const productId = apply.productId
+
+    // 变更申请：只撤申请本身（商品与供货关系原样保留）
+    if (apply.type === 2 || !productId) {
+      await this.prisma.productApplication.delete({ where: { id: apply.id } })
+      await this.audit.log({
+        operatorId: userId,
+        action: 'SUPPLIER_APPLY_WITHDRAW',
+        entity: 'product',
+        entityId: productId ? Number(productId) : 0,
+        before: { applyId: applyIdNum, applyType: apply.type, applyStatus: apply.status },
+        after: { applyId: applyIdNum, deleted: ['product_application'] },
+      })
+      return { applyId: applyIdNum, deleted: ['product_application'] }
+    }
+
+    // 新品申请：零引用才真删（①历史订单 ②其它供货关系 ③其它申请 ④购物车引用）
+    const [orderRefCount, linkCount, applyCount, cartRefCount] = await Promise.all([
+      this.prisma.orderItem.count({ where: { productId } }),
+      this.prisma.productSupplierLink.count({ where: { productId } }),
+      this.prisma.productApplication.count({ where: { productId } }),
+      this.prisma.cartItem.count({ where: { productId } }),
+    ])
+    if (orderRefCount > 0 || linkCount > 1 || applyCount > 1 || cartRefCount > 0) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该商品已有历史订单/其它关联，不能删除，请改为下架')
+    }
+
+    // 事务：三张表要么都成、要么都不成（audit_log 无外键，商品删了留痕不受影响）
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productSupplierLink.deleteMany({ where: { productId, supplierId: supplier.id } })
+      await tx.productApplication.delete({ where: { id: apply.id } })
+      await tx.product.delete({ where: { id: productId } })
+    })
+
+    await this.audit.log({
+      operatorId: userId,
+      action: 'SUPPLIER_APPLY_WITHDRAW',
+      entity: 'product',
+      entityId: Number(productId),
+      before: { applyId: applyIdNum, applyType: apply.type, applyStatus: apply.status, productId: Number(productId) },
+      after: { applyId: applyIdNum, productId: Number(productId), deleted: ['product_supplier_link', 'product_application', 'product'] },
+    })
+
+    return { applyId: applyIdNum, productId: Number(productId), deleted: ['product_supplier_link', 'product_application', 'product'] }
   }
 }

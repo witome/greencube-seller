@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common'
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common'
 import { SupplierGoodsService } from './supplier-goods.service'
 import { ApplyGoodsDto } from './dto/apply-goods.dto'
 import { ChangeGoodsDto } from './dto/change-goods.dto'
 import { QuickStockDto } from './dto/quick-stock.dto'
+import { UpdateStatusDto } from './dto/update-status.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -51,5 +52,19 @@ export class SupplierGoodsController {
   @Roles(Role.SUPPLIER)
   async updateCover(@CurrentUser('userId') userId: bigint, @Param('productId') productId: string, @Body() body: { cover?: string }) {
     return this.service.updateCover(userId, Number(productId), String(body?.cover ?? ''))
+  }
+
+  /// ⬇⬆ 自助下架/重新上架（免审即时，卡Z2：0 下架 / 1 上架，不进审核队列）
+  @Put(':productId/status')
+  @Roles(Role.SUPPLIER)
+  async updateStatus(@CurrentUser('userId') userId: bigint, @Param('productId') productId: string, @Body() dto: UpdateStatusDto) {
+    return this.service.updateStatus(userId, Number(productId), dto)
+  }
+
+  /// 🗑 撤销/删除自建申请（卡Z2：仅本人、仅待审核/已驳回；新品申请零引用才真删商品）
+  @Delete('apply/:applyId')
+  @Roles(Role.SUPPLIER)
+  async deleteApply(@CurrentUser('userId') userId: bigint, @Param('applyId') applyId: string) {
+    return this.service.deleteApply(userId, Number(applyId))
   }
 }
