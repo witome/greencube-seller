@@ -22,6 +22,12 @@
 - **供货优先级**：前后端都已有（`PUT /admin/goods/:productId/priority` + `GoodsAudit.vue` 弹窗），**不是待办**
 - **数量模型**：五数量目前跑通 **四数量**（订购 / 申报 / 验收 / 接受）+ **分拣字段预留**（`qty_sorted`，全仓零引用，业务未启用）。**这不是遗漏，是预留**——2026-09-11 已拍板按「文档降级」处理，**不排期补分拣环节**（会影响对账基数，大辉已决定不做），以后别再当缺陷报
 - **微信凭证（2026-09-19 状态已翻篇）**：`WX_APPID` / `WX_SECRET` 是**真实可用凭证**，`WX_MOCK_LOGIN=0`（生产已在用真实登录）。**不要改回占位值、也不要改回 `1`**（详见下文「环境红线」）
+- **`POST /api/v1/ai/parse` 必须保持「只读」**（2026-09-25 定）：它只 `findMany` 商品、**不写任何库**。
+  所有**生产只读探针**（巡检脚本、冒烟、Hermes 复核）都依赖这条前提；一旦在里面插写库，
+  只读探针就开始偷偷改生产数据。要落库的副作用（如「采购需求登记」）一律由**前端单独调别的接口**完成。
+- **采购需求 ≠ 下单后缺货**：`purchase_demand*` 三张表（+ `demand_subscribe_quota`）是
+  「客户还没下单、我们压根没有这个菜」；`order_item.qty_accepted` 是「已下单、到货不够」。
+  **两条独立的线**：不共用表、不共用页面、不互相回写。
 
 ## 路径
 
@@ -173,6 +179,19 @@ powershell -NoProfile -Command "& '$PS' -c WorkBuddy get_simulator_console --pro
    ```
    另外：**列表页要在 `onShow` 里补一次**（`if (loadError.value && !loading.value) load()`），
    否则用户切走再切回来仍是失败态。只靠 `onMounted` 的页面最容易踩。
+10. **raw SQL 写日期列必须用 `UTC_TIMESTAMP(3)`，不是 `NOW(3)`**（2026-09-25 实测踩到）——
+   本机 MySQL 会话时区是 `SYSTEM`（+08），`NOW(3)` 给的是**本地时间**，
+   而 **Prisma 读写 `datetime(3)` 一律按 UTC 解释** → 用 `NOW(3)` 写进去的值被当 UTC 读，**整列偏 8 小时**。
+   表现极具迷惑性：把一条明细回拨成「49 小时前」，读回来却是「41 小时前」，48 小时窗口判定就假红。
+   自检：`SELECT @@session.time_zone, NOW(3), UTC_TIMESTAMP(3);`
+   （Prisma 常规 `create/update` 走客户端 `@updatedAt`，不受影响；**只有 raw SQL 要注意**。
+   仓里 `service_fee_config` 的写入还留着 `NOW(3)`，只影响展示列、业务不依赖 —— 别顺手改，要改先报。）
+11. **要给浏览器真下载文件的接口，用 `@Res()` 直接写响应**（2026-09-25）——
+   全局 `ResponseInterceptor` 会把任何非 `{code}` 返回值包成 `{ code, msg, data }`，
+   所以返回 CSV 字符串到前端只会下到一个 JSON。Nest 源码里
+   `!isResponseHandled && apply(...)`：标了 `@Res()`（未开 passthrough）就不会二次发送，安全。
+   ⚠️ 前端拿它时**必须 `res.arrayBuffer()`，不能用 `res.text()`** ——
+   `text()` 按规范会**吃掉 BOM**，再拿去 `new Blob()` 下载，导出的 CSV 就丢 BOM → Excel 中文乱码。
 
 ## 进度在哪看
 
