@@ -28,6 +28,15 @@
 - **采购需求 ≠ 下单后缺货**：`purchase_demand*` 三张表（+ `demand_subscribe_quota`）是
   「客户还没下单、我们压根没有这个菜」；`order_item.qty_accepted` 是「已下单、到货不够」。
   **两条独立的线**：不共用表、不共用页面、不互相回写。
+- **订阅消息的模板 id 与字段名都不许写死**（2026-09-25 定）：
+  模板 id 只从 `.env` 的 `WX_SUBSCRIBE_TMPL_DEMAND` 读（留空 → 按钮隐藏 + 业务错，不猜）；
+  字段名走 `getTemplateKeywords()` 自动探测 —— 调 `GET /wxaapi/newtmpl/gettemplate`，
+  字段名在模板 `content` 的 `{{xxx.DATA}}` 里（**官方接口不返回 kid 数组**），
+  再按字段**中文名**映射（名称→name / 单价·价格·金额→price / 温馨提示·备注·说明→note）。
+  ⚠️ 当前真实模板 =「预约商品到货通知」（**一次性订阅 type=2**），字段＝商品名称/商品单价/温馨提示。
+  `WX_SUBSCRIBE_TMPL_DEMAND_FIELDS` 是**覆盖**手段，默认留空。
+  发送数据一律经 `wx.format.ts` 按字段类型格式化（thing≤20 / amount 补 `¥` / number 纯数字 …），
+  给不出合法值就**用人话拒绝**，绝不把微信的 `47003` 甩给运营。
 
 ## 路径
 
