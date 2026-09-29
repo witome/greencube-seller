@@ -22,7 +22,10 @@ async function bootstrap() {
   // >100KB 的图片（收款码、手机照片）会在 body-parser 阶段被拦成 PayloadTooLargeError(413)，
   // 根本到不了业务代码，前端只能看到「服务器异常」——2026-09-19 运营后台上传收款码报错根因。
   // 故显式关闭 Nest 默认 bodyParser，按 5MB 自行注册（urlencoded 一并放开，行为对齐）。
+  // verify（卡R1）：缓存原始 body 到 req.rawBody —— 微信支付回调验签必须用「原始报文字符串」，
+  // JSON.parse→stringify 会丢空格/转义差异导致验签必败（仅内存缓存，无行为变化）。
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false })
+  app.use(json({ limit: '5mb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf?.toString('utf8') ?? '' } }))
   app.use(json({ limit: '5mb' }))
   app.use(urlencoded({ extended: true, limit: '5mb' }))
 

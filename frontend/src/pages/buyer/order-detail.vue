@@ -132,12 +132,12 @@
          背景：原来支付卡片只在「待确认(10)+未选支付方式(0)」出现，选了货到付款并送达后采购方没有付款入口。
          ⚠️ 页面**不展示收款码图片**：由配送员当面出示运营上传的收款码，客户用微信「扫一扫」付。
          ⚠️ 不调 wx.scanCode 去扫微信收款码（扫出来只是一串字符、付不了款，只会让用户困惑）。
-         ⚠️ 不接模拟支付：「微信直接支付」只提示即将开通。
+         ⚠️ 卡R1 起「微信直接支付」为真实支付：服务端下单 → uni.requestPayment（线上支付，与现金口径分开）。
          ⚠️「客户称已付」（采购方声明）与「已核销」（配送员收款凭证）是两件事，分开显示，不混。 -->
     <view class="card cod-card" v-if="codCardVisible">
       <view class="card-title">货到付款</view>
       <view class="cod-amount">应付 ¥{{ codPayAmount }}</view>
-      <view class="cod-tip">请用微信「扫一扫」扫配送员出示的收款码</view>
+      <view class="cod-tip">请用微信「扫一扫」扫配送员出示的收款码，或点「微信直接支付」线上付款</view>
 
       <view class="pay-row" v-if="codClaimable">
         <view class="pay-btn cod" @tap="showScanTip">扫码付款</view>
@@ -242,13 +242,9 @@ const showScanTip = () => uni.showModal({
   showCancel: false,
   confirmText: '知道了',
 })
-// 微信直接支付：本次只提示即将开通。⚠️ 绝不接模拟支付（会显示"支付成功"却一分钱没收到）
-const showWechatComing = () => uni.showModal({
-  title: '微信直接支付',
-  content: '微信支付即将开通，请先用上方方式扫码付款',
-  showCancel: false,
-  confirmText: '知道了',
-})
+// 微信直接支付（卡R1 起为真支付）：COD 送达后想线上付 → 服务端下单并拉起收银台。
+// ⚠️ 这是「线上支付」（钱走微信），与「扫码付款 / 我已付款」的现金口径分开；核销仍以配送员收款凭证为准。
+const showWechatComing = () => launchWechatPay(orderId.value)
 // 声明已付款：只登记「客户称已付」，不是核销（核销仍以配送员收款凭证为准）
 const claimPaid = async () => {
   if (claiming.value) return
@@ -376,29 +372,50 @@ const toggleUrgent = async () => {
 }
 
 // ── 支付 ──
+// 真实微信支付（卡R1）：先服务端下单（金额服务端取数），再用返回参数拉起微信收银台。
+// 参数只能来自服务端 prepay（红线：前端不许自己拼 timeStamp/paySign）。
+const launchWechatPay = async (id) => {
+  let params
+  try {
+    params = await buyerApi.wechatPrepay(id)
+  } catch (e) {
+    return false // 业务错误已由 request.js 统一 toast（如「订单当前状态不允许微信支付」）
+  }
+  return new Promise((resolve) => {
+    uni.requestPayment({
+      provider: 'wxpay',
+      timeStamp: params.timeStamp,
+      nonceStr: params.nonceStr,
+      package: params.package,
+      signType: params.signType || 'RSA',
+      paySign: params.paySign,
+      success: () => {
+        uni.showToast({ title: '微信支付成功', icon: 'success' })
+        load()
+        resolve(true)
+      },
+      fail: (err) => {
+        const msg = String(err && err.errMsg ? err.errMsg : '')
+        if (msg.indexOf('cancel') >= 0) {
+          uni.showToast({ title: '已取消支付，订单保持待确认', icon: 'none' })
+        } else {
+          uni.showToast({ title: '支付未完成，请重试', icon: 'none' })
+        }
+        resolve(false)
+      },
+    })
+  })
+}
+
 const pay = async (payMethod) => {
   await flushSave() // 支付前先保存最新改动（防止 debounce 未触发就支付）
-  const res = await buyerApi.payOrder(orderId.value, payMethod)
   if (payMethod === 1) {
-    // 微信支付（模拟通道）：真实环境此处调起 wx.requestPayment（接商户号后替换）
-    const confirmed = await new Promise((resolve) => {
-      uni.showModal({
-        title: '微信支付（模拟通道）',
-        content: `支付金额 ¥${res.amount}，模拟通道将立即回调支付成功`,
-        confirmText: '模拟支付',
-        success: (r) => resolve(r.confirm),
-        fail: () => resolve(false),
-      })
-    })
-    if (!confirmed) {
-      uni.showToast({ title: '已放弃支付，订单保持待确认', icon: 'none' })
-      return
-    }
-    await buyerApi.mockPay(res.payNo)
-    uni.showToast({ title: '微信支付成功', icon: 'success' })
-  } else {
-    uni.showToast({ title: '已选货到付款', icon: 'success' })
+    // 微信支付：服务端下单 → 拉起微信收银台（不再走模拟支付弹窗/mockPay）
+    await launchWechatPay(orderId.value)
+    return
   }
+  await buyerApi.payOrder(orderId.value, payMethod)
+  uni.showToast({ title: '已选货到付款', icon: 'success' })
   load()
 }
 

@@ -46,8 +46,10 @@ export const buyerApi = {
   cancelOrder: (id) => post(`/order/${id}/cancel`),
   receiveOrder: (id, data) => post(`/order/${id}/receive`, data), // 逐项接受/拒收
   updateOrder: (id, data) => post(`/order/${id}/update`, data),   // 编辑待确认订单（覆盖式）
-  payOrder: (id, payMethod) => post(`/order/${id}/pay`, { payMethod }), // 1 微信支付（返回支付单）/ 2 货到付款
-  mockPay: (payNo) => post('/payment/mock/pay', { payNo }), // 模拟支付通道（WX_MOCK_PAY=1；接商户号后换 wx.requestPayment）
+  payOrder: (id, payMethod) => post(`/order/${id}/pay`, { payMethod }), // 2 货到付款（1 微信支付走 wechatPrepay，模拟通道不再从前端调用）
+  wechatPrepay: (orderId) => post('/payment/wechat/prepay', { orderId }), // 真实微信支付下单（卡R1）：返回 uni.requestPayment 参数
+  requestRefund: (orderId) => post('/payment/wechat/refund', { orderId }), // 真退款（卡R1）：后台运营用，小程序端不调用
+  mockPay: (payNo) => post('/payment/mock/pay', { payNo }), // 模拟支付通道（WX_MOCK_PAY=1 才注册；保留但不调用——卡R1 起前端改走 wechatPrepay）
   // 货到付款「我已付款」声明（2026-09-19 卡L）：⚠️ 只登记「客户称已付」，不是核销
   claimPaid: (id) => post(`/buyer/order/${id}/claim-paid`),
   setUrgent: (id, urgent) => post(`/order/${id}/urgent`, { urgent }), // 加急 1 / 取消加急 0
