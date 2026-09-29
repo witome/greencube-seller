@@ -156,7 +156,7 @@ powershell -NoProfile -Command "& '$PS' -c WorkBuddy get_simulator_console --pro
 
 - **已切真实微信登录**：`WX_APPID` / `WX_SECRET` 是**真实可用凭证**（生产服务器已生效），`WX_MOCK_LOGIN=0`。
 - ⚠️ **不要改回占位值，也不要把 `WX_MOCK_LOGIN` 改回 `1`**——生产已在用真实登录。
-- ⚠️ **`WX_MOCK_PAY` 生产当前仍为 `1`**（测试期，大辉 2026-09-19 同意）；**正式上线前必须关掉**（已记入《上线部署方案》上线前清单第 10 项）。
+- ✅ **`WX_MOCK_PAY` 生产已为 `0`**（2026-09-29 关闭并实测 mock 路由 404）；模拟通道代码保留但不注册。真实微信支付接入的口径见上文「支付：真实微信支付接入」一节。**任何情况下都不许为了让支付"能点"而把它改回 1**。
 - 生产：`api.hsfresh.com`（小程序接口）/ `admin.hsfresh.com`（运营后台）。**密钥只存服务器 `.env`，绝不写进文档、对话或仓库。**
 
 ## 工作纪律
@@ -207,6 +207,45 @@ powershell -NoProfile -Command "& '$PS' -c WorkBuddy get_simulator_console --pro
    `!isResponseHandled && apply(...)`：标了 `@Res()`（未开 passthrough）就不会二次发送，安全。
    ⚠️ 前端拿它时**必须 `res.arrayBuffer()`，不能用 `res.text()`** ——
    `text()` 按规范会**吃掉 BOM**，再拿去 `new Blob()` 下载，导出的 CSV 就丢 BOM → Excel 中文乱码。
+
+## 支付：真实微信支付接入（2026-09-29 起，口径写死在这里）
+
+**当前事实**：生产 `WX_MOCK_PAY=0`（模拟通道路由已 404）。真实支付**代码未写** —— 先把下面读清楚，别把「有支付模块」当成「有真支付」。
+
+### 生产环境已有的凭证（**值只读 `.env`，任何报告/日志/对话/提交里都不许打印**）
+
+| 键 | 含义 |
+|---|---|
+| `WXPAY_MCHID` | 商户号 |
+| `WXPAY_APIV3_KEY` | APIv3 密钥（解密回调报文用；**只有一个，不要另设 APIv2 密钥**）|
+| `WXPAY_PUBLIC_KEY_ID` | 微信支付公钥 ID（回调应答头 `Wechatpay-Serial` 会是它）|
+| `WXPAY_CERT_PATH` / `WXPAY_KEY_PATH` | 商户API证书/私钥，`backend/certs/`，权限 600 |
+| `WXPAY_PUBLIC_KEY_PATH` | 微信支付公钥（**验签微信的回调/应答**，公钥模式，不是平台证书模式）|
+| `WXPAY_CERT_SERIAL` | 商户证书序列号（请求头 `serial_no` 用它）|
+
+- **验签方式 = 微信支付公钥模式**（新商户官方推荐）：请求头带 `Wechatpay-Serial: <WXPAY_PUBLIC_KEY_ID>`；回调/应答按 `Wechatpay-Serial` 选公钥验签；**不要**再去实现「下载平台证书」那套（该商户号下它返回 `RESOURCE_NOT_EXISTS 无可用的平台证书`）。
+- **请求签名串**：`METHOD\nURL\nTIMESTAMP\nNONCE\nBODY\n`（`URL` 含 query，`BODY` 为原始 JSON 字符串；GET 无 body 时空最后一行）。
+- **回调应答**：HTTP 200 空体；验签用 `Wechatpay-Timestamp` + `Wechatpay-Nonce` + **原始 body 字符串**；报文用 `AES-256-GCM`（key = APIv3 密钥，`nonce`/`associated_data`/`ciphertext`）解密。
+- **回调地址必须公网 HTTPS 且不带 query**：本项目约定 `https://api.hsfresh.com/api/v1/payment/wechat/notify`（由 Hermes 在商户平台/开发配置里登记）。**回调路由不能被全局响应拦截器包成 `{code,msg,data}`** —— 微信只认 200 + 空体，实现时用 `@Res()` 直写（见铁律 11）。
+
+### 接入红线
+
+1. 金额一律取**服务端**库里的数（`amountOrdered + deliveryFee`，与现有 `payment_record.amount` 口径一致）；**绝不接受前端传金额**。
+2. 回调必须**幂等**：`payment_record.status=1` 再收到重复通知，直接回 200 成功、不重复推进订单。金额要**核对一致**才确认，不一致留痕并拒绝。
+3. 签名/解密失败必须落 `callbackPayload` 留痕后拒绝（沿用 mock 通道的做法）。
+4. **`channel` 不再是硬编码 `'mock'`** —— 按实际通道写（`wechat`）。
+5. **`WX_MOCK_PAY` 保持 0**，模拟通道代码保留但生产不注册。
+6. 前端 `uni.requestPayment` 的参数（timeStamp/nonceStr/package/signType/paySign）**只能来自服务端下单接口**，前端不许拼。
+
+### 同批要补的两处欠账
+
+- **真退款**：现在 `order.service.cancel()` 只把已支付流水标成 `status=3 已撤销/待退款`，**没有调微信退款**。要补 `POST /v3/refund/domestic/refunds`（用商户证书签名，`out_refund_no` 幂等、金额以库为准），并把退款结果落库留痕。
+- **订单超时自动关单**：放弃支付会留 `payment_record.status=0` 悬挂流水、订单停在 10。要加定时任务（参照 `admin-dispatch/auto-dispatch-retry.service.ts` 的 `@Cron` 写法），超时未支付则关单 + 关闭流水（`status=2`），并把关闭结果写审计。
+
+### 前置事实（写代码时别推翻）
+
+- `order.service.pay()` 里 `channel:'mock'` 与前端 `pages/buyer/order-detail.vue` 的模拟支付弹窗是**待替换**的实现，替换时要保持 `pay()` 的响应字段（`orderId/payMethod/payNo/amount/status`）向后兼容，前端按 `payMethod===1` 走 `uni.requestPayment`。
+- **平台硬限制**：小程序内**扫不了**微信收款码去付款（`wx.scanCode` 拿不到支付能力）。COD 页那两个按钮（扫码付款=引导文案、微信直接支付）**等真支付上线后再换成 `uni.requestPayment`**，界面按「先引导、后替换」设计，不必重做页面。
 
 ## 进度在哪看
 

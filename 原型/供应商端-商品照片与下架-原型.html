@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>绿立方 · 供应商端「商品照片 + 下架/撤销申请」原型（待大辉确认）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #EEF1F4; color: #1F2329;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .sub { font-size: 13px; color: #6B7280; margin-bottom: 18px; line-height: 1.75; }
+  .sub b { color: #1F2329; }
+
+  /* ===== 图纸容器（截图只截这一块） ===== */
+  #shots { background: #EEF1F4; padding: 18px; width: fit-content; }
+  .row { display: flex; gap: 22px; align-items: flex-start; }
+  .row + .row { margin-top: 28px; }
+
+  /* ===== 红线图例（直接写在图上） ===== */
+  .legend {
+    background: #fff; border-radius: 14px; padding: 14px 16px; margin: 0 0 24px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.06); width: 1432px;
+  }
+  .legend .t { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .legend .li { font-size: 12.5px; line-height: 2; }
+  .legend .li b { font-weight: 700; }
+
+  .fig { display: flex; flex-direction: column; }
+  .fig-cap { font-size: 13px; font-weight: 700; margin: 0 0 8px; max-width: 336px; }
+  .fig-cap span { font-weight: 400; color: #8A9099; font-size: 11px; }
+
+  .phone {
+    width: 336px; height: 648px; background: #fff;
+    border-radius: 40px; border: 8px solid #111; overflow: hidden;
+    display: flex; flex-direction: column; flex: 0 0 auto; position: relative;
+    box-shadow: 0 10px 26px rgba(0,0,0,.13);
+  }
+  .phone-top {
+    height: 34px; background: #00B96B; color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px; font-size: 12px; flex: 0 0 auto;
+  }
+  .capsule { display: flex; gap: 3px; align-items: center; }
+  .capsule span { width: 6px; height: 6px; border-radius: 50%; background: #fff; display: block; }
+  .phone-title {
+    background: #fff; padding: 9px 12px; font-size: 15px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #EEF1F4; flex: 0 0 auto;
+  }
+  .phone-title .back { color: #00B96B; font-weight: 400; font-size: 14px; }
+  .phone-body { flex: 1; overflow-y: auto; background: #F5F6F8; }
+  .phone-body::-webkit-scrollbar { width: 0; }
+  .home-ind { flex: 0 0 auto; height: 14px; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .home-ind i { display: block; width: 96px; height: 4px; border-radius: 3px; background: #D5DAE0; }
+
+  .card { background: #fff; border-radius: 14px; margin: 12px; }
+  .tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; white-space: nowrap; }
+  .tag.green { background: #E6F9F0; color: #00995A; }
+  .tag.orange { background: #FFF3E6; color: #C87000; }
+  .tag.gray { background: #F2F4F6; color: #8A9099; }
+  .tag.red { background: #FDEBEC; color: #D64550; }
+
+  /* ===== 商品行（改造后：真封面缩略图） ===== */
+  .li-g { padding: 10px 12px 11px; border-bottom: 1px solid #F2F4F6; }
+  .li-g:last-child { border-bottom: none; }
+  .li-g .top { display: flex; align-items: center; gap: 10px; }
+  .thumb {
+    width: 46px; height: 46px; border-radius: 9px; flex: 0 0 auto; position: relative;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.06);
+  }
+  .thumb.off { filter: grayscale(1) brightness(1.06); opacity: .75; }
+  .cam {
+    position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(17,17,17,.78); color: #fff; font-size: 9px; line-height: 1;
+    display: flex; align-items: center; justify-content: center; border: 2px solid #fff;
+  }
+  .cam.lg { width: 24px; height: 24px; font-size: 12px; right: -6px; bottom: -6px; }
+  .g-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .g-desc { font-size: 11px; color: #8A9099; margin-top: 3px; line-height: 1.5; }
+  .acts { display: flex; gap: 6px; margin-top: 9px; }
+  .mbtn { flex: 1; text-align: center; font-size: 11px; font-weight: 600; padding: 6px 0; border-radius: 8px; }
+  .mbtn.plain { background: #fff; color: #1F2329; border: 1px solid #E5E8EB; }
+  .mbtn.stock { background: #E6F9F0; color: #00995A; }
+  .mbtn.down { background: #FFF3E6; color: #C87000; }
+  .mbtn.up { background: #00B96B; color: #fff; }
+  .mbtn.del { background: #FDEBEC; color: #D64550; }
+  .hint-sm { font-size: 11px; color: #8A9099; text-align: center; line-height: 1.7; }
+
+  /* 封面缩略图（纯 CSS 渐变模拟真实照片，无外部依赖） */
+  .t-tomato { background: radial-gradient(circle at 32% 28%, #ff9a80, #e04530 58%, #a72c1c); }
+  .t-tomato2 { background: radial-gradient(circle at 62% 30%, #ffb49e, #ef5a42 55%, #b53424); }
+  .t-cabbage { background: radial-gradient(circle at 36% 30%, #e2f3c8, #93c76c 55%, #5e9440); }
+  .t-cucumber { background: linear-gradient(155deg, #bfe58e, #74b344 58%, #4d8a2b); }
+  .t-potato { background: radial-gradient(circle at 36% 34%, #ecd09a, #c49d5e 58%, #8f6f3a); }
+  .t-okra { background: linear-gradient(150deg, #cde9a0, #83bd4e 60%, #5a9430); }
+  .t-doc { background: linear-gradient(160deg, #ffffff, #edf1f5); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+
+  /* ===== 底部抽屉 / 弹窗 / 浮层 ===== */
+  .dim { position: absolute; inset: 0; background: rgba(0,0,0,.38); z-index: 5; }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 6;
+    background: #fff; border-radius: 18px 18px 0 0; padding: 14px 14px 18px;
+  }
+  .sheet-title { font-size: 13px; font-weight: 600; text-align: center; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .sheet-opt {
+    text-align: center; font-size: 15px; font-weight: 600; padding: 13px 0;
+    border-bottom: 1px solid #F2F4F6; color: #1F2329;
+  }
+  .sheet-opt small { display: block; font-size: 10px; color: #8A9099; font-weight: 400; margin-top: 2px; }
+  .sheet-opt.cancel { color: #8A9099; border-bottom: none; font-weight: 500; }
+  .sheet-note { font-size: 11.5px; color: #6B7280; background: #F7F8FA; border-radius: 10px; padding: 9px 11px; margin: 10px 0 12px; line-height: 1.7; }
+  .sheet-note b { color: #1F2329; }
+  .btns { display: flex; gap: 10px; }
+  .btn { flex: 1; text-align: center; font-size: 14px; font-weight: 600; padding: 11px 0; border-radius: 12px; }
+  .btn.primary { background: #00B96B; color: #fff; }
+  .btn.dark { background: #1F2329; color: #fff; }
+  .btn.danger { background: #D64550; color: #fff; }
+  .btn.plain { background: #fff; color: #1F2329; border: 1px solid #E5E8EB; }
+
+  .modal {
+    position: absolute; inset: 0; z-index: 7;
+    display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.38);
+  }
+  .modal-box { width: 250px; background: #fff; border-radius: 14px; padding: 18px 16px 14px; }
+  .modal-box .t { font-size: 15px; font-weight: 700; text-align: center; }
+  .modal-box .d { font-size: 12px; color: #6B7280; text-align: center; margin: 8px 0 14px; line-height: 1.7; }
+  .modal-box .btns .btn { font-size: 13px; padding: 9px 0; }
+
+  .float-panel {
+    position: absolute; left: 0; right: 0; top: 38%; z-index: 6;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .fp-box { background: #fff; border-radius: 16px; padding: 20px 30px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+  .spin {
+    width: 34px; height: 34px; margin: 0 auto 10px; border-radius: 50%;
+    border: 4px solid #E6F9F0; border-top-color: #00B96B;
+    animation: sp .9s linear infinite;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .fp-t { font-size: 14px; font-weight: 600; }
+  .fp-d { font-size: 11px; color: #8A9099; margin-top: 4px; }
+
+  .toast { margin: 12px; background: #1F2329; color: #fff; font-size: 12px; border-radius: 10px; padding: 10px 12px; text-align: center; }
+  .toast b { color: #35C98D; }
+
+  /* ===== 表单（提交新商品） ===== */
+  .form-sec { background: #fff; border-radius: 14px; margin: 12px 12px 0; padding: 12px; }
+  .f-label { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 9px; }
+  .f-label .req { color: #D64550; }
+  .f-input { background: #F7F8FA; border-radius: 9px; padding: 10px 11px; font-size: 13px; color: #1F2329; }
+  .f-input .ph { color: #B3B9C2; }
+  .f-input + .f-input { margin-top: 8px; }
+  .cover-pick {
+    border: 1.5px dashed #C9D2DA; border-radius: 12px; padding: 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .cover-pick.empty { justify-content: center; flex-direction: column; gap: 4px; color: #8A9099; font-size: 12px; padding: 20px 12px; }
+  .cover-pick .cp-t { font-size: 13px; font-weight: 600; }
+  .cover-pick .cp-d { font-size: 10.5px; color: #8A9099; margin-top: 2px; }
+  .pic-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pic {
+    width: 52px; height: 52px; border-radius: 9px; position: relative;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.06);
+  }
+  .pic .x {
+    position: absolute; top: -6px; right: -6px; width: 17px; height: 17px; border-radius: 50%;
+    background: rgba(17,17,17,.78); color: #fff; font-size: 10px;
+    display: flex; align-items: center; justify-content: center; border: 2px solid #fff;
+  }
+  .pic-add {
+    width: 52px; height: 52px; border-radius: 9px; border: 1.5px dashed #C9D2DA;
+    display: flex; align-items: center; justify-content: center; font-size: 20px; color: #B3B9C2;
+  }
+
+  .note { width: 336px; font-size: 11px; color: #6B7280; line-height: 1.8; margin-top: 10px; }
+  .note b { color: #1F2329; }
+  .note .t { font-size: 13px; font-weight: 700; color: #1F2329; margin-bottom: 4px; display: block; }
+  .note code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 10px; }
+
+  .foot {
+    background: #fff; border-radius: 14px; padding: 14px 16px; margin-top: 26px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.06); width: 1432px;
+  }
+  .foot .t { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .foot .d { font-size: 12.5px; color: #6B7280; line-height: 1.9; }
+</style>
+</head>
+<body>
+
+<h1>🥬 绿立方 · 供应商端「商品照片 + 下架 / 撤销申请」原型 <span style="font-size:13px;color:#C87000">（待大辉确认 · 点头后才排实现卡）</span></h1>
+<div class="sub">
+  一句话：商品行从 emoji 图标换成<b>真封面照片</b>（点相机角标即换、免审即时生效）；正式在售商品只能<b>下架</b>不能删；只有<b>被驳回 / 还在审核</b>的自建申请能删；「提交新商品」表单补上<b>封面选图 + 资质证明上传</b>。<br>
+  📄 配套：`subpkg-supplier/pages/goods-manage.vue`（列表改造）＋ 新接口 `PUT /supplier-goods/:id/cover`、`PUT /supplier-goods/:id/status`、`DELETE /supplier-goods/apply/:applyId`。
+</div>
+
+<div id="shots">
+
+  <div class="legend">
+    <div class="t">📏 红线（大辉已拍定，画进图里不改）</div>
+    <div class="li">🟢 <b>免审即时生效</b>：换封面、下架、重新上架、改日可供量</div>
+    <div class="li">🟠 <b>仍走审核</b>：改价、改名、上新品</div>
+    <div class="li">🔴 <b>正式在售商品不许删除</b> —— 订单引用过它，删了运营的账就空了，只能下架；只有<b>被驳回 / 还在审核</b>的自建申请能删</div>
+  </div>
+
+  <div class="row">
+
+    <!-- ① -->
+    <div class="fig">
+      <div class="fig-cap">① 商品管理页（改造后） <span>emoji 换真封面 · 点相机角标可换图</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 商品管理 <span class="tag green" style="margin-left:auto">🍅 西红柿专供</span></div>
+        <div class="phone-body">
+          <div class="card">
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-tomato"><div class="cam">📷</div></div>
+                <div><div class="g-name">西红柿</div><div class="g-desc">称重 · 斤 · 供货价 3.50</div></div>
+              </div>
+              <div class="acts">
+                <div class="mbtn plain">✏️ 编辑</div>
+                <div class="mbtn stock">⚡ 改库存</div>
+                <div class="mbtn down">下架</div>
+              </div>
+            </div>
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-cabbage"><div class="cam">📷</div></div>
+                <div><div class="g-name">大白菜</div><div class="g-desc">称重 · 斤 · 供货价 1.20</div></div>
+              </div>
+              <div class="acts">
+                <div class="mbtn plain">✏️ 编辑</div>
+                <div class="mbtn stock">⚡ 改库存</div>
+                <div class="mbtn down">下架</div>
+              </div>
+            </div>
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-cucumber"><div class="cam">📷</div></div>
+                <div><div class="g-name">黄瓜</div><div class="g-desc">固定规格 · 把 · 供货价 2.00</div></div>
+              </div>
+              <div class="acts">
+                <div class="mbtn plain">✏️ 编辑</div>
+                <div class="mbtn stock">⚡ 改库存</div>
+                <div class="mbtn down">下架</div>
+              </div>
+            </div>
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-potato"><div class="cam">📷</div></div>
+                <div><div class="g-name">土豆</div><div class="g-desc">称重 · 斤 · 供货价 1.60</div></div>
+              </div>
+              <div class="acts">
+                <div class="mbtn plain">✏️ 编辑</div>
+                <div class="mbtn stock">⚡ 改库存</div>
+                <div class="mbtn down">下架</div>
+              </div>
+            </div>
+          </div>
+          <div class="hint-sm" style="padding:0 12px 4px">☝️ 点封面右下角 <b>📷 相机角标</b> 换图（免审即时）；点「下架」把菜先收起来。</div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        缩略图读 `product.cover`（现状是 emoji 🥬📦，换成真图；一期只做封面一张）；角标只是入口暗示。<br>
+        「下架」按钮 → <code>PUT /supplier-goods/:id/status</code>（0=下架，免审即时 + 留痕）。
+      </div>
+    </div>
+
+    <!-- ② -->
+    <div class="fig">
+      <div class="fig-cap">② 点相机角标 → 底部弹出选择 <span>拍照 / 相册 / 取消</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 商品管理</div>
+        <div class="phone-body">
+          <div class="card" style="opacity:.4">
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-tomato"></div>
+                <div><div class="g-name">西红柿</div><div class="g-desc">称重 · 斤 · 供货价 3.50</div></div>
+              </div>
+            </div>
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-cabbage"></div>
+                <div><div class="g-name">大白菜</div><div class="g-desc">称重 · 斤 · 供货价 1.20</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dim"></div>
+        <div class="sheet">
+          <div class="sheet-title">更换封面 · 西红柿 <span class="tag green">免审即时</span></div>
+          <div class="sheet-opt">📷 拍照<small>现场拍一袋新鲜的，最真实</small></div>
+          <div class="sheet-opt">🖼️ 从相册选择<small>选已有的好照片</small></div>
+          <div class="sheet-opt cancel">取消</div>
+        </div>
+        <div class="home-ind" style="position:absolute;bottom:0;left:0;right:0;z-index:7;background:transparent"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        `uni.chooseImage`（sourceType: camera / album）；选完先在<b>前端压缩</b>（长边压到 1280px），再传 <code>POST /upload/image</code>。
+      </div>
+    </div>
+
+    <!-- ③a -->
+    <div class="fig">
+      <div class="fig-cap">③a 选完图 → 上传中 <span>转圈 · 不用干等页面刷新</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 商品管理</div>
+        <div class="phone-body">
+          <div class="card" style="opacity:.4">
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-tomato"></div>
+                <div><div class="g-name">西红柿</div><div class="g-desc">称重 · 斤 · 供货价 3.50</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dim"></div>
+        <div class="float-panel">
+          <div class="fp-box">
+            <div class="spin"></div>
+            <div class="fp-t">上传中…</div>
+            <div class="fp-d">正在压缩并上传封面图</div>
+          </div>
+        </div>
+        <div class="home-ind" style="position:absolute;bottom:0;left:0;right:0;z-index:7;background:transparent"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        前端压缩 → <code>POST /upload/image</code> 拿到图片 URL；上传期间按钮防重复点击。
+      </div>
+    </div>
+
+    <!-- ③b -->
+    <div class="fig">
+      <div class="fig-cap">③b 完成 <span>封面已生效 · 买家端刷新可见</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 商品管理</div>
+        <div class="phone-body">
+          <div class="toast">✅ <b>封面已更新（已生效）</b></div>
+          <div class="card">
+            <div class="li-g" style="background:#F3FCF8">
+              <div class="top">
+                <div class="thumb t-tomato2"><div class="cam">📷</div></div>
+                <div>
+                  <div class="g-name">西红柿 <span class="tag green">已生效</span></div>
+                  <div class="g-desc">称重 · 斤 · 供货价 3.50</div>
+                </div>
+              </div>
+              <div class="acts">
+                <div class="mbtn plain">✏️ 编辑</div>
+                <div class="mbtn stock">⚡ 改库存</div>
+                <div class="mbtn down">下架</div>
+              </div>
+            </div>
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-cabbage"><div class="cam">📷</div></div>
+                <div><div class="g-name">大白菜</div><div class="g-desc">称重 · 斤 · 供货价 1.20</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="hint-sm" style="padding:0 12px 4px">换封面不走审核 —— 买家的眼睛比运营盯得紧，拍丑了随时能换回来。</div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        新接口 <code>PUT /supplier-goods/:id/cover</code>：写 `product.cover`，<b>免审即时生效</b> + 留痕（谁、几点、换了什么图，后台可查）。
+      </div>
+    </div>
+
+  </div>
+
+  <div class="row">
+
+    <!-- ④ -->
+    <div class="fig">
+      <div class="fig-cap">④ 点「下架」→ 底部确认抽屉 <span>说清后果 · 不误伤历史订单</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 商品管理</div>
+        <div class="phone-body">
+          <div class="card" style="opacity:.4">
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-tomato"></div>
+                <div><div class="g-name">西红柿</div><div class="g-desc">称重 · 斤 · 供货价 3.50</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dim"></div>
+        <div class="sheet">
+          <div class="sheet-title">下架「西红柿」？ <span class="tag green">免审即时</span></div>
+          <div class="sheet-note">
+            下架后买家看不到这个菜；<b>历史订单不受影响</b>（已下单的照常发货结算）。<br>
+            随时可以重新上架，商品资料原样保留。
+          </div>
+          <div class="btns">
+            <div class="btn plain">取消</div>
+            <div class="btn dark">确认下架</div>
+          </div>
+        </div>
+        <div class="home-ind" style="position:absolute;bottom:0;left:0;right:0;z-index:7;background:transparent"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        <code>PUT /supplier-goods/:id/status</code>（0=下架）免审即时 + 留痕；历史订单存的是<b>快照</b>，不受影响。
+      </div>
+    </div>
+
+    <!-- ⑤ -->
+    <div class="fig">
+      <div class="fig-cap">⑤ 下架后的行 <span>状态变「已下架」· 按钮变「重新上架」</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 商品管理</div>
+        <div class="phone-body">
+          <div class="card">
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-tomato off"><div class="cam">📷</div></div>
+                <div>
+                  <div class="g-name">西红柿 <span class="tag gray">已下架</span></div>
+                  <div class="g-desc">称重 · 斤 · 供货价 3.50</div>
+                </div>
+              </div>
+              <div class="acts">
+                <div class="mbtn plain">✏️ 编辑</div>
+                <div class="mbtn stock">⚡ 改库存</div>
+                <div class="mbtn up">重新上架</div>
+              </div>
+            </div>
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-cabbage"><div class="cam">📷</div></div>
+                <div><div class="g-name">大白菜</div><div class="g-desc">称重 · 斤 · 供货价 1.20</div></div>
+              </div>
+              <div class="acts">
+                <div class="mbtn plain">✏️ 编辑</div>
+                <div class="mbtn stock">⚡ 改库存</div>
+                <div class="mbtn down">下架</div>
+              </div>
+            </div>
+          </div>
+          <div class="hint-sm" style="padding:0 12px 4px">已下架 ≠ 删除：资料、销量、评价都还在，随时一键上架。</div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        重新上架 = 同一接口 <code>PUT /supplier-goods/:id/status</code>（1=上架），免审即时。<br>
+        编辑 / 改库存不受下架影响（想好了再上）。
+      </div>
+    </div>
+
+    <!-- ⑥ -->
+    <div class="fig">
+      <div class="fig-cap">⑥ 被驳回的申请 → 删除 <span>确认后这一行消失</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 新品申请记录</div>
+        <div class="phone-body">
+          <div class="card">
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-cucumber"></div>
+                <div>
+                  <div class="g-name">黄瓜（新品申请）<span class="tag red">已驳回</span></div>
+                  <div class="g-desc">驳回原因：价格明显异常，请核对</div>
+                </div>
+              </div>
+              <div class="acts">
+                <div class="mbtn del">🗑 删除</div>
+              </div>
+            </div>
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-okra"></div>
+                <div>
+                  <div class="g-name">秋葵（新品申请）<span class="tag orange">待审核</span></div>
+                  <div class="g-desc">固定规格 · 把 · 供货价 4.00</div>
+                </div>
+              </div>
+              <div class="acts">
+                <div class="mbtn del">🗑 删除</div>
+              </div>
+            </div>
+            <div class="li-g">
+              <div class="top">
+                <div class="thumb t-tomato"></div>
+                <div>
+                  <div class="g-name">西红柿（正式在售）<span class="tag green">在售</span></div>
+                  <div class="g-desc">没有删除入口 —— 只有下架</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal">
+          <div class="modal-box">
+            <div class="t">删除这条申请？</div>
+            <div class="d">删除后无法恢复<br>（这条申请会被撤掉）</div>
+            <div class="btns">
+              <div class="btn plain">取消</div>
+              <div class="btn danger">确认删除</div>
+            </div>
+          </div>
+        </div>
+        <div class="home-ind" style="position:absolute;bottom:0;left:0;right:0;z-index:8;background:transparent"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        新接口 <code>DELETE /supplier-goods/apply/:applyId</code>：<b>仅限「待审核 / 已驳回」的自建申请</b>；正式在售商品永远没有删除入口（🔴 红线）。
+      </div>
+    </div>
+
+    <!-- ⑦ -->
+    <div class="fig">
+      <div class="fig-cap">⑦ 「提交新商品」表单（改造后） <span>封面可选图 · 资质证明能真传</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 提交新商品 <span class="tag orange" style="margin-left:auto">提交后走审核</span></div>
+        <div class="phone-body">
+          <div class="form-sec">
+            <div class="f-label">封面图 <span style="font-weight:400;font-size:10px;color:#8A9099">一期只做一张</span></div>
+            <div class="cover-pick">
+              <div class="thumb t-tomato2" style="width:52px;height:52px"><div class="cam lg">📷</div></div>
+              <div>
+                <div class="cp-t">已选 1 张 · 点击可重选</div>
+                <div class="cp-d">建议实拍：光线好、菜新鲜、别带包装袋</div>
+              </div>
+            </div>
+          </div>
+          <div class="form-sec">
+            <div class="f-label">基本信息</div>
+            <div class="f-input">商品名称：散养土鸡蛋</div>
+            <div class="f-input">供货价：8.50 元 / 斤</div>
+          </div>
+          <div class="form-sec">
+            <div class="f-label">资质证明 <span style="font-weight:400;font-size:10px;color:#8A9099">可多张 · 点图可查看 / 删除</span></div>
+            <div class="pic-grid">
+              <div class="pic t-doc">🧾<div class="x">✕</div></div>
+              <div class="pic t-doc">📄<div class="x">✕</div></div>
+              <div class="pic-add">＋</div>
+            </div>
+            <div class="cp-d" style="margin-top:7px;color:#8A9099;font-size:10.5px">营业执照、检测报告等 —— 现状这一行是点不动的死文案，这次接上真上传。</div>
+          </div>
+          <div style="margin:12px">
+            <div class="btn primary" style="border-radius:14px;padding:13px 0">提交审核</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        资质证明复用 <code>POST /supplier-goods/apply</code> 已有的 `images` 字段（后端不用改）；封面同样先压缩再走 <code>POST /upload/image</code>。
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <div class="t">🚧 这一版刻意没做的（范围守住，等大辉点头再说）</div>
+    <div class="d">
+      ① 多图详情与买家端相册（一期只做封面一张）　② 批量下架（先跑通单个）　③ 照片审核流程（换封面免审是拍定的口径）　④ 商品图水印　⑤ 下架原因填写（下架就是收起来，不搞问卷）。
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
