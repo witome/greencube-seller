@@ -10,6 +10,11 @@
         <text class="oc-date">{{ o.deliveryDate }} · {{ timeText(o.timeWindow) }}</text>
         <text class="oc-status">{{ o.statusText }}</text>
       </view>
+      <!-- 卡S2（2026-09-29）：支付状态标签 —— 文案来自后端 payStatusText（唯一实现 pay-status.util），
+           前端只做配色：已付款=绿 / 待收款=橙 / 未支付=灰 -->
+      <view class="oc-pay-row">
+        <text :class="['oc-pay', 'oc-pay-' + payClass(o.payStatus)]">{{ o.payStatusText }}</text>
+      </view>
       <view class="oc-body">
         <text>{{ o.itemCount }} 项商品</text>
         <text v-if="o.amountFinal" class="oc-amount">¥{{ o.amountFinal }}</text>
@@ -42,6 +47,9 @@ const statusTabs = [
 
 const timeText = (w) => ({ 1: '早 05-08', 2: '中 10-13', 3: '晚 16-19' }[w] || '')
 
+// 卡S2：支付状态配色映射（只做展示，不判定 —— 判定在后端 pay-status.util）
+const payClass = (code) => ({ paid_wechat: 'ok', paid_proof: 'ok', cod_pending: 'pending' }[code] || 'none')
+
 const load = async () => {
   loading.value = true
   // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成 "undefined"，导致后端误过滤
@@ -72,5 +80,11 @@ onShow(() => {
 .oc-status { color: $color-primary; }
 .oc-body { display: flex; justify-content: space-between; font-size: 12px; color: $text-second; margin-top: 8px; }
 .oc-amount { color: #fa5151; font-weight: 700; }
+/* 卡S2：支付状态标签 */
+.oc-pay-row { margin-top: 8px; }
+.oc-pay { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+.oc-pay-ok { color: #00b96b; background: #e8f8f0; }
+.oc-pay-pending { color: #ff6b00; background: #fff3e6; }
+.oc-pay-none { color: $text-second; background: #f2f3f5; }
 .empty { text-align: center; color: $text-placeholder; padding: 60px 0; }
 </style>

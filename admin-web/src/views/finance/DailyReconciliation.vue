@@ -32,12 +32,13 @@
       <div class="admin-dailyrec-card">
         <div class="admin-dailyrec-card-lbl">实收</div>
         <div class="admin-dailyrec-card-num admin-dailyrec-num-green">¥{{ fmt(data?.summary?.received) }}</div>
-        <div class="admin-dailyrec-card-sub">微信已付 {{ data?.summary?.wechatPaidCount ?? 0 }} 单 · COD 已收 {{ data?.summary?.codPaidCount ?? 0 }} 单</div>
+        <!-- 卡S2：汇总口径与新三档一致（字段名 wechatPaidCount/codPaidCount 沿用，语义 = 新三档计数） -->
+        <div class="admin-dailyrec-card-sub">已付款·微信直接支付 {{ data?.summary?.wechatPaidCount ?? 0 }} 单 · 已付款·扫码付款 {{ data?.summary?.codPaidCount ?? 0 }} 单</div>
       </div>
       <div class="admin-dailyrec-card">
         <div class="admin-dailyrec-card-lbl">未收</div>
         <div class="admin-dailyrec-card-num admin-dailyrec-num-red">¥{{ fmt(data?.summary?.unpaid) }}</div>
-        <div class="admin-dailyrec-card-sub">COD 未收 {{ data?.summary?.codUnpaidCount ?? 0 }} 单</div>
+        <div class="admin-dailyrec-card-sub">待收款（COD 已送达未收）{{ data?.summary?.codUnpaidCount ?? 0 }} 单</div>
       </div>
       <div class="admin-dailyrec-card">
         <div class="admin-dailyrec-card-lbl">应付供应商（参考值）</div>
@@ -57,7 +58,7 @@
 
     <!-- 口径说明 -->
     <el-alert type="info" :closable="false" show-icon class="admin-dailyrec-notice"
-      title="口径说明：应收 = amountFinal（未核单时回退 amountOrdered + 运费）；实收 = 微信已支付流水 + 货到付款有收款凭证的订单；毛利粗算 = 应收 − 应付供应商参考值（未扣配送成本/平台服务费/退款）；应付供应商与毛利为参考值，正式结算以按月结算单为准。"
+      title="口径说明：应收 = amountFinal（未核单时回退 amountOrdered + 运费）；实收 = 已支付微信流水 + 有收款凭证的货到付款单；毛利粗算 = 应收 − 应付供应商参考值（未扣配送成本/平台服务费/退款）；应付供应商与毛利为参考值，正式结算以按月结算单为准。"
     />
 
     <!-- 当天订单清单（卡T 2026-09-21：由「未收款清单」升级——默认显示全部当天订单，
@@ -74,12 +75,13 @@
         </div>
       </template>
       <div class="admin-dailyrec-tabletip">
-        「收款状态」判定与上方『实收』同源：<b>先看钱有没有到</b> —— 该单只要有已支付的微信支付流水，
-        无论付款方式都算「微信已付（线上）」（货到付款单在送达后点「微信直接支付」也走这条）；
-        货到付款现金＝配送员收款凭证 payProof.photos 非空且无线上流水；
-        客户称已付（未核销）＝采购方自称已付但既无线上到账也无凭证，<b>不代表钱已到账</b>。
-        ⚠️ 只线上到账与现金核销是<b>两条钱路</b>（前者进商户号线上账户、后者进收款码绑定账户），
-        后台不做合并；退款会把支付流水置为已关闭，判定会自动回退。
+        「收款状态」判定与上方『实收』同源（唯一实现 = 后端 pay-status.util，卡S2 收口为三档）：
+        <b>已付款 · 微信直接支付</b>＝该单存在已支付的微信支付流水（不论下单时选的哪种付款方式；退款后自动回退）；
+        <b>已付款 · 扫码付款</b>＝配送员已提交现金收款凭证（payProof.photos 非空）且无线上到账；
+        <b>未收</b>＝两者都没有（COD 已送达未收的会带「待收款」子标注）。
+        ⚠️ 线上到账与现金核销是<b>两条钱路</b>（前者进商户号线上账户、后者进收款码绑定账户），后台不做合并；
+        同一行两条并存时会标出「可能重复收款」警示，请人工核对。
+        老数据里采购方点过「我已付款」的订单只留「曾称已付（历史口径）」只读标注，<b>不代表钱已到账、不参与金额计算</b>。
       </div>
       <el-table :data="shownList" v-loading="loading" stripe empty-text="这一天没有订单">
         <el-table-column prop="orderId" label="订单号" width="90">
@@ -98,14 +100,17 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="收款状态" width="160">
+        <!-- 收款状态（卡S2 三档收口）：tag 文案/子标注/警示文案全部来自后端，页面零判定 -->
+        <el-table-column label="收款状态" width="200">
           <template #default="{ row }">
-            <el-tag :type="payTagType(row.payStatus)" size="small" effect="light">{{ row.payStatusText }}</el-tag>
-            <!-- 卡S1：货到付款单也可能在**线上**付掉（送达后「微信直接支付」）→ 直接标出来，
-                 否则运营只看「微信已付」标签会以为所有这种单都是下单时线上付的 -->
-            <div v-if="row.payMethod === 2 && row.wechatPaidAmount > 0" class="note">
-              线上到账 ¥{{ fmt(row.wechatPaidAmount) }}
-            </div>
+            <el-tag :type="payTagType(row.payStatus)" size="small" effect="light">{{ row.payStatusGroupText || row.payStatusText }}</el-tag>
+            <div v-if="row.payStatusSubText" class="admin-dailyrec-paynote">{{ row.payStatusSubText }}</div>
+            <!-- 卡S1：货到付款单也可能在**线上**付掉（送达后「微信直接支付」）→ 直接标出线上到账金额 -->
+            <div v-if="row.payMethod === 2 && row.wechatPaidAmount > 0" class="admin-dailyrec-paynote">线上到账 ¥{{ fmt(row.wechatPaidAmount) }}</div>
+            <!-- 卡S2：两条钱路并存 = 可能重复收款（防重复收款是本次收口的目的之一） -->
+            <div v-if="row.duplicateRisk" class="admin-dailyrec-paywarn">{{ row.duplicateWarnText }}</div>
+            <!-- 卡S2：老数据「客户称已付」只留历史口径只读标注，不参与金额计算 -->
+            <div v-if="row.historicClaimText" class="admin-dailyrec-paynote">{{ row.historicClaimText }}</div>
           </template>
         </el-table-column>
         <!-- 收款凭证（配送员 COD 收款拍照，只读查看）：弹窗实现复用 components/ProofDialog.vue -->
@@ -189,11 +194,14 @@
             {{ orderDetail.amountFinal != null ? '（已核单：取 amountFinal，已含运费）' : '（未核单：回退 商品金额＋运费）' }}
           </span>
         </div>
+        <!-- 卡S2：收款状态判定/文案全部来自后端 pay-status.util（经清单行透传，弹窗不另行判定） -->
         <div v-if="orderDetail" class="admin-dailyrec-orderpay">
           收款状态：
-          <el-tag :type="payTagType(orderDetail.payStatus)" size="small">{{ orderDetail.payStatusText }}</el-tag>
-          <span v-if="orderDetail.wechatPaidAmount > 0" class="note">已支付流水 ¥{{ fmt(orderDetail.wechatPaidAmount) }}</span>
-          <span v-if="orderDetail.buyerPaidClaimAt" class="note">客户称已付时间：{{ orderDetail.buyerPaidClaimAt }}</span>
+          <el-tag :type="payTagType(orderRow?.payStatus)" size="small">{{ orderRow?.payStatusGroupText || '—' }}</el-tag>
+          <span v-if="orderRow?.payStatusSubText" class="note">{{ orderRow.payStatusSubText }}</span>
+          <span v-if="orderRow?.wechatPaidAmount > 0" class="note">已支付流水 ¥{{ fmt(orderRow.wechatPaidAmount) }}</span>
+          <span v-if="orderRow?.historicClaimText" class="note">{{ orderRow.historicClaimText }}：{{ orderRow.buyerPaidClaimAt }}</span>
+          <span v-if="orderRow?.duplicateRisk" class="paywarn">{{ orderRow.duplicateWarnText }}</span>
           <el-button v-if="orderDetail.payProof?.photos?.length" type="primary" link @click="openProof(orderDetail)">📷 看收款凭证({{ orderDetail.payProof.photos.length }})</el-button>
           <span v-else class="note">无收款凭证</span>
         </div>
@@ -251,10 +259,9 @@ const shownList = computed(() => {
   return onlyUnpaid.value ? rows.filter((r) => Number(r.unpaid) > 0) : rows
 })
 
-// 收款状态色：已收到钱的用绿（与汇总卡「实收」同色），自称已付用橙（醒目但≠已收款），未收用红
+// 收款状态色（卡S2 三档）：两种「已付款」用绿（与汇总卡「实收」同色），未收/待收款用红
 function payTagType(status) {
-  if (status === 'wechat_paid' || status === 'cod_cleared') return 'success'
-  if (status === 'buyer_claimed') return 'warning'
+  if (status === 'paid_wechat' || status === 'paid_proof') return 'success'
   return 'danger'
 }
 
@@ -270,7 +277,10 @@ function openProof(row) {
 const orderDialog = ref(false)
 const orderLoading = ref(false)
 const orderDetail = ref(null)
+// 卡S2：清单行数据（收款状态判定/文案都在行上，弹窗直接引用，不另行请求判定）
+const orderRow = ref(null)
 async function openOrder(row) {
+  orderRow.value = row || null
   orderDialog.value = true
   orderLoading.value = true
   orderDetail.value = null
@@ -390,6 +400,9 @@ onMounted(() => {
   margin-bottom: 10px;
   line-height: 1.7;
 }
+/* 卡S2：收款状态列的子标注 / 警示 */
+.admin-dailyrec-paynote { font-size: 11px; color: #909399; margin-top: 2px; line-height: 1.5; }
+.admin-dailyrec-paywarn { font-size: 11px; color: #ff6b00; font-weight: 600; margin-top: 2px; line-height: 1.5; }
 .admin-dailyrec-orderhead {
   display: flex;
   flex-wrap: wrap;
@@ -417,4 +430,5 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 .admin-dailyrec-orderpay .note { color: #909399; font-size: 12px; }
+.admin-dailyrec-orderpay .paywarn { color: #ff6b00; font-size: 12px; font-weight: 600; }
 </style>

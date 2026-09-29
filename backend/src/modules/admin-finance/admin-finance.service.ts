@@ -7,6 +7,16 @@ import { ServiceFeeConfigDto, GenerateSettlementDto } from './dto/finance.dto'
 import { DeliveryFeeConfigDto, PayQrDto } from './dto/delivery-fee.dto'
 import { HomeContentDto } from './dto/home-content.dto'
 import { receivableAmount, round2 } from '../../common/utils/amount.util'
+// 卡S2（2026-09-29）：支付/收款状态口径唯一实现 —— 列表/详情/后台对账三处都必须调它，禁止内联判定
+import {
+  payStatusOf,
+  payStatusGroup,
+  hasPayProof,
+  hasWechatPaidRecord,
+  HISTORIC_CLAIM_TEXT,
+  DUPLICATE_PROOF_TEXT,
+  PayStatusCode,
+} from '../../common/utils/pay-status.util'
 
 /**
  * 服务费配置写入失败 → 友好业务错误（2026-09-19 卡J）
@@ -416,7 +426,7 @@ export class AdminFinanceService {
       include: {
         purchaser: { select: { shopName: true } },
         items: { select: { qtyAccepted: true, supplyPrice: true } },
-        payments: { select: { amount: true, status: true } },
+        payments: { select: { amount: true, status: true, channel: true } },
       },
       orderBy: { id: 'asc' },
     })
@@ -449,11 +459,8 @@ export class AdminFinanceService {
     // —— 履约页「金额」列与本页「应收」共用同一函数，杜绝两页两个数
     const r2 = round2
     const amountOf = receivableAmount
-    const hasProof = (o: any) => {
-      if (!o.payProof) return false
-      const photos = (o.payProof as any).photos
-      return Array.isArray(photos) ? photos.length > 0 : true
-    }
+    // 卡S2（2026-09-29）：凭证/流水判定走 pay-status.util（hasPayProof / hasWechatPaidRecord），
+    // 本文件不再内联「photos 非空」「status=1」这类判定
     const timeWindowText = (w: number) => ({ 1: '早', 2: '中', 3: '晚' }[w] ?? String(w))
 
     const summary = { receivable: 0, received: 0, unpaid: 0, supplierPayable: 0, grossProfit: 0 }
@@ -474,24 +481,29 @@ export class AdminFinanceService {
 
     for (const o of orders) {
       const receivable = amountOf(o)
-      // 卡S1（2026-09-29）：实收**先看钱到没到，再看是哪种付法**。
-      // 原实现按 payMethod 分流：COD 单（payMethod=2）即使客户在送达后用「微信直接支付」把钱付到线上，
-      // 只要配送员没拍现金凭证，对账页就显示「未收」—— 线上真收到的钱在对账里凭空消失。
-      // 判据 = 支付流水 status=1（退款会置 2，天然回退），**不分 payMethod**。
+      // 卡S2（2026-09-29）：收款状态判定走唯一实现 pay-status.util（与采购方列表/详情同源）。
+      // 优先级：线上到账 → 现金凭证 → COD 已送达未收（待收款）→ 未支付；
+      // 「客户称已付」不再是状态档（老数据点过「我已付款」的按本口径重判，只留只读历史标注）。
+      const pay = payStatusOf({
+        payMethod: o.payMethod,
+        status: o.status,
+        onlinePaid: hasWechatPaidRecord(o.payments),
+        hasProof: hasPayProof(o.payProof),
+      })
+      // 金额口径（红线，不变）：线上实收 = 支付流水 status=1 合计（不分 payMethod）；
+      // 现金实收 = 有配送员凭证计全额
       const wechatReceived = r2(
         o.payments.filter((p) => p.status === 1).reduce((s, p) => s + Number(p.amount), 0),
       )
       let received = 0
-      if (wechatReceived > 0) {
+      if (pay.code === 'paid_wechat') {
         received = wechatReceived
         wechatPaidCount++
-      } else if (o.payMethod === 2) {
-        if (hasProof(o)) {
-          received = receivable
-          codPaidCount++
-        } else {
-          codUnpaidCount++
-        }
+      } else if (pay.code === 'paid_proof') {
+        received = receivable
+        codPaidCount++
+      } else if (pay.code === 'cod_pending') {
+        codUnpaidCount++
       }
       const unpaid = receivable - received
 
@@ -528,8 +540,9 @@ export class AdminFinanceService {
       shop.received += received
       shop.unpaid += unpaid
 
-      // 未收清单：线上已经收到钱的 COD 单**不能**再进「未收」清单（卡S1）
-      if (o.payMethod === 2 && !hasProof(o) && wechatReceived === 0) {
+      // 未收清单：卡S2 新口径 = 判定为「待收款」的单（COD 已送达未收）；
+      // 线上已付 / 有现金凭证的单不再进清单（原来这里内联 payMethod===2 判定，已收口）
+      if (pay.code === 'cod_pending') {
         unpaidList.push({
           orderId: Number(o.id),
           shopName: o.purchaser?.shopName ?? '未知餐馆',
@@ -541,25 +554,13 @@ export class AdminFinanceService {
       }
 
       // ── 卡T（2026-09-21）：当天订单清单（每单收款状态 + 凭证），判定口径与上方 summary 完全同源 ──
-      // 卡S1：同样**不分 payMethod** —— COD 单线上付掉的也要显示「微信已付」，
-      // 否则运营在对账页看到「未收」，会去找客户/配送员要一笔已经收过的钱。
-      const wechatPaidAmount = wechatReceived
-      const proof = hasProof(o)
-      let payStatus: string
-      let payStatusText: string
-      if (wechatPaidAmount > 0) {
-        payStatus = 'wechat_paid'
-        payStatusText = '微信已付'
-      } else if (proof) {
-        payStatus = 'cod_cleared'
-        payStatusText = '货到付款已核销'
-      } else if (o.buyerPaidClaimAt) {
-        payStatus = 'buyer_claimed'
-        payStatusText = '客户称已付（未核销）'
-      } else {
-        payStatus = 'unpaid'
-        payStatusText = '未收'
-      }
+      // 卡S2（2026-09-29）：状态判定一律来自 pay-status.util，页面只做展示与配色。
+      //   payStatus/payStatusText   = 四档口径（与采购方列表/详情同源）
+      //   payStatusGroupText/Sub    = 后台三档归组（「待收款」是「未收」的子标注）
+      //   historicClaimText         = 老数据「客户称已付」的只读历史标注（不参与金额计算）
+      //   duplicateRisk/WarnText    = 线上到账与现金凭证并存（可能重复收款）的行内警示
+      const group = payStatusGroup(pay.code)
+      const duplicateRisk = hasWechatPaidRecord(o.payments) && hasPayProof(o.payProof)
       orderList.push({
         orderId: Number(o.id),
         shopName: o.purchaser?.shopName ?? '未知餐馆',
@@ -575,12 +576,17 @@ export class AdminFinanceService {
         received: r2(received),
         unpaid: r2(unpaid),
         payMethod: o.payMethod,
-        payStatus,
-        payStatusText,
-        hasProof: proof,
+        payStatus: pay.code as PayStatusCode,
+        payStatusText: pay.text,
+        payStatusGroupText: group.text,
+        payStatusSubText: group.subText,
+        hasProof: hasPayProof(o.payProof),
         payProof: o.payProof ?? null,
         buyerPaidClaimAt: o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null,
-        wechatPaidAmount,
+        historicClaimText: o.buyerPaidClaimAt ? HISTORIC_CLAIM_TEXT : null,
+        wechatPaidAmount: wechatReceived,
+        duplicateRisk,
+        duplicateWarnText: duplicateRisk ? DUPLICATE_PROOF_TEXT : null,
       })
     }
 

@@ -32,7 +32,10 @@
       </view>
     </view>
 
-    <!-- 底部操作 -->
+    <!-- 底部操作
+         卡S2（2026-09-29）：「跳过此单，继续处理」已删除 —— 现金单的唯一出口 = 提交凭证完成收款
+         （收不到钱走「异常上报」，不再有"稍后再收"的口子）。
+         「继续下一单」是**导航**不是跳过收款：已线上收款的单不需要收现金，必须给它离开动作。 -->
     <view class="row-btns">
       <view v-if="codFlow && remaining > 0" class="queue-tip">📋 本单收完后还有 {{ remaining }} 单待收款</view>
       <!-- 已线上收款 → 两个现金动作整块不渲染（只留"继续下一单"） -->
@@ -40,7 +43,7 @@
         <view class="pbtn primary" :class="{ disabled: submitting }" @tap="takePayProof">📷 付款拍照</view>
         <view v-if="proofPhotos.length" class="pbtn success" :class="{ disabled: submitting }" @tap="submitProof">提交凭证，完成收款</view>
       </template>
-      <view v-if="codFlow" class="pbtn plain" :class="{ disabled: submitting }" @tap="skipThis">{{ onlinePaid ? '继续下一单' : '跳过此单，继续处理' }}</view>
+      <view v-if="onlinePaid && codFlow" class="pbtn plain" :class="{ disabled: submitting }" @tap="goNext">继续下一单</view>
     </view>
   </view>
 </template>
@@ -57,7 +60,7 @@ const shopName = ref('')
 const payQr = ref('')
 const proofPhotos = ref([])
 const submitting = ref(false)
-// 交付流程自动进入时（deliver.vue 写入 codQueue，空数组也是标记），收完/跳过后接力下一单；
+// 交付流程自动进入时（deliver.vue 写入 codQueue，空数组也是标记），收完后接力下一单；
 // 从任务列表手动进入时无此标记，保持原有 navigateBack 行为
 const codFlow = ref(false)
 const remaining = ref(0)
@@ -67,8 +70,9 @@ const clientClaimed = ref(false)
 // → 本页不得再引导收现金、不得再提交现金凭证
 const onlinePaid = ref(false)
 
-/** 收完或跳过当前单后的流转：还有下一单 → redirectTo 接力；收完/跳完 → 回首页提示；任务列表入口 → 原样返回 */
-const advance = (submitted) => {
+/** 队列流转（卡S2：只允许两个入口推进 —— ① 提交凭证成功；② 已线上收款单点「继续下一单」）
+ *  还有下一单 → redirectTo 接力；队列空 → 回首页（可带收尾提示）；任务列表入口 → 原样返回 */
+const advance = (toastMsg) => {
   const queue = uni.getStorageSync('codQueue') || []
   if (queue.length) {
     const next = queue.shift()
@@ -79,17 +83,16 @@ const advance = (submitted) => {
   }
   uni.removeStorageSync('codQueue')
   if (!codFlow.value) { uni.navigateBack(); return }
-  if (submitted) {
-    uni.showToast({ title: '收款凭证已提交', icon: 'success' })
-  } else {
-    uni.showToast({ title: '已跳过，可稍后在任务列表收款', icon: 'none' })
+  if (toastMsg) {
+    uni.showToast({ title: toastMsg, icon: 'success' })
   }
   setTimeout(() => uni.reLaunch({ url: '/subpkg-courier/pages/home' }), 600)
 }
 
-const skipThis = () => {
+/** 已线上收款单的「继续下一单」（导航，不是跳过收款 —— 本单钱已在线上到账，无需再收现金） */
+const goNext = () => {
   if (submitting.value) return
-  advance(false)
+  advance('')
 }
 
 // 拍照 → 本地压缩到 300KB 内 → base64 上传
@@ -120,7 +123,7 @@ const submitProof = async () => {
   submitting.value = true
   try {
     await courierApi.submitPayProof(Number(orderId.value), proofPhotos.value)
-    advance(true) // 凭证已落库（payProof），流转到下一单或收尾
+    advance('收款凭证已提交') // 凭证已落库（payProof），流转到下一单或收尾
   } catch (e) {
     // 错误已由 request.js 统一提示
   } finally {

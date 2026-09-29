@@ -13,6 +13,8 @@ import { UpdateOrderDto } from './dto/update-order.dto'
 import { PayOrderDto } from './dto/pay-order.dto'
 import { allocateByPriority } from '../../common/utils/split.util'
 import { AuditService } from '../audit/audit.service'
+// 卡S2（2026-09-29）：支付/收款状态口径唯一实现 —— 列表/详情/后台对账三处都必须调它，禁止内联判定
+import { payStatusOf, hasPayProof, hasWechatPaidRecord } from '../../common/utils/pay-status.util'
 
 @Injectable()
 export class OrderService {
@@ -164,27 +166,47 @@ export class OrderService {
         orderBy: { id: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { _count: { select: { items: true } }, items: { include: { product: true } } },
+        include: {
+          _count: { select: { items: true } },
+          items: { include: { product: true } },
+          // 卡S2（2026-09-29）：支付状态判定需要支付流水（channel/status/paidAt）
+          payments: { select: { channel: true, status: true, paidAt: true, createdAt: true, id: true } },
+        },
       }),
     ])
 
     return {
       total,
-      list: rows.map((o) => ({
-        orderId: Number(o.id),
-        deliveryDate: o.deliveryDate.toISOString().slice(0, 10),
-        timeWindow: o.timeWindow,
-        status: o.status,
-        statusText: this.statusText(o.status),
-        itemCount: o._count.items,
-        amountFinal: o.amountFinal ? Number(o.amountFinal) : null,
-        // 订单明细（商品名 + 数量，供首页展开展示）
-        items: o.items.map((it) => ({
-          name: it.product?.name ?? '',
-          qty: Number(it.qtyOrdered),
-          unit: it.product?.unit ?? '',
-        })),
-      })),
+      list: rows.map((o) => {
+        // 卡S2：支付状态判定走唯一实现 pay-status.util（与详情/后台对账同源）
+        const onlinePaid = hasWechatPaidRecord(o.payments)
+        const proof = hasPayProof(o.payProof)
+        const pay = payStatusOf({ payMethod: o.payMethod, status: o.status, onlinePaid, hasProof: proof })
+        // 已支付的线上流水取**最新一条**（id 最大）的时间 —— 与 detail 的 onlinePaidAt 取法完全一致
+        const paidRec = o.payments
+          .filter((p) => p.status === 1 && (p.channel === 'wechat' || p.channel === 'mock'))
+          .sort((a, b) => Number(b.id) - Number(a.id))[0]
+        return {
+          orderId: Number(o.id),
+          deliveryDate: o.deliveryDate.toISOString().slice(0, 10),
+          timeWindow: o.timeWindow,
+          status: o.status,
+          statusText: this.statusText(o.status),
+          itemCount: o._count.items,
+          amountFinal: o.amountFinal ? Number(o.amountFinal) : null,
+          // ── 卡S2 新增：支付状态（四档文案唯一来源 = pay-status.util）──
+          payStatus: pay.code,
+          payStatusText: pay.text,
+          onlinePaidAt: paidRec ? (paidRec.paidAt ?? paidRec.createdAt).toISOString() : null,
+          paidProofAt: (o.payProof as any)?.paidAt ?? null,
+          // 订单明细（商品名 + 数量，供首页展开展示）
+          items: o.items.map((it) => ({
+            name: it.product?.name ?? '',
+            qty: Number(it.qtyOrdered),
+            unit: it.product?.unit ?? '',
+          })),
+        }
+      }),
     }
   }
 
@@ -221,6 +243,21 @@ export class OrderService {
       select: { completedAt: true },
     })
 
+    // 卡S1（2026-09-29）：COD 单在送达后用「微信直接支付」的**到账时间**。
+    // ⚠️ 与 buyerPaidClaimAt / paidProofAt 是**三件不同的事**（卡S2 起采购方页面只展示
+    //    后两档「已付款」，不再展示客户声明）：
+    //    buyerPaidClaimAt = 采购方点「我已付款」（客户口头称已付，不是资金证据）
+    //    paidProofAt      = 配送员上传现金收款凭证（COD 现金核销）
+    //    onlinePaidAt     = 微信支付真的到账（有支付流水）；退款后流水置 2 → 这里自动变回 null
+    const onlinePaidAt = await this.onlinePaidAt(order.id)
+    // 卡S2（2026-09-29）：四档支付状态判定走唯一实现 pay-status.util（与列表/后台对账同源）
+    const pay = payStatusOf({
+      payMethod: order.payMethod,
+      status: order.status,
+      onlinePaid: !!onlinePaidAt,
+      hasProof: hasPayProof(order.payProof),
+    })
+
     return {
       orderId: Number(order.id),
       status: order.status,
@@ -255,29 +292,31 @@ export class OrderService {
       urgentFreeThreshold,
       urgent: order.urgent,
       payMethod: order.payMethod,
-      // 货到付款「送达后付款闭环」（2026-09-19 卡L）：两个状态**分开**返回，前端也会分开显示：
-      //   buyerPaidClaimAt = 采购方点「我已付款」的时间 → 「客户称已付」，**不是核销**
-      //   paidProofAt      = 配送员上传收款凭证的时间 → 「已核销」，取自既有 payProof.paidAt
-      // ⚠️ 只读透出，不改变 payProof 的既有语义（它仍是 COD 唯一的核销依据）
+      // 卡S1（2026-09-29）：COD 送达后付款闭环的三个时间，**三件不同的事**、永不合并：
+      //   buyerPaidClaimAt = 采购方点「我已付款」（客户口头称已付，不是资金证据；
+      //                      卡S2 起采购方页面不再展示该口径，字段保留仅为兼容老版本小程序包）
+      //   paidProofAt      = 配送员上传现金收款凭证（COD 现金核销）
+      //   onlinePaidAt     = 微信支付真的到账（有支付流水）；退款后流水置 2 → 自动变回 null
       buyerPaidClaimAt: order.buyerPaidClaimAt ? order.buyerPaidClaimAt.toISOString() : null,
       paidProofAt: (order.payProof as any)?.paidAt ?? null,
-      // 卡S1（2026-09-29）：COD 单在送达后用「微信直接支付」的**到账时间**。
-      // ⚠️ 与上面两个是**三件不同的事**，界面必须分开显示、永不合并：
-      //    buyerPaidClaimAt = 采购方点「我已付款」（客户口头称已付，不是资金证据）
-      //    paidProofAt      = 配送员上传现金收款凭证（COD 现金核销）
-      //    onlinePaidAt     = 微信支付真的到账（有支付流水）；退款后流水置 2 → 这里自动变回 null
-      onlinePaidAt: await this.onlinePaidAt(order.id),
+      onlinePaidAt,
+      // 卡S2（2026-09-29）：四档支付状态（文案唯一来源 = pay-status.util），前端只做展示与配色
+      payStatus: pay.code,
+      payStatusText: pay.text,
     }
   }
 
-  /// 「线上已收款」时间（没有则 null）。**唯一实现** —— 别在别处再写一遍这个判定
+  /// 「线上已收款」时间（没有则 null）。**唯一实现** —— 是否已付走 pay-status.util 的
+  /// hasWechatPaidRecord，与列表页内存计算完全同逻辑：最新一条已支付线上流水的 paidAt ?? createdAt
   private async onlinePaidAt(orderId: bigint): Promise<string | null> {
-    const rec = await this.prisma.paymentRecord.findFirst({
-      where: { orderId, channel: 'wechat', status: 1 },
+    const recs = await this.prisma.paymentRecord.findMany({
+      where: { orderId },
       orderBy: { id: 'desc' },
-      select: { paidAt: true, createdAt: true },
+      select: { channel: true, status: true, paidAt: true, createdAt: true },
     })
-    return rec ? (rec.paidAt ?? rec.createdAt).toISOString() : null
+    if (!hasWechatPaidRecord(recs)) return null
+    const rec = recs.find((r) => r.status === 1 && (r.channel === 'wechat' || r.channel === 'mock'))!
+    return (rec.paidAt ?? rec.createdAt).toISOString()
   }
 
   /**

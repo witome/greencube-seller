@@ -128,50 +128,30 @@
       <view class="row"><text class="k">支付方式</text><text class="v" style="color:#00b96b;font-weight:600;">{{ payMethodText }}</text></view>
     </view>
 
-    <!-- 货到付款 · 送达后付款闭环（2026-09-19 卡L）
-         背景：原来支付卡片只在「待确认(10)+未选支付方式(0)」出现，选了货到付款并送达后采购方没有付款入口。
+    <!-- 货到付款 · 送达后付款闭环（2026-09-19 卡L；卡S2 2026-09-29 收口）
          ⚠️ 页面**不展示收款码图片**：由配送员当面出示运营上传的收款码，客户用微信「扫一扫」付。
          ⚠️ 不调 wx.scanCode 去扫微信收款码（扫出来只是一串字符、付不了款，只会让用户困惑）。
          ⚠️ 卡R1 起「微信直接支付」为真实支付：服务端下单 → uni.requestPayment（线上支付，与现金口径分开）。
-         ⚠️「客户称已付」（采购方声明）与「已核销」（配送员收款凭证）是两件事，分开显示，不混。 -->
+         ⚠️ 卡S2：三个状态栅栏合一 —— 「已付款」必须有资金证据（线上到账 / 配送员凭证），
+             判定以后端 payStatus 为准（唯一实现 pay-status.util），前端只按 code 选分支展示；
+             采购方**不再能自己声明**已付款（「我已付款」按钮已下线，接口仅为兼容老包保留）。 -->
     <view class="card cod-card" v-if="codCardVisible">
       <view class="card-title">货到付款</view>
       <view class="cod-amount">应付 ¥{{ codPayAmount }}</view>
-      <view class="cod-tip" v-if="codOnlinePaid">本单已通过微信支付付款并到账，配送员无需再收款</view>
-      <view class="cod-tip" v-else>请用微信「扫一扫」扫配送员出示的收款码，或点「微信直接支付」线上付款</view>
 
-      <view class="pay-row" v-if="codClaimable">
-        <view class="pay-btn cod" @tap="showScanTip">扫码付款</view>
-        <view class="pay-btn wechat" @tap="showWechatComing">微信直接支付</view>
-      </view>
-
-      <!-- 三个状态分开显示，绝不合并（卡L 两栏 + 卡S1 线上到账一栏） -->
-      <view class="cod-status">
-        <view class="cod-status-i">
-          <text class="k">已线上收款</text>
-          <text v-if="order.onlinePaidAt" class="v ok">微信支付已到账 · {{ fmtTime(order.onlinePaidAt) }}</text>
-          <text v-else class="v">未走线上支付</text>
-        </view>
-        <view class="cod-status-i">
-          <text class="k">客户称已付</text>
-          <text v-if="order.buyerPaidClaimAt" class="v ok">已告知配送员 · {{ fmtTime(order.buyerPaidClaimAt) }}</text>
-          <text v-else class="v">尚未声明</text>
-        </view>
-        <view class="cod-status-i">
-          <text class="k">已核销</text>
-          <text v-if="order.paidProofAt" class="v ok">配送员已收款留证 · {{ fmtTime(order.paidProofAt) }}</text>
-          <text v-else class="v">配送员尚未上传收款凭证</text>
-        </view>
-      </view>
-
-      <template v-if="codClaimable">
-        <view class="pbtn primary cod-claim-btn" :class="{ disabled: claiming }" @tap="claimPaid">
-          {{ claiming ? '提交中…' : '我已付款' }}
+      <template v-if="order.payStatus === 'paid_wechat'">
+        <view class="cod-paid-line">✅ {{ order.payStatusText }}（{{ fmtTime(order.onlinePaidAt) }}）</view>
+      </template>
+      <template v-else-if="order.payStatus === 'paid_proof'">
+        <view class="cod-paid-line">✅ {{ order.payStatusText }}（配送员已收款留证，{{ fmtTime(order.paidProofAt) }}）</view>
+      </template>
+      <template v-else>
+        <view class="cod-tip">请用微信「扫一扫」扫配送员出示的收款码，或点「微信直接支付」线上付款</view>
+        <view class="pay-row">
+          <view class="pay-btn cod" @tap="showScanTip">扫码付款</view>
+          <view class="pay-btn wechat" @tap="showWechatComing">微信直接支付</view>
         </view>
       </template>
-      <!-- 线上已到账优先级最高：这是唯一有资金凭证的状态 -->
-      <view v-else-if="codOnlinePaid" class="cod-claimed">✅ 已通过微信支付 ¥{{ codPayAmount }}，钱已到账</view>
-      <view v-else-if="order.buyerPaidClaimAt" class="cod-claimed">✅ 已告知配送员，待其核对收款</view>
     </view>
 
     <!-- 配送前取消（2026-09-12 拍板 2A+3：备货中(30)/待配送(40)可自助取消；待确认(10)未支付的取消入口在上方支付卡内；已派单(45)及之后不显示） -->
@@ -228,17 +208,12 @@ const editTotal = computed(() => (order.value?.items || []).reduce((s, i) => s +
 // 可编辑（配送日期/时间段/商品明细）：仅待确认(10)且未支付(0)
 const canEdit = computed(() => order.value?.status === 10 && order.value?.payMethod === 0)
 
-// ── 货到付款 · 送达后付款闭环（2026-09-19 卡L）────────────────────────
-// 显示条件：货到付款(2) 且（已送达60/已完成70 或 已声明过已付款）。
-// 后半条让「已告知配送员」在订单继续推进（如已结算90）后依然看得见。
+// ── 货到付款 · 送达后付款闭环（2026-09-19 卡L；卡S2 2026-09-29 收口）────────────
+// 显示条件：货到付款(2) 且已送达(60/70)。
+// 卡S2：「已付款」必须有资金证据，判定以后端 payStatus 为准（唯一实现 pay-status.util）；
+// 「我已付款」声明口径已下线（buyerPaidClaimAt 不再对采购方展示，老接口仅为兼容老包保留）。
 const codDelivered = computed(() => [60, 70].includes(order.value?.status))
-const codCardVisible = computed(() => order.value?.payMethod === 2 && (codDelivered.value || !!order.value?.buyerPaidClaimAt))
-// 「我已付款」只在送达后、且尚未声明过时给（接口本身幂等，但按钮没必要再给一次）
-// 卡S1（2026-09-29）：这单是否已在**线上**收到钱（微信支付流水 status=1；退款后自动回 false）
-const codOnlinePaid = computed(() => !!order.value?.onlinePaidAt)
-// 「我已付款」只在送达后、且尚未声明过、且**没有线上到账**时给
-// （线上到账是唯一带资金凭证的状态：钱已经收了，就不能再引导客户去点「我已付款」）
-const codClaimable = computed(() => codDelivered.value && !order.value?.buyerPaidClaimAt && !codOnlinePaid.value)
+const codCardVisible = computed(() => order.value?.payMethod === 2 && codDelivered.value)
 // 真实应付额：与财务对账口径一致 —— 有 amountFinal 用它，否则 下单金额 + 运费
 const codPayAmount = computed(() => {
   const o = order.value
@@ -246,32 +221,17 @@ const codPayAmount = computed(() => {
   const n = o.amountFinal != null ? Number(o.amountFinal) : Number(o.amountOrdered) + Number(o.deliveryFee || 0)
   return n.toFixed(2)
 })
-const claiming = ref(false)
-// 扫码付款：只弹说明。⚠️ 刻意不调 wx.scanCode —— 小程序扫微信收款码只能得到一串字符，付不了款
+// 扫码付款：只弹说明。⚠️ 刻意不调 wx.scanCode —— 小程序扫微信收款码只能得到一串字符，付不了款。
+// 卡S2：付款后状态由「线上到账 / 配送员凭证」决定，不再引导客户点「我已付款」。
 const showScanTip = () => uni.showModal({
   title: '扫码付款',
-  content: `请用微信「扫一扫」扫配送员出示的收款码付款，应付 ¥${codPayAmount.value}。付款后请点「我已付款」告知配送员。`,
+  content: `请用微信「扫一扫」扫配送员出示的收款码付款，应付 ¥${codPayAmount.value}。付款成功后状态会自动更新。`,
   showCancel: false,
   confirmText: '知道了',
 })
 // 微信直接支付（卡R1 起为真支付）：COD 送达后想线上付 → 服务端下单并拉起收银台。
-// ⚠️ 这是「线上支付」（钱走微信），与「扫码付款 / 我已付款」的现金口径分开；核销仍以配送员收款凭证为准。
+// ⚠️ 这是「线上支付」（钱走微信），与「扫码付款」的现金口径分开；到账后 payStatus 自动变为「已付款 · 微信直接支付」。
 const showWechatComing = () => launchWechatPay(orderId.value)
-// 声明已付款：只登记「客户称已付」，不是核销（核销仍以配送员收款凭证为准）
-const claimPaid = async () => {
-  if (claiming.value) return
-  claiming.value = true
-  try {
-    const res = await buyerApi.claimPaid(orderId.value)
-    // 用接口返回的权威时间刷新本地态（不重拉整单，避免动到别处状态）
-    order.value.buyerPaidClaimAt = res?.buyerPaidClaimAt || new Date().toISOString()
-    uni.showToast({ title: '已告知配送员，待其核对收款', icon: 'none' })
-  } catch (e) {
-    // 错误已由 request.js 统一提示（如「订单送达后才能声明已付款」）
-  } finally {
-    claiming.value = false
-  }
-}
 
 // 实时运费（本地按运费规则计算，改商品数量即时联动）：
 // 加急：运费 = 加急运费（单独计，不叠加常规运费；满 urgentFreeThreshold 免）
@@ -521,11 +481,8 @@ onLoad(async (opts) => {
 .cod-card { background: #fff; border-radius: 8px; padding: 12px; margin: 0 12px 10px; }
 .cod-amount { font-size: 22px; font-weight: 700; color: #ff6b00; margin: 4px 0 6px; }
 .cod-tip { font-size: 12px; color: $text-second; }
-.cod-status { margin-top: 12px; padding-top: 10px; border-top: 1px solid $bg-soft; }
-.cod-status-i { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 13px; }
-.cod-status-i .v { color: $text-placeholder; }
-.cod-status-i .v.ok { color: #00b96b; font-weight: 600; }
-.cod-claim-btn { margin-top: 12px; }
-.cod-claimed { margin-top: 12px; text-align: center; font-size: 13px; color: #00b96b; background: #eafaf1; border-radius: 8px; padding: 10px; }
+/* 卡S2：三档合一后的「已付款」状态行（绿底绿字 = 有资金证据） */
+.cod-paid-line { margin-top: 10px; text-align: center; font-size: 13px; font-weight: 600; color: #00b96b; background: #eafaf1; border-radius: 8px; padding: 10px; }
+.pay-row { margin-top: 8px; }
 .disabled { opacity: 0.5; }
 </style>

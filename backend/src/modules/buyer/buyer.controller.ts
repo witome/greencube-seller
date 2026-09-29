@@ -73,6 +73,9 @@ export class BuyerController {
   /// 自助资料读取（2026-09-11 任务卡 A：只读自己的档案，含执照号展示）
   /// 采购方声明「我已付款」（货到付款订单送达后）
   /// ⚠️ 仅声明、非核销：是否真收到钱仍以 order.payProof（配送员凭证）为准
+  /// ⚠️ 卡S2（2026-09-29）起**采购方侧已停用**：新前端不再调用（「我已付款」按钮已下线，
+  ///     「已付款」只认线上到账/配送员凭证 —— 见 common/utils/pay-status.util.ts）。
+  ///     接口保留只为兼容还在用户手机上的老版本小程序包，等新版发布后再清理（后续欠账）。
   @Post('order/:orderId/claim-paid')
   @Roles(Role.PURCHASER)
   async claimPaid(@CurrentUser('userId') userId: bigint, @Param('orderId') orderId: string) {
