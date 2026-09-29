@@ -1,11 +1,19 @@
 import { Body, Controller, Logger, Post, Req, Res } from '@nestjs/common'
 import type { Request, Response } from 'express'
+import { Type } from 'class-transformer'
 import { IsInt, IsNumber, Min } from 'class-validator'
 import { WechatPayService } from './wechat-pay.service'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 
+/**
+ * ⚠️ orderId 必须带 @Type(() => Number)：小程序 `onLoad(opts)` 取到的 id 是**字符串**，
+ * 前端原样发 JSON 时后端拿到 `"12"`；本项目 ValidationPipe **没有**开 enableImplicitConversion，
+ * 只有 @IsNumber/@IsInt 的话字符串会被判 400（2026-09-29 真机验收踩坑：点「微信支付」后端 400，前端静默无提示）。
+ * 运维后台/脚本传数字同样通过，两种形态都兼容。
+ */
 class WechatPrepayDto {
+  @Type(() => Number)
   @IsNumber()
   @IsInt()
   @Min(1)
@@ -13,6 +21,7 @@ class WechatPrepayDto {
 }
 
 class WechatRefundDto {
+  @Type(() => Number)
   @IsNumber()
   @IsInt()
   @Min(1)

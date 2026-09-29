@@ -181,11 +181,13 @@ async function main() {
   }
 
   /// 下单 + prepay，返回 { orderId, expectedAmount, payNo, amount, paySign, ... }
+  /// ⚠️ orderId 故意传**字符串**：真机路径是小程序 onLoad(opts) → id 是字符串，
+  ///    曾经因此 400（DTO 缺 @Type(() => Number)），真机验收才发现。这里固化回归。
   const prepayOrder = async (port = PORT_PAY) => {
     const o = await createOrder(port)
     if (!o) return null
     const expectedAmount = Math.round((Number(o.detail.amountOrdered) + Number(o.detail.deliveryFee)) * 100) / 100
-    const p = await call('POST', '/payment/wechat/prepay', { orderId: o.orderId }, token, port)
+    const p = await call('POST', '/payment/wechat/prepay', { orderId: String(o.orderId) }, token, port)
     if (p.json?.code !== 0) return { orderId: o.orderId, failed: p.json }
     return { orderId: o.orderId, expectedAmount, ...p.json.data }
   }

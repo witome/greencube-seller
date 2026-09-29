@@ -65,6 +65,21 @@ function request({ url, method = 'GET', data, header = {} }) {
             return
           }
 
+          // 非 200 的 HTTP 错误（400 参数校验 / 403 / 500…）：后端也会回 {code,msg}
+          // ⚠️ 2026-09-29 踩坑：以前只处理 HTTP 200 的信封，400 落到 success 里既不提示也不 reject
+          //    → 现象是「点了按钮完全没反应」。凡是 HTTP 不 2xx，一律按业务错误提示并 reject。
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            const now = Date.now()
+            const msg = body.msg || `请求失败(${res.statusCode})，请重试`
+            if (msg !== lastToastMsg || now - lastToastAt > 3000) {
+              uni.showToast({ title: msg, icon: 'none' })
+            }
+            lastToastMsg = msg
+            lastToastAt = now
+            reject(body.code !== undefined ? body : { code: res.statusCode, msg })
+            return
+          }
+
           // 成功：直接解包 data
           resolve(body.data !== undefined ? body.data : body)
         },
