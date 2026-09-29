@@ -49,6 +49,28 @@ export function hasWechatPaidRecord(records: Array<{ channel?: string | null; st
   return records.some((r) => r.status === 1 && (r.channel === 'wechat' || r.channel === 'mock'))
 }
 
+/// 取「最新一条已支付的线上流水」（id 最大）。
+/// ⚠️ 存在的意义：判定与「取哪条」必须同一份实现 —— 否则 service 里会各自内联 filter，
+/// 一处忘了带 channel 条件就出现「列表说已付、详情说未付」这类两页两个数的老毛病（卡S2 收口）。
+export function latestPaidRecord<T extends { channel?: string | null; status: number; id?: unknown }>(
+  records: T[],
+): T | undefined {
+  return records
+    .filter((r) => r.status === 1 && (r.channel === 'wechat' || r.channel === 'mock'))
+    .sort((a, b) => Number((b as any).id ?? 0) - Number((a as any).id ?? 0))[0]
+}
+
+/// 「线上已收款」时间（没有则 null）：最新一条已支付线上流水的 paidAt ?? createdAt。
+/// 列表 / 详情 / 后台三处取这个时间都调这里，别各自写。
+export function onlinePaidAtOf<
+  T extends { channel?: string | null; status: number; id?: unknown; paidAt?: Date | null; createdAt?: Date },
+>(records: T[]): string | null {
+  const rec = latestPaidRecord(records)
+  if (!rec) return null
+  const at = (rec as any).paidAt ?? (rec as any).createdAt
+  return at ? new Date(at).toISOString() : null
+}
+
 /// 四档判定（唯一出口）
 export function payStatusOf(input: PayStatusInput): PayStatusResult {
   if (input.onlinePaid) return { code: 'paid_wechat', text: '已付款 · 微信直接支付' }

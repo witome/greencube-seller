@@ -14,7 +14,7 @@ import { PayOrderDto } from './dto/pay-order.dto'
 import { allocateByPriority } from '../../common/utils/split.util'
 import { AuditService } from '../audit/audit.service'
 // 卡S2（2026-09-29）：支付/收款状态口径唯一实现 —— 列表/详情/后台对账三处都必须调它，禁止内联判定
-import { payStatusOf, hasPayProof, hasWechatPaidRecord } from '../../common/utils/pay-status.util'
+import { payStatusOf, hasPayProof, hasWechatPaidRecord, onlinePaidAtOf } from '../../common/utils/pay-status.util'
 
 @Injectable()
 export class OrderService {
@@ -182,10 +182,9 @@ export class OrderService {
         const onlinePaid = hasWechatPaidRecord(o.payments)
         const proof = hasPayProof(o.payProof)
         const pay = payStatusOf({ payMethod: o.payMethod, status: o.status, onlinePaid, hasProof: proof })
-        // 已支付的线上流水取**最新一条**（id 最大）的时间 —— 与 detail 的 onlinePaidAt 取法完全一致
-        const paidRec = o.payments
-          .filter((p) => p.status === 1 && (p.channel === 'wechat' || p.channel === 'mock'))
-          .sort((a, b) => Number(b.id) - Number(a.id))[0]
+        // 已支付的线上流水取**最新一条**的时间 —— 取法唯一实现在 pay-status.util.onlinePaidAtOf
+        // （卡S2 复核收口：原先这里内联了一份 filter，与 detail 的取法重复）
+        const onlinePaidAt = onlinePaidAtOf(o.payments as any)
         return {
           orderId: Number(o.id),
           deliveryDate: o.deliveryDate.toISOString().slice(0, 10),
@@ -197,7 +196,7 @@ export class OrderService {
           // ── 卡S2 新增：支付状态（四档文案唯一来源 = pay-status.util）──
           payStatus: pay.code,
           payStatusText: pay.text,
-          onlinePaidAt: paidRec ? (paidRec.paidAt ?? paidRec.createdAt).toISOString() : null,
+          onlinePaidAt,
           paidProofAt: (o.payProof as any)?.paidAt ?? null,
           // 订单明细（商品名 + 数量，供首页展开展示）
           items: o.items.map((it) => ({
@@ -307,16 +306,14 @@ export class OrderService {
   }
 
   /// 「线上已收款」时间（没有则 null）。**唯一实现** —— 是否已付走 pay-status.util 的
-  /// hasWechatPaidRecord，与列表页内存计算完全同逻辑：最新一条已支付线上流水的 paidAt ?? createdAt
+  /// hasWechatPaidRecord，取哪条走 onlinePaidAtOf（列表页也调它，不再各自内联 filter）
   private async onlinePaidAt(orderId: bigint): Promise<string | null> {
     const recs = await this.prisma.paymentRecord.findMany({
       where: { orderId },
       orderBy: { id: 'desc' },
-      select: { channel: true, status: true, paidAt: true, createdAt: true },
+      select: { id: true, channel: true, status: true, paidAt: true, createdAt: true },
     })
-    if (!hasWechatPaidRecord(recs)) return null
-    const rec = recs.find((r) => r.status === 1 && (r.channel === 'wechat' || r.channel === 'mock'))!
-    return (rec.paidAt ?? rec.createdAt).toISOString()
+    return onlinePaidAtOf(recs as any)
   }
 
   /**
