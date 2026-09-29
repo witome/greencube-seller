@@ -3,13 +3,19 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
 import { DeliverDto, ReportDto, PayProofDto } from './dto/courier.dto'
 import { AuditService } from '../audit/audit.service'
+import { OrderShippingService } from '../wx/order-shipping.service'
 
 /// 配送任务状态：0 待取货 / 1 已取货待出发 / 2 已出发配送中 / 3 已完成 / 4 异常
 const TaskStatus = { PENDING_PICKUP: 0, DELIVERING: 1, DEPARTED: 2, DONE: 3, EXCEPTION: 4 } as const
 
 @Injectable()
 export class CourierService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    // 卡S1（2026-09-29）：送达后要往微信录发货信息（不录 = 用户的钱被平台冻结）
+    private readonly orderShipping: OrderShippingService,
+  ) {}
 
   private async getCourier(userId: bigint) {
     const courier = await this.prisma.courier.findUnique({ where: { userId } })
@@ -135,13 +141,25 @@ export class CourierService {
       orderPayments.map((o) => [Number(o.id), o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null]),
     )
 
+    // 卡S1（2026-09-29）：带出「已线上收款」——配送员当面要能看出这单已经在线付过了，别再收现金。
+    // 判据 = 微信支付流水 status=1（退款置 2，天然回退）。
+    const onlinePayments = orderIds.length
+      ? await this.prisma.paymentRecord.findMany({
+          where: { orderId: { in: orderIds.map((id) => BigInt(id)) }, channel: 'wechat', status: 1 },
+          select: { orderId: true, paidAt: true, createdAt: true },
+        })
+      : []
+    const onlinePaidMap = new Map(
+      onlinePayments.map((p) => [Number(p.orderId), (p.paidAt ?? p.createdAt).toISOString()]),
+    )
+
     return tasks.map((t) => ({
       taskId: Number(t.id),
       routeNo: t.routeNo,
       status: t.status,
       stationList: (Array.isArray(t.stationList) ? t.stationList : []).map((s: any) => {
         if (s.type === 'deliver' && s.orderId) {
-          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)), payMethod: payMap.get(Number(s.orderId)) ?? null, buyerPaidClaimAt: paidClaimMap.get(Number(s.orderId)) ?? null }
+          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)), payMethod: payMap.get(Number(s.orderId)) ?? null, buyerPaidClaimAt: paidClaimMap.get(Number(s.orderId)) ?? null, onlinePaidAt: onlinePaidMap.get(Number(s.orderId)) ?? null }
         }
         return s
       }),
@@ -248,14 +266,38 @@ export class CourierService {
       where: { id: { in: orderIds.map((oid) => BigInt(oid)) } },
       include: { purchaser: { select: { shopName: true } } },
     })
+    // 卡S1（2026-09-29）：已在**线上收到钱**的 COD 单不能再进收款队列 ——
+    // 否则配送员按「未收款」再收一次现金，就是重复收款（钱已经进了商户号的线上账户）。
+    // 判据 = 该单存在微信支付流水 status=1；退款会把流水置 2，所以这个判据**天然会回退**，不必新增字段。
+    const onlinePaid = await this.prisma.paymentRecord.findMany({
+      where: { orderId: { in: orderIds.map((oid) => BigInt(oid)) }, channel: 'wechat', status: 1 },
+      select: { orderId: true },
+      distinct: ['orderId'],
+    })
+    const onlinePaidSet = new Set(onlinePaid.map((p) => String(p.orderId)))
+
     const codOrders = orderIds
       .map((oid) => taskOrders.find((o) => Number(o.id) === oid))
-      .filter((o) => o && o.payMethod === 2 && o.payProof == null && o.status === OrderStatus.DELIVERED)
+      .filter(
+        (o) =>
+          o &&
+          o.payMethod === 2 &&
+          o.payProof == null &&
+          o.status === OrderStatus.DELIVERED &&
+          !onlinePaidSet.has(String(o.id)),
+      )
       .map((o) => ({
         orderId: Number(o!.id),
         shopName: o!.purchaser?.shopName || '',
         amount: Number(o!.amountFinal ?? o!.amountOrdered ?? 0),
       }))
+
+    // 卡S1：送达后为「已线上支付」的单录入微信发货信息。
+    // 旁路副作用：失败只写 order_shipping 台账、由补偿定时任务重试，**绝不影响送达结果**。
+    // 只有真的走了微信支付的单会真调微信（COD 现金/未支付在 service 里直接跳过）。
+    for (const oid of orderIds) {
+      void this.orderShipping.uploadForOrder(oid).catch(() => undefined)
+    }
 
     return { taskId, status: TaskStatus.DONE, deliveredOrders: orderIds.length, resumed: remaining === 0, codOrders }
   }

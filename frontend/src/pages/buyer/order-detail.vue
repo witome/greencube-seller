@@ -137,15 +137,21 @@
     <view class="card cod-card" v-if="codCardVisible">
       <view class="card-title">货到付款</view>
       <view class="cod-amount">应付 ¥{{ codPayAmount }}</view>
-      <view class="cod-tip">请用微信「扫一扫」扫配送员出示的收款码，或点「微信直接支付」线上付款</view>
+      <view class="cod-tip" v-if="codOnlinePaid">本单已通过微信支付付款并到账，配送员无需再收款</view>
+      <view class="cod-tip" v-else>请用微信「扫一扫」扫配送员出示的收款码，或点「微信直接支付」线上付款</view>
 
       <view class="pay-row" v-if="codClaimable">
         <view class="pay-btn cod" @tap="showScanTip">扫码付款</view>
         <view class="pay-btn wechat" @tap="showWechatComing">微信直接支付</view>
       </view>
 
-      <!-- 两个状态分开显示，绝不合并 -->
+      <!-- 三个状态分开显示，绝不合并（卡L 两栏 + 卡S1 线上到账一栏） -->
       <view class="cod-status">
+        <view class="cod-status-i">
+          <text class="k">已线上收款</text>
+          <text v-if="order.onlinePaidAt" class="v ok">微信支付已到账 · {{ fmtTime(order.onlinePaidAt) }}</text>
+          <text v-else class="v">未走线上支付</text>
+        </view>
         <view class="cod-status-i">
           <text class="k">客户称已付</text>
           <text v-if="order.buyerPaidClaimAt" class="v ok">已告知配送员 · {{ fmtTime(order.buyerPaidClaimAt) }}</text>
@@ -163,6 +169,8 @@
           {{ claiming ? '提交中…' : '我已付款' }}
         </view>
       </template>
+      <!-- 线上已到账优先级最高：这是唯一有资金凭证的状态 -->
+      <view v-else-if="codOnlinePaid" class="cod-claimed">✅ 已通过微信支付 ¥{{ codPayAmount }}，钱已到账</view>
       <view v-else-if="order.buyerPaidClaimAt" class="cod-claimed">✅ 已告知配送员，待其核对收款</view>
     </view>
 
@@ -226,7 +234,11 @@ const canEdit = computed(() => order.value?.status === 10 && order.value?.payMet
 const codDelivered = computed(() => [60, 70].includes(order.value?.status))
 const codCardVisible = computed(() => order.value?.payMethod === 2 && (codDelivered.value || !!order.value?.buyerPaidClaimAt))
 // 「我已付款」只在送达后、且尚未声明过时给（接口本身幂等，但按钮没必要再给一次）
-const codClaimable = computed(() => codDelivered.value && !order.value?.buyerPaidClaimAt)
+// 卡S1（2026-09-29）：这单是否已在**线上**收到钱（微信支付流水 status=1；退款后自动回 false）
+const codOnlinePaid = computed(() => !!order.value?.onlinePaidAt)
+// 「我已付款」只在送达后、且尚未声明过、且**没有线上到账**时给
+// （线上到账是唯一带资金凭证的状态：钱已经收了，就不能再引导客户去点「我已付款」）
+const codClaimable = computed(() => codDelivered.value && !order.value?.buyerPaidClaimAt && !codOnlinePaid.value)
 // 真实应付额：与财务对账口径一致 —— 有 amountFinal 用它，否则 下单金额 + 运费
 const codPayAmount = computed(() => {
   const o = order.value
@@ -444,8 +456,21 @@ const receive = async () => {
   setTimeout(load, 600)
 }
 
-onLoad((opts) => {
-  orderId.value = opts.id
+onLoad(async (opts) => {
+  // 卡S1（2026-09-29）：微信「小程序购物订单」/发货通知跳进来带的是**支付单号**
+  // （后台订单详情 path 写 `${商品订单号}`，微信把它替换成下单接口的 out_trade_no = payment_record.payNo）
+  // → 先用 payNo 换成订单 id，再走原来的详情逻辑（详情口径只有一份，不给 payNo 另写一套页面逻辑）
+  if (!opts.id && opts.payNo) {
+    try {
+      const res = await buyerApi.getOrderByPayNo(opts.payNo)
+      orderId.value = res?.orderId ?? res?.id
+    } catch (e) {
+      // 错误已由 request.js 统一提示（订单不存在 / 不属于本人）
+      return
+    }
+  } else {
+    orderId.value = opts.id
+  }
   load()
 })
 </script>

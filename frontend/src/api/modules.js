@@ -43,6 +43,9 @@ export const buyerApi = {
   placeOrder: (data) => post('/order', data),
   getOrderList: (params) => get('/order', params),
   getOrderDetail: (id) => get(`/order/${id}`),
+  // 卡S1：按**支付单号**直达订单详情 —— 微信「小程序购物订单」/发货通知跳转带的是
+  // 下单接口的 out_trade_no（= payment_record.payNo，32 位随机串），**不是订单 id**
+  getOrderByPayNo: (payNo) => get(`/order/by-pay-no/${payNo}`),
   cancelOrder: (id) => post(`/order/${id}/cancel`),
   receiveOrder: (id, data) => post(`/order/${id}/receive`, data), // 逐项接受/拒收
   updateOrder: (id, data) => post(`/order/${id}/update`, data),   // 编辑待确认订单（覆盖式）

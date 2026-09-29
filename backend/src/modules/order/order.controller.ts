@@ -27,6 +27,14 @@ export class OrderController {
     return this.service.list(userId, query)
   }
 
+  /// 订单详情（按**支付单号**直达）—— 卡S1：微信「小程序购物订单」/发货通知跳转用
+  /// ⚠️ 微信把 path 里的 `${商品订单号}` 换成下单接口的 out_trade_no（= 我们的 payment_record.payNo）
+  @Get('by-pay-no/:payNo')
+  @Roles(Role.PURCHASER)
+  async detailByPayNo(@CurrentUser('userId') userId: bigint, @Param('payNo') payNo: string) {
+    return this.service.detailByPayNo(userId, payNo)
+  }
+
   /// 订单详情（五数量）
   @Get(':id')
   @Roles(Role.PURCHASER)

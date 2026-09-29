@@ -261,7 +261,49 @@ export class OrderService {
       // ⚠️ 只读透出，不改变 payProof 的既有语义（它仍是 COD 唯一的核销依据）
       buyerPaidClaimAt: order.buyerPaidClaimAt ? order.buyerPaidClaimAt.toISOString() : null,
       paidProofAt: (order.payProof as any)?.paidAt ?? null,
+      // 卡S1（2026-09-29）：COD 单在送达后用「微信直接支付」的**到账时间**。
+      // ⚠️ 与上面两个是**三件不同的事**，界面必须分开显示、永不合并：
+      //    buyerPaidClaimAt = 采购方点「我已付款」（客户口头称已付，不是资金证据）
+      //    paidProofAt      = 配送员上传现金收款凭证（COD 现金核销）
+      //    onlinePaidAt     = 微信支付真的到账（有支付流水）；退款后流水置 2 → 这里自动变回 null
+      onlinePaidAt: await this.onlinePaidAt(order.id),
     }
+  }
+
+  /// 「线上已收款」时间（没有则 null）。**唯一实现** —— 别在别处再写一遍这个判定
+  private async onlinePaidAt(orderId: bigint): Promise<string | null> {
+    const rec = await this.prisma.paymentRecord.findFirst({
+      where: { orderId, channel: 'wechat', status: 1 },
+      orderBy: { id: 'desc' },
+      select: { paidAt: true, createdAt: true },
+    })
+    return rec ? (rec.paidAt ?? rec.createdAt).toISOString() : null
+  }
+
+  /**
+   * 按**支付单号**查订单详情（卡S1：微信「小程序购物订单」/发货通知跳转专用）。
+   *
+   * 微信要求订单详情 path 里带 `${商品订单号}`，它会把下单接口的 `out_trade_no` 填进去
+   * —— 我们的 `out_trade_no` = `payment_record.payNo`（32 位随机串），**不是订单 id**。
+   * 所以这条路由只接收 payNo，换成订单 id 后再复用 detail()（详情口径只有一份）。
+   *
+   * ⚠️ 越权口径：payNo 命中但订单不属于当前采购方 → 一律 404（不泄露他人订单是否存在）；
+   *    格式不对也直接拒（防拿它当模糊查询扫库）。
+   */
+  async detailByPayNo(userId: bigint, payNo: string) {
+    if (!/^[0-9A-Za-z_-]{6,40}$/.test(String(payNo || ''))) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '支付单号格式不正确')
+    }
+    const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
+    if (!purchaser) throw new BizException(ErrorCode.NOT_FOUND)
+    const rec = await this.prisma.paymentRecord.findUnique({
+      where: { payNo },
+      select: { orderId: true, order: { select: { purchaserId: true } } },
+    })
+    if (!rec || rec.order?.purchaserId !== purchaser.id) {
+      throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+    }
+    return this.detail(userId, Number(rec.orderId))
   }
 
   // ────────────────────────────────────────

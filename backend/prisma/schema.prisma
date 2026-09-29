@@ -589,6 +589,35 @@ model PaymentRecord {
   @@map("payment_record")
 }
 
+/// 小程序发货信息管理 · 录入台账（卡S1 2026-09-29）
+/// 为什么要单独一张表：微信侧「一笔支付单只有一次重新发货机会」（改发货模式也算），
+/// 所以「录没录过 / 失败几次 / 还能不能重试 / 报什么错」必须落库 —— 靠日志或审计反推会把
+/// 已经用掉机会的单反复重试。口径：本表只记「录入发货信息这件事」，不改 order 的任何语义。
+/// ⚠️ 只对「已走微信支付（payment_record.channel='wechat' && status=1）」的订单建行。
+model OrderShipping {
+  id            BigInt    @id @default(autoincrement())
+  orderId       BigInt    @unique @map("order_id")
+  /// 微信侧商户单号（= payment_record.pay_no），记录当时用的是哪笔支付单
+  payNo         String?   @map("pay_no") @db.VarChar(40)
+  /// 物流模式：1 快递 / 2 同城配送（本项目默认）/ 3 虚拟 / 4 用户自提
+  logisticsType Int       @default(2) @map("logistics_type") @db.TinyInt
+  /// 发货模式：1 统一发货 / 2 分拆发货（本项目只用 1）
+  deliveryMode  Int       @default(1) @map("delivery_mode") @db.TinyInt
+  /// 0 待录入 / 1 已录入 / 2 失败可重试 / 3 终态失败（不再重试）
+  status        Int       @default(0) @db.TinyInt
+  attempts      Int       @default(0) @db.TinyInt
+  /// 最近一次失败原因（微信 errcode + errmsg）
+  lastError     String?   @map("last_error") @db.VarChar(255)
+  /// 录入时用的商品汇总（微信必填字段 item_desc，留档便于核对）
+  itemDesc      String?   @map("item_desc") @db.VarChar(255)
+  uploadedAt    DateTime? @map("uploaded_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("order_shipping")
+}
+
 // ══════════════════════════════════════════
 // 4. 采购需求（客户要了、我们**还没有**的货）
 // ══════════════════════════════════════════

@@ -74,9 +74,12 @@
         </div>
       </template>
       <div class="admin-dailyrec-tabletip">
-        「收款状态」判定与上方『实收』同源：微信已付＝该单支付流水已支付（payMethod=1）；
-        货到付款已核销＝配送员收款凭证 payProof.photos 非空（payMethod=2）；
-        客户称已付（未核销）＝采购方自称已付但无凭证，<b>不代表钱已到账</b>。
+        「收款状态」判定与上方『实收』同源：<b>先看钱有没有到</b> —— 该单只要有已支付的微信支付流水，
+        无论付款方式都算「微信已付（线上）」（货到付款单在送达后点「微信直接支付」也走这条）；
+        货到付款现金＝配送员收款凭证 payProof.photos 非空且无线上流水；
+        客户称已付（未核销）＝采购方自称已付但既无线上到账也无凭证，<b>不代表钱已到账</b>。
+        ⚠️ 只线上到账与现金核销是<b>两条钱路</b>（前者进商户号线上账户、后者进收款码绑定账户），
+        后台不做合并；退款会把支付流水置为已关闭，判定会自动回退。
       </div>
       <el-table :data="shownList" v-loading="loading" stripe empty-text="这一天没有订单">
         <el-table-column prop="orderId" label="订单号" width="90">
@@ -98,6 +101,11 @@
         <el-table-column label="收款状态" width="160">
           <template #default="{ row }">
             <el-tag :type="payTagType(row.payStatus)" size="small" effect="light">{{ row.payStatusText }}</el-tag>
+            <!-- 卡S1：货到付款单也可能在**线上**付掉（送达后「微信直接支付」）→ 直接标出来，
+                 否则运营只看「微信已付」标签会以为所有这种单都是下单时线上付的 -->
+            <div v-if="row.payMethod === 2 && row.wechatPaidAmount > 0" class="note">
+              线上到账 ¥{{ fmt(row.wechatPaidAmount) }}
+            </div>
           </template>
         </el-table-column>
         <!-- 收款凭证（配送员 COD 收款拍照，只读查看）：弹窗实现复用 components/ProofDialog.vue -->

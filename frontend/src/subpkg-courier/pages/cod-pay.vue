@@ -1,10 +1,12 @@
 <template>
   <view class="page">
+    <!-- 卡S1（2026-09-29）：本单已在**线上**收到钱（微信支付流水已支付）→ 不能再收现金、也不能再留现金凭证（那就是重复收款） -->
+    <view v-if="onlinePaid" class="online-banner">✅ 本单已通过微信支付到账，无需再收现金</view>
     <!-- 「客户称已付」标记（2026-09-19 卡L）：采购方在订单详情点了「我已付款」。
          ⚠️ 这只是客户声明，**不是核销** —— 是否真到账仍以本页拍照留证的凭证为准。 -->
-    <view v-if="clientClaimed" class="claim-banner">🔔 客户称已付款，请核对是否到账，确认后拍照留证</view>
+    <view v-else-if="clientClaimed" class="claim-banner">🔔 客户称已付款，请核对是否到账，确认后拍照留证</view>
 
-    <view class="notice">💰 货到付款：请客户扫下方收款码付款，付款成功后拍照留证</view>
+    <view v-if="!onlinePaid" class="notice">💰 货到付款：请客户扫下方收款码付款，付款成功后拍照留证</view>
 
     <!-- 订单信息 -->
     <view class="card">
@@ -12,8 +14,8 @@
       <view class="form-row"><view class="fr-l">店铺</view><view class="fr-r">{{ shopName || '-' }}</view></view>
     </view>
 
-    <!-- 收款二维码 -->
-    <view class="card qr-card">
+    <!-- 收款二维码：已线上收款时不展示（避免配送员照着码再收一次） -->
+    <view v-if="!onlinePaid" class="card qr-card">
       <view class="card-title">平台收款码</view>
       <image v-if="payQr" :src="fullUrl(payQr)" mode="aspectFit" class="qr-img" />
       <view v-else class="qr-placeholder">⚠️ 运营后台尚未上传收款二维码</view>
@@ -33,9 +35,12 @@
     <!-- 底部操作 -->
     <view class="row-btns">
       <view v-if="codFlow && remaining > 0" class="queue-tip">📋 本单收完后还有 {{ remaining }} 单待收款</view>
-      <view class="pbtn primary" :class="{ disabled: submitting }" @tap="takePayProof">📷 付款拍照</view>
-      <view v-if="proofPhotos.length" class="pbtn success" :class="{ disabled: submitting }" @tap="submitProof">提交凭证，完成收款</view>
-      <view v-if="codFlow" class="pbtn plain" :class="{ disabled: submitting }" @tap="skipThis">跳过此单，继续处理</view>
+      <!-- 已线上收款 → 两个现金动作整块不渲染（只留"继续下一单"） -->
+      <template v-if="!onlinePaid">
+        <view class="pbtn primary" :class="{ disabled: submitting }" @tap="takePayProof">📷 付款拍照</view>
+        <view v-if="proofPhotos.length" class="pbtn success" :class="{ disabled: submitting }" @tap="submitProof">提交凭证，完成收款</view>
+      </template>
+      <view v-if="codFlow" class="pbtn plain" :class="{ disabled: submitting }" @tap="skipThis">{{ onlinePaid ? '继续下一单' : '跳过此单，继续处理' }}</view>
     </view>
   </view>
 </template>
@@ -58,6 +63,9 @@ const codFlow = ref(false)
 const remaining = ref(0)
 // 「客户称已付」标记（2026-09-19 卡L）：仅提示，不参与核销
 const clientClaimed = ref(false)
+// 卡S1（2026-09-29）：本单已在**线上**收到钱（微信支付流水 status=1；退款后自动回 false）
+// → 本页不得再引导收现金、不得再提交现金凭证
+const onlinePaid = ref(false)
 
 /** 收完或跳过当前单后的流转：还有下一单 → redirectTo 接力；收完/跳完 → 回首页提示；任务列表入口 → 原样返回 */
 const advance = (submitted) => {
@@ -107,7 +115,8 @@ const takePayProof = () => {
 const removePhoto = (i) => proofPhotos.value.splice(i, 1)
 
 const submitProof = async () => {
-  if (submitting.value || !proofPhotos.value.length) return
+  // 卡S1：已线上收款 → 不允许再提交现金凭证（重复收款的口子，前端先堵一层）
+  if (submitting.value || !proofPhotos.value.length || onlinePaid.value) return
   submitting.value = true
   try {
     await courierApi.submitPayProof(Number(orderId.value), proofPhotos.value)
@@ -136,7 +145,10 @@ onLoad(async (opts) => {
   try {
     const ts = await courierApi.getTodayTasks()
     const hit = ts.flatMap((t) => t.stationList || []).find((s) => String(s.orderId) === String(orderId.value))
-    if (hit) clientClaimed.value = !!hit.buyerPaidClaimAt
+    if (hit) {
+      clientClaimed.value = !!hit.buyerPaidClaimAt
+      onlinePaid.value = !!hit.onlinePaidAt // 卡S1
+    }
   } catch (e) { /* 忽略 */ }
 })
 </script>
@@ -146,6 +158,8 @@ onLoad(async (opts) => {
 .notice { background: $warn-soft; color: $warn; font-size: 12px; padding: 10px 12px; border-radius: 8px; margin: 10px 12px; }
 /* 「客户称已付」标记（2026-09-19 卡L）：橙色 = 仅客户声明，绿色留给「已收款留证」 */
 .claim-banner { background: #fff3e6; color: #ff6b00; font-size: 12px; padding: 10px 12px; border-radius: 8px; margin: 10px 12px -4px; font-weight: 600; }
+/* 「已线上收款」（卡S1 2026-09-29）：钱真的到账了 → 绿色，且这一页不再给任何收现金的动作 */
+.online-banner { background: #e8f8f0; color: #00b96b; font-size: 12px; padding: 10px 12px; border-radius: 8px; margin: 10px 12px -4px; font-weight: 600; }
 .card { background: #fff; border-radius: 12px; margin: 6px 12px; padding: 4px 12px; }
 .form-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; font-size: 14px; }
 .fr-l { color: $text-second; }

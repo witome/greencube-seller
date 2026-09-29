@@ -41,7 +41,7 @@
       <!-- 货物（订单）列表：取货 + 异常上报 + 已取状态 -->
       <view v-for="s in deliverStations(t)" :key="s.orderId" :class="['cargo-item', { abnormal: s.abnormal }]">
         <view class="cargo-main">
-          <view class="cargo-name">{{ s.shopName }}<text v-if="s.abnormal" class="cargo-abnormal-tag">异常</text><text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text></view>
+          <view class="cargo-name">{{ s.shopName }}<text v-if="s.abnormal" class="cargo-abnormal-tag">异常</text><text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text><text v-if="s.onlinePaidAt" class="cargo-online-tag">已线上收款</text></view>
           <view class="cargo-addr">{{ s.address }}</view>
           <view v-if="s.items && s.items.length" class="cargo-items">{{ s.items.map(i => `${i.name}×${i.qty}${i.unit}`).join('、') }}</view>
         </view>
@@ -50,7 +50,9 @@
           <text v-else-if="s.picked" class="cargo-picked">✓ 已取</text>
           <view v-else class="cargo-btn pickup" @tap="doPickup(s.orderId)">取货</view>
           <view v-if="!s.abnormal" class="cargo-btn report" @tap="doReport(t, s)">异常上报</view>
-          <view v-if="!s.abnormal && s.payMethod === 2" class="cargo-btn cod" @tap="goCodPay(s)">货到付款</view>
+          <!-- 卡S1：已线上收款的单**不出现**「货到付款」按钮 —— 点进去就是让配送员再收一次现金（重复收款） -->
+          <view v-if="!s.abnormal && s.payMethod === 2 && !s.onlinePaidAt" class="cargo-btn cod" @tap="goCodPay(s)">货到付款</view>
+          <text v-else-if="!s.abnormal && s.payMethod === 2 && s.onlinePaidAt" class="cargo-online">✅ 已线上收款</text>
         </view>
       </view>
       <!-- 底部操作：取货 → 出发 → 交付确认；异常任务可「完成」 -->
@@ -73,7 +75,7 @@
         </view>
         <view v-for="s in deliverStations(t)" :key="s.orderId" class="cargo-item">
           <view class="cargo-main">
-            <view class="cargo-name">{{ s.shopName }}<text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text></view>
+            <view class="cargo-name">{{ s.shopName }}<text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text><text v-if="s.onlinePaidAt" class="cargo-online-tag">已线上收款</text></view>
             <view class="cargo-addr">{{ s.address }}</view>
           </view>
           <text class="cargo-picked">✓ 已交付</text>
@@ -264,6 +266,9 @@ onShow(() => {
 .cargo-abnormal-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #fa5151; color: #fff; font-size: 10px; border-radius: 8px; font-weight: 400; }
 /* 「客户称已付」标记（2026-09-19 卡L）：只是采购方声明，**不是核销**，故用橙色而非绿色 */
 .cargo-claim-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #fff3e6; color: #ff6b00; font-size: 10px; border-radius: 8px; font-weight: 400; }
+/* 「已线上收款」标记（卡S1 2026-09-29）：钱**真的到账了**（有微信支付流水），故用绿色 —— 与"客户称已付"的橙色严格区分 */
+.cargo-online-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #e8f8f0; color: #00b96b; font-size: 10px; border-radius: 8px; font-weight: 600; }
+.cargo-online { padding: 5px 10px; font-size: 12px; color: #00b96b; font-weight: 600; }
 .cargo-item.abnormal { opacity: 0.7; }
 .cargo-btn { padding: 5px 14px; border-radius: 14px; font-size: 12px; }
 .cargo-btn.pickup { background: $color-primary; color: #fff; }
