@@ -33,7 +33,7 @@
     </view>
 
     <!-- 底部协议 -->
-    <view class="agreement">登录即代表同意《用户协议》和《隐私政策》</view>
+    <view class="agreement">登录即代表同意<text class="link" @tap.stop="openDoc('user')">《用户协议》</text>和<text class="link" @tap.stop="openDoc('privacy')">《隐私政策》</text></view>
   </view>
 </template>
 
@@ -45,6 +45,10 @@ import { getLoginCode } from '@/utils/wx-login'
 import { restorePreferredRole } from '@/utils/preferred-role'
 
 const logging = ref(false)
+
+const openDoc = (type) => {
+  uni.navigateTo({ url: `/pages/agreement/index?type=${type}` })
+}
 
 // 登录后按角色跳转对应首页
 const routeToHome = (currentRole) => {
@@ -215,5 +219,9 @@ onShow(() => {
   bottom: 48px;
   font-size: 11px;
   color: $text-placeholder;
+}
+.link {
+  color: $brand;
+  display: inline-block;
 }
 </style>

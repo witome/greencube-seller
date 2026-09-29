@@ -129,7 +129,7 @@
     <view class="card agree" @tap="agreed = !agreed">
       <view class="agree-box">
         <view :class="['cb', { on: agreed }]">{{ agreed ? '✓' : '' }}</view>
-        <text class="agree-text">我已阅读并同意《用户协议》《隐私政策》，承诺所填信息真实有效</text>
+        <view class="agree-text">我已阅读并同意<text class="doc-link" @tap.stop="openDoc('user')">《用户协议》</text><text class="doc-link" @tap.stop="openDoc('privacy')">《隐私政策》</text>，承诺所填信息真实有效</view>
       </view>
     </view>
 
@@ -142,6 +142,10 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { buyerApi, registerApi } from '@/api/modules'
+
+const openDoc = (type) => {
+  uni.navigateTo({ url: `/pages/agreement/index?type=${type}` })
+}
 
 const roles = [
   { key: 'purchaser', name: '餐馆采购', icon: '🏪' },
@@ -256,5 +260,6 @@ const submit = async () => {
 .cb { width: 18px; height: 18px; border: 1px solid #ccc; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; flex-shrink: 0; }
 .cb.on { background: $brand; border-color: $brand; }
 .agree-text { font-size: 12px; color: $text-second; }
+.doc-link { color: $brand; display: inline-block; }
 .disabled { opacity: 0.5; }
 </style>
