@@ -121,7 +121,9 @@
 <script setup>
 import { ref } from 'vue'
 import { onLoad, onShareAppMessage, onHide, onUnload } from '@dcloudio/uni-app'
-import { buyerApi, demandApi } from '@/api/modules'
+import { demandApi } from '@/api/modules'
+import { draft, clearDraft as clearSharedDraft } from '@/utils/ai-draft'
+import { sendUtterance } from '@/utils/ai-order'
 
 const input = ref('')
 const messages = ref([])
@@ -131,7 +133,9 @@ const scrollTo = ref('')
 // ⚠️ 前端**不做合并**——合并只有服务端一处实现（parser/draft.ts），这里只负责把服务端返回的
 // 合并结果整份换上来。前端要是自己再拼一遍，就又会回到「同一张单两个数」的老毛病。
 // ⚠️ 不落缓存：退出小程序再进来就是新的草稿（口径 4，不带历史原话）。
-const draft = ref(null)
+// 卡AN（2026-09-30）：这张草稿**提到共享模块**了 —— 右下角 FAB 按住说的一句话要能并进同一张单，
+// 所以 `utils/ai-draft.js` 里的模块级单例才是唯一一份。这里读写的就是它（不再有页面内的 ref）。
+// 对话流 `messages` 仍然只属于本页（口径：不带历史原话）。
 
 // ── 采购需求登记 + 到货通知授权（2026-09-25）──
 // 「到货通知我」按钮要不要显示，取决于**服务端有没有配到货通知模板**（口径 8：
@@ -146,18 +150,6 @@ onLoad(async () => {
     demandTmplId.value = ''
   }
 })
-
-/** 上报「没认出来的菜」→ 后台「采购需求」；**失败静默**，气泡退回原来的样子 */
-const recordDemand = async (msg, unmatched) => {
-  try {
-    // ⚠️ 只上报**被识别成菜名的那一段**（unmatched 每项就是菜名），
-    //    绝不把客户整句原话塞上去 —— 原话里常带电话/地址，会被后台导出成 CSV 发出去
-    await demandApi.report(unmatched.map((t) => ({ rawText: t })), 1)
-    msg.demandRecorded = true
-  } catch (e) {
-    msg.demandRecorded = false
-  }
-}
 
 /** 点「到货通知我」→ 拉起微信订阅授权 → 把结果报给服务端落额度 */
 const onSubscribeDemand = (msg) => {
@@ -211,13 +203,6 @@ const scrollBottom = () => {
   setTimeout(() => { scrollTo.value = 'chat-bottom' }, 50)
 }
 
-/** 把当前草稿行回传给服务端（只带草稿，不带历史原话） */
-const draftPayload = () => ({
-  draft: (draft.value?.items || []).map((it) => ({ productId: it.productId, qty: it.qty, unit: it.unit, name: it.name })),
-  draftDeliveryDate: draft.value?.deliveryDate || '',
-  draftRemark: draft.value?.remark || '',
-})
-
 const send = async () => {
   const text = input.value.trim()
   if (!text || sending.value) return
@@ -225,36 +210,27 @@ const send = async () => {
   messages.value.push({ role: 'me', text })
   sending.value = true
   scrollBottom()
-  try {
-    const parse = await buyerApi.aiParse(text, draftPayload())
-    // 服务端已经把这句话合并到草稿上了 —— 整份换上来即可（前端不合并）
-    draft.value = parse
-    const aiMsg = {
-      role: 'ai',
-      changes: parse.changes || [],
-      needClarify: parse.needClarify || '',
-      unmatched: parse.unmatched || [],
-      demandRecorded: false,
-      notifySubscribed: false,
-    }
-    messages.value.push(aiMsg)
-    // ── 采购需求登记（2026-09-25）──────────────────────────────
-    // 客户要的菜我们没收录 → 上报给后台整理成采购清单（口径 1①）。
-    // ⚠️ 三条纪律：
-    //   ① **不在 /ai/parse 里写库** —— 那条接口必须保持只读（所有生产只读探针都依赖它），
-    //      所以登记走这里单独调 report 接口；
-    //   ② **失败一律静默** —— 登记不成功也绝不能让客户的正常下单受影响；
-    //   ③ 只有**真的登记成功**才显示「已帮你记下」，不做假装记下。
-    if (!parse.needClarify && (parse.unmatched || []).length) {
-      await recordDemand(aiMsg, parse.unmatched)
-    }
-  } catch (e) {
-    // 错误已由 request.js 统一提示；这里只留一条可见回复，草稿保持不变
-    messages.value.push({ role: 'ai', error: true, changes: [], needClarify: '', unmatched: [] })
-  } finally {
-    sending.value = false
-    scrollBottom()
-  }
+  // 卡AN（2026-09-30）：解析 → 整份草稿换上来 → 未收录的菜登记采购需求，
+  // 这三步全部搬进 `utils/ai-order.js` 的 sendUtterance —— FAB 按住说话走的是**同一份实现**，
+  // 两处行为必须一字不差，否则「在助手页说」和「在外面按住说」会给出不同结果。
+  // 四条纪律（由共享实现保证，此处保留说明便于后人追溯）：
+  //   ① **不在 /ai/parse 里写库** —— 那条接口必须保持只读（所有生产只读探针都依赖它），
+  //      所以登记走单独调 report 接口；
+  //   ② **失败一律静默** —— 登记不成功也绝不能让客户的正常下单受影响；
+  //   ③ 只有**真的登记成功**才显示「已帮你记下」，不做假装记下；
+  //   ④ 前端**不做草稿合并** —— 服务端返回的是合并后的整份草稿。
+  const res = await sendUtterance(text)
+  messages.value.push({
+    role: 'ai',
+    error: !!res.error,
+    changes: res.changes,
+    needClarify: res.needClarify,
+    unmatched: res.unmatched,
+    demandRecorded: !!res.demandRecorded,
+    notifySubscribed: false,
+  })
+  sending.value = false
+  scrollBottom()
 }
 
 // 写进确认页的必须是**合并后的完整草稿**（不是某一句的解析结果）
@@ -266,6 +242,7 @@ const goConfirm = () => {
 }
 
 // 清空重来（口径 3）：只清本地这一张草稿，下一句从空草稿开始
+// 卡AN：清的是**共享草稿**（FAB 角标会跟着一起消失）
 const clearDraft = () => {
   if (!draft.value || !(draft.value.items || []).length) return
   uni.showModal({
@@ -274,7 +251,7 @@ const clearDraft = () => {
     confirmText: '清空',
     success: (r) => {
       if (!r.confirm) return
-      draft.value = null
+      clearSharedDraft()
       messages.value.push({ role: 'sys', text: '已清空草稿，重新说要买什么吧' })
       scrollBottom()
     },

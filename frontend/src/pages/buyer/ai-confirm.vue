@@ -112,6 +112,7 @@ import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { buyerApi, authApi } from '@/api/modules'
 import { dateStr, availableTimeWindows } from '@/utils/time-window'
+import { clearDraft } from '@/utils/ai-draft'
 
 const draft = ref(null)
 const items = ref([])
@@ -221,6 +222,9 @@ const submit = async () => {
       source: 2, // 2=AI 客服代下单（普通自选下单路径不传，后端默认 1）
     })
     uni.removeStorageSync('aiDraft')
+    // 卡AN（2026-09-30）：共享草稿一并清空 —— 否则下单后退回去，右下角 FAB 角标还挂着数字，
+    // 客户会以为草稿还在（这份 storage 与共享草稿是两条线，必须都清）
+    clearDraft()
     uni.redirectTo({ url: `/pages/buyer/order-detail?id=${order.orderId}` })
   } catch (e) {
     // 错误已由 request.js 统一提示
