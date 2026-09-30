@@ -9,6 +9,7 @@ import { AftersaleDto } from './dto/aftersale.dto'
 import { UpdateBuyerProfileDto } from './dto/update-profile.dto'
 import { CancelAccountDto } from './dto/cancel-account.dto'
 import { payStatusOf, hasPayProof, hasWechatPaidRecord } from '../../common/utils/pay-status.util'
+import { AFTERSALE_STATUS, resolveAftersaleSuppliers, AFTERSALE_UNASSIGNED_TEXT } from '../../common/utils/aftersale.util'
 
 @Injectable()
 export class BuyerService {
@@ -594,29 +595,125 @@ export class BuyerService {
   }
 
   // ────────────────────────────────────────
-  // 售后申请（创建工单，决策3）
+  // 售后申请（创建工单，决策3；卡AE 2026-09-30 加三道门槛 + 改落库口径）
   // ────────────────────────────────────────
+  // 卡AE 口径（大辉 2026-09-30 拍板，照做别发挥）：
+  //   ① 只能是「已送达 / 已完成 / 已结算」的订单 —— 发货前的单不存在售后
+  //   ② 签收后 **24 小时内**（起算点 = delivery_task.completed_at = 订单接口的 deliveredAt）
+  //      ⚠️ 页面那句「签收后 24 小时内可申请」原先**只是文案、后端零校验**，本卡把门槛真加上
+  //   ③ **必须选到具体商品**（orderItemId 必须属于本订单）
+  //   ④ 品质问题（type=2）**必须传照片**
+  //   ⑤ 防重复：同一 orderItemId + 同一 type 只允许一张**未闭环**工单（status ∈ {0,1}）
+  //
+  // ⚠️ 落库口径：
+  //   · orderId **从明细反查**（不信前端传的订单号）
+  //   · qtyDiff = 客户填报的「涉及数量」，上限 = 该明细的 qtyReceived（为空时用 qtyAccepted）
+  //     —— 本卡的假定：不新增字段，就用既有的 qtyDiff 承载客户填报数
+  //   · amountDiff = qtyDiff × orderItem.salePrice（成交价快照），**只作参考记录、不参与任何计算**
+  //   · 全程**不改订单、不动钱**（红线 1/2）
+  private static readonly AFTERSALE_WINDOW_MS = 24 * 3600 * 1000
+
+  /// 允许提售后的订单状态（口径 ①）
+  private static readonly AFTERSALE_ALLOWED_ORDER_STATUS = [
+    OrderStatus.DELIVERED, // 60 已送达
+    OrderStatus.COMPLETED, // 70 已完成
+    OrderStatus.SETTLED,   // 90 已结算
+  ]
+
+  /// 未闭环的售后状态（口径 ⑤：这两档算「还在这条线上」，不允许同明细同类型再提一张）
+  private static readonly AFTERSALE_OPEN_STATUS = [
+    AFTERSALE_STATUS.PENDING,    // 0 待处理
+    AFTERSALE_STATUS.PROCESSING, // 1 处理中（本期无写入点，判定仍按口径保留）
+  ]
+
+  /// 交付确认时间（= 订单接口的 deliveredAt）：取本单配送任务的完成时间。
+  /// 任务与订单通过 stationList（JSON 数组）里的 orderId 关联 —— 与 order.service.detail 同一口径、同一查询。
+  private async deliveredAtOf(orderId: bigint): Promise<Date | null> {
+    const task = await this.prisma.deliveryTask.findFirst({
+      where: {
+        completedAt: { not: null },
+        stationList: { array_contains: { orderId: Number(orderId) } },
+      },
+      orderBy: { completedAt: 'desc' },
+      select: { completedAt: true },
+    })
+    return task?.completedAt ?? null
+  }
+
   async submitAftersale(userId: bigint, dto: AftersaleDto) {
     const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
     if (!purchaser) throw new BizException(ErrorCode.NOT_FOUND, '未找到采购方档案')
 
-    // 校验订单属于该采购方
-    const order = await this.prisma.order.findUnique({ where: { id: BigInt(dto.orderId) } })
-    if (!order || order.purchaserId !== purchaser.id) {
-      throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+    // ① 商品必选：orderItemId 由 DTO 强制（缺了直接 1001），这里再校验它**属于本采购方的某张订单**
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: BigInt(dto.orderItemId) },
+      include: { order: true },
+    })
+    if (!item || !item.order || item.order.purchaserId !== purchaser.id) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '请选择订单中的具体商品')
+    }
+    // orderId **只用来交叉校验**（传了就必须和明细所属订单一致），
+    // 业务上真正的订单号一律**从明细反查** —— 绝不信前端传的订单号（卡AE 落库口径）
+    if (dto.orderId !== undefined && dto.orderId !== null && BigInt(dto.orderId) !== item.orderId) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该商品不属于该订单，请重新选择')
+    }
+    const order = item.order
+
+    // ② 订单状态：只有送达之后的单才谈得上售后
+    if (!BuyerService.AFTERSALE_ALLOWED_ORDER_STATUS.includes(order.status as any)) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '订单还没送达，送达后才能申请售后')
     }
 
+    // ③ 签收后 24 小时：起算点 = 交付确认时间；取不到（没交付过）也拒
+    const deliveredAt = await this.deliveredAtOf(order.id)
+    if (!deliveredAt) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '订单还没有交付确认时间，暂不能申请售后')
+    }
+    if (Date.now() - deliveredAt.getTime() > BuyerService.AFTERSALE_WINDOW_MS) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '已超过签收后 24 小时，请联系运营处理')
+    }
+
+    // ④ 品质问题必须传照片（前端也拦一道，后端必须真校验）
     const attachments = dto.attachments ?? []
+    if (dto.type === 2 && attachments.length === 0) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '品质问题必须上传照片')
+    }
+
+    // ⑤ 涉及数量：客户填报数，上限 = 收货数量（为空时用验收数量）
+    const cap = item.qtyReceived != null ? Number(item.qtyReceived) : item.qtyAccepted != null ? Number(item.qtyAccepted) : 0
+    const qtyDiff = Number(dto.qtyDiff)
+    if (!Number.isFinite(qtyDiff) || qtyDiff <= 0) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '请填写涉及数量')
+    }
+    if (qtyDiff > cap) {
+      throw new BizException(ErrorCode.PARAM_ERROR, `涉及数量不能超过本次收货数量（最多 ${cap}）`)
+    }
+
+    // ⑥ 防重复：同明细 + 同类型 只允许一张未闭环工单（不同类型可以各提一张）
+    const dup = await this.prisma.aftersaleOrder.findFirst({
+      where: {
+        orderItemId: item.id,
+        type: dto.type,
+        status: { in: [...BuyerService.AFTERSALE_OPEN_STATUS] },
+      },
+      select: { id: true },
+    })
+    if (dup) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该商品已提交过同类售后，运营正在处理中')
+    }
+
+    // amountDiff 只作参考记录（qtyDiff × 成交价快照），不参与任何计算
+    const amountDiff = Math.round(qtyDiff * Number(item.salePrice) * 100) / 100
     const aftersale = await this.prisma.aftersaleOrder.create({
       data: {
-        orderId: BigInt(dto.orderId),
-        orderItemId: dto.orderItemId ? BigInt(dto.orderItemId) : BigInt(0),
+        orderId: order.id,
+        orderItemId: item.id,
         type: dto.type,
         reason: dto.reason,
-        qtyDiff: dto.qtyDiff ?? 0,
-        amountDiff: dto.amountDiff ?? 0,
-        status: 0,
-        // 决策⑦（2026-09-19）：售后拍照留证。存 URL 数组；不传即 NULL（可空，兼容拒绝收自动生成的工单）
+        qtyDiff,
+        amountDiff,
+        status: AFTERSALE_STATUS.PENDING,
+        // 决策⑦（2026-09-19）：售后拍照留证。存 URL 数组；不传即 NULL
         attachments: attachments.length ? attachments : undefined,
       },
     })
@@ -630,11 +727,12 @@ export class BuyerService {
       entityId: aftersale.id,
       before: null,
       after: {
-        orderId: Number(dto.orderId),
+        orderId: Number(order.id),
+        orderItemId: Number(item.id),
         type: dto.type,
         reason: dto.reason ?? null,
-        qtyDiff: dto.qtyDiff ?? 0,
-        amountDiff: dto.amountDiff ?? 0,
+        qtyDiff,
+        amountDiff,
         attachmentCount: attachments.length,
         attachments,
       },
@@ -740,27 +838,38 @@ export class BuyerService {
       for (const it of o.items) itemMap.set(it.id, it.product?.name ?? '')
     }
 
+    // 卡AE：供应商归属（不落字段，查询时推导）—— 走全仓唯一实现，与后台列表/供应商端同一份口径
+    const supplierMap = await resolveAftersaleSuppliers(this.prisma, rows.map((r) => r.orderItemId))
+
     const statusText: Record<number, string> = { 0: '待处理', 1: '处理中', 2: '已解决', 3: '已关闭' }
-    return rows.map((r) => ({
-      aftersaleId: Number(r.id),
-      orderId: Number(r.orderId),
-      orderItemId: Number(r.orderItemId),
-      type: r.type,
-      reason: r.reason,
-      // 售后照片（2026-09-19 卡I）：申请时上传的 URL 数组，供采购方在「我的售后」回看。
-      // 与 myAppeals() 同口径：null / 非数组一律归一成 []，前端据此判断是否渲染照片区。
-      attachments: Array.isArray(r.attachments) ? r.attachments : [],
-      qtyDiff: Number(r.qtyDiff),
-      amountDiff: Number(r.amountDiff),
-      status: r.status,
-      statusText: statusText[r.status] ?? '未知',
-      compensateAmount: r.compensateAmount != null ? Number(r.compensateAmount) : null,
-      compensateMethod: r.compensateMethod ?? null,
-      handleRemark: r.handleRemark,
-      handledAt: r.handledAt ? r.handledAt.toISOString() : null,
-      createdAt: r.createdAt.toISOString(),
-      itemName: r.orderItemId ? itemMap.get(r.orderItemId) ?? null : null,
-    }))
+    return rows.map((r) => {
+      const supplier = supplierMap.get(String(r.orderItemId))
+      return {
+        aftersaleId: Number(r.id),
+        orderId: Number(r.orderId),
+        orderItemId: Number(r.orderItemId),
+        type: r.type,
+        reason: r.reason,
+        // 售后照片（2026-09-19 卡I）：申请时上传的 URL 数组，供采购方在「我的售后」回看。
+        // 与 myAppeals() 同口径：null / 非数组一律归一成 []，前端据此判断是否渲染照片区。
+        attachments: Array.isArray(r.attachments) ? r.attachments : [],
+        qtyDiff: Number(r.qtyDiff),
+        amountDiff: Number(r.amountDiff),
+        status: r.status,
+        statusText: statusText[r.status] ?? '未知',
+        compensateAmount: r.compensateAmount != null ? Number(r.compensateAmount) : null,
+        compensateMethod: r.compensateMethod ?? null,
+        handleRemark: r.handleRemark,
+        handledAt: r.handledAt ? r.handledAt.toISOString() : null,
+        createdAt: r.createdAt.toISOString(),
+        itemName: r.orderItemId ? itemMap.get(r.orderItemId) ?? null : null,
+        // 卡AE：归属供应商（未拆单/无明细 → null，页面显示原型里的「待分派」）
+        supplierId: supplier?.supplierId ?? null,
+        supplierName: supplier?.supplierName ?? null,
+        supplierAssigned: supplier?.assigned ?? false,
+        supplierText: supplier?.supplierName ?? AFTERSALE_UNASSIGNED_TEXT,
+      }
+    })
   }
 
   private orderStatusText(status: number): string {

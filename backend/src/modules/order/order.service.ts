@@ -682,7 +682,15 @@ export class OrderService {
   }
 
   // ────────────────────────────────────────
-  // 逐项接受/拒收（决策 3：拒收自动生成售后工单）
+  // 逐项接受/拒收
+  // ⚠️ 卡AE（2026-09-30）口径变更：**拒收不再自动建售后工单**
+  //   —— 原「决策 3」在本卡的收货事务里自动生成 type=1「少货」工单，已按大辉拍板移除。
+  //      理由：售后是**客户事后另起的一条线**（客户提申请 → 运营线下谈 → 运营点处理完成），
+  //      不该由确认收货代替客户提申请，也不该由系统认定「客户要索赔」。
+  //   —— 拒收本身**照旧**：qtyReceived / rejectReason 必须继续写入（对账基数不变）。
+  //      ⚠️ 因此 `aftersale_order` 在确认收货后应**零新增行**（验收判据 7）。
+  //   —— 返回值里的 `aftersaleIds` **恒为空数组**：保留字段只为兼容还在用户手机上的
+  //      老版本小程序包与既有审计结构（老包会读它，删字段会让老包报错）。
   // ────────────────────────────────────────
   async receive(userId: bigint, orderId: number, dto: ReceiveOrderDto) {
     const purchaser = await this.prisma.purchaser.findUnique({ where: { userId } })
@@ -696,10 +704,10 @@ export class OrderService {
       throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅已送达订单可确认收货')
     }
 
-    const aftersaleIds: number[] = []
+    const aftersaleIds: number[] = [] // 卡AE 起恒为空（见方法头注释）
 
-    // 明细回填 + 售后工单 + 主单推进 + 审计 同一事务（2026-09-15 涉钱收口：
-    // 避免"部分明细已回填/售后单已建、主单没推进"的中间态）
+    // 明细回填 + 主单推进 + 审计 同一事务（2026-09-15 涉钱收口：
+    // 避免"部分明细已回填、主单没推进"的中间态）
     await this.prisma.$transaction(async (tx) => {
       for (const it of dto.items) {
         const item = await tx.orderItem.findFirst({
@@ -707,6 +715,7 @@ export class OrderService {
         })
         if (!item) continue
 
+        // 拒收照旧写库（qtyReceived / rejectReason）—— 只是不再据此建售后工单
         await tx.orderItem.update({
           where: { id: item.id },
           data: {
@@ -714,23 +723,6 @@ export class OrderService {
             rejectReason: it.rejectReason,
           },
         })
-
-        // 决策 3：拒收差额（验收 − 接受）> 0 时生成售后工单
-        const rejectQty = it.rejectQty ?? 0
-        if (rejectQty > 0) {
-          const aftersale = await tx.aftersaleOrder.create({
-            data: {
-              orderId: order.id,
-              orderItemId: item.id,
-              type: 1, // 少货（拒收默认归为少货/品质，可按 rejectReason 细分）
-              reason: it.rejectReason,
-              qtyDiff: rejectQty,
-              amountDiff: rejectQty * Number(item.salePrice),
-              status: 0,
-            },
-          })
-          aftersaleIds.push(Number(aftersale.id))
-        }
       }
 
       await tx.order.update({
@@ -738,7 +730,7 @@ export class OrderService {
         data: { status: OrderStatus.COMPLETED },
       })
 
-      // 铁律 3：确认收货属状态变更（含拒收差额定责 + 售后工单生成），写审计（2026-09-11 补，闭合 S1）
+      // 铁律 3：确认收货属状态变更（涉对账基数：qtyReceived / rejectReason），写审计
       await this.audit.log(
         {
           operatorId: userId,

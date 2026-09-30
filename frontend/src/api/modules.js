@@ -127,6 +127,8 @@ export const supplierApi = {
   // 店铺资料自助（2026-09-11 深夜卡：只改自己，资质/状态不可改）
   getProfile: () => get('/supplier/profile'),
   updateProfile: (data) => put('/supplier/profile', data),
+  // 售后台账（卡AE 2026-09-30）—— **只读**：只返回归属本档口的工单 + pendingCount（首页红点）
+  getAftersales: () => get('/supplier/aftersale'),
 }
 
 /* ── 配送员端 ── */

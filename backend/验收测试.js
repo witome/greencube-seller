@@ -611,7 +611,9 @@ async function main() {
   const receive = await call('POST', `/order/${orderId}/receive`, {
     items: d2.data.items.map(i => ({ orderItemId: i.orderItemId, qtyReceived: 9, rejectQty: 0.5, rejectReason: '品质问题' })),
   }, bt2)
-  check('确认收货(订单→70)+生成售后工单', receive.code === 0 && receive.data.aftersaleIds?.length > 0)
+  // 卡AE（2026-09-30）口径变更：拒收**不再自动建售后工单**（售后改由客户事后自己提申请）。
+  // 本断言相应从「生成售后工单」改为「零新增」——拒收本身（qtyReceived/rejectReason）照旧写库。
+  check('确认收货(订单→70)+不再自动建售后工单', receive.code === 0 && (receive.data.aftersaleIds || []).length === 0)
   const gen = await call('POST', '/admin/finance/generate', { period: '2026-09' }, at)
   check('生成结算单', gen.code === 0 && gen.data.generated > 0)
   const settle = await call('GET', '/supplier-finance/settlement/2026-09', null, st)
@@ -685,7 +687,7 @@ async function main() {
   const auditH = await call('GET', '/audit?entity=order&pageSize=100', null, at)
   check('ORDER_PAY 审计已随事务落库', (auditH.data?.list || []).some(l => l.action === 'ORDER_PAY' && l.entityId === oH.data.orderId))
 
-  // receive：oH 模拟回调走完 备货→派单→送达 后确认收货（含拒收生成售后单，同事务）
+  // receive：oH 模拟回调走完 备货→派单→送达 后确认收货（卡AE 起：拒收**不再**建售后单）
   await call('POST', '/payment/mock/pay', { payNo: payH.data.payNo }, bt2)
   check('微信支付回调后订单→30 备货中', (await call('GET', `/order/${oH.data.orderId}`, null, bt2)).data.status === 30)
   await call('POST', '/supplier-fulfill/handover', { orderId: oH.data.orderId }, st)
@@ -695,7 +697,7 @@ async function main() {
   await call('POST', `/courier/task/${oHTask.taskId}/deliver`, { photos: ['t.jpg'], signature: 's.png' }, ct)
   const oHItem = (await call('GET', `/order/${oH.data.orderId}`, null, bt2)).data.items[0]
   const recH = await call('POST', `/order/${oH.data.orderId}/receive`, { items: [{ orderItemId: oHItem.orderItemId, qtyReceived: oHItem.qtyAccepted ?? oHItem.qtyOrdered, rejectQty: 1, rejectReason: '事务化验收' }] }, bt2)
-  check('确认收货 70 + 售后单同事务生成', recH.code === 0 && recH.data.status === 70 && recH.data.aftersaleIds.length === 1)
+  check('确认收货 70 + 售后单不再自动生成', recH.code === 0 && recH.data.status === 70 && recH.data.aftersaleIds.length === 0)
 
   // report：订单级异常上报（审计+订单标记+异常单同事务）。
   // 配送员先离线阻断 handover 即时派单 → oG 停在 40，订单级上报直接生效（40 在可上报状态集内），

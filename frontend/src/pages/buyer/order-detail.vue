@@ -73,7 +73,15 @@
           <text v-if="it.qtyAccepted !== null"> · 交 {{ it.qtyAccepted }}</text>
           <text v-if="it.qtyReceived !== null"> · 收 {{ it.qtyReceived }}</text>
         </view>
-        <view class="oi-price">¥{{ (it.qtyOrdered * it.salePrice).toFixed(2) }}</view>
+        <view class="oi-price-row">
+          <text class="oi-price">¥{{ (it.qtyOrdered * it.salePrice).toFixed(2) }}</text>
+          <!-- 卡AE（2026-09-30）：商品行「申请售后」入口。
+               仅订单状态 ∈ 已送达(60) / 已完成(70) / 已结算(90) 时**显示**；其它状态**不显示**
+               （本卡主张不显示、不做灰显）。⚠️ 这里只管显隐，真正的三道门槛在后端
+               buyer.service.submitAftersale（订单状态 / 签收后 24 小时 / 商品必选 / 品质必传照片）。 -->
+          <view v-if="canAftersale" class="as-entry" @tap="applyAftersale(it)">申请售后</view>
+        </view>
+        <view v-if="canAftersale" class="oi-aftersale-hint">签收后 24 小时内在商品行可发起售后</view>
         <view v-if="canEdit" class="oi-remark">
           <input class="remark-input" v-model="it.remark" placeholder="单品备注（选填，如：切块、要嫩）" @blur="scheduleSave()" />
         </view>
@@ -207,6 +215,13 @@ const fmtTime = (iso) => {
 const editTotal = computed(() => (order.value?.items || []).reduce((s, i) => s + i.qtyOrdered * i.salePrice, 0).toFixed(2))
 // 可编辑（配送日期/时间段/商品明细）：仅待确认(10)且未支付(0)
 const canEdit = computed(() => order.value?.status === 10 && order.value?.payMethod === 0)
+
+// 卡AE（2026-09-30）：售后入口的显示条件 —— 已送达(60) / 已完成(70) / 已结算(90)。
+// ⚠️ 与后端 buyer.service.submitAftersale 的 AFTERSALE_ALLOWED_ORDER_STATUS 是同一组状态；
+//    前端只控制显隐，后端会再真校验（含「签收后 24 小时」这道，前端判不了也不该判）。
+const canAftersale = computed(() => [60, 70, 90].includes(order.value?.status))
+// 带订单号进申请页 → 申请页会自动选中该订单并载入商品明细
+const applyAftersale = () => uni.navigateTo({ url: `/pages/buyer/aftersale?orderId=${orderId.value}` })
 
 // ── 货到付款 · 送达后付款闭环（2026-09-19 卡L；卡S2 2026-09-29 收口）────────────
 // 显示条件：货到付款(2) 且已送达(60/70)。
@@ -463,6 +478,11 @@ onLoad(async (opts) => {
 .st-num { font-size: 15px; font-weight: 600; min-width: 48px; width: 48px; height: 30px; text-align: center; background: #f7f8fa; border-radius: 6px; }
 .st-unit { font-size: 12px; color: $text-second; }
 .oi-price { font-size: 13px; color: #fa5151; margin-top: 3px; }
+/* 卡AE：商品行底部（价格 + 申请售后入口），照原型 A1 的 oi-bottom 排布 */
+.oi-price-row { display: flex; align-items: center; justify-content: space-between; margin-top: 3px; }
+.oi-price-row .oi-price { margin-top: 0; }
+.as-entry { background: #fff; border: 1px solid $color-primary; color: $color-primary; font-size: 12px; font-weight: 700; border-radius: 12px; padding: 3px 12px; }
+.oi-aftersale-hint { font-size: 11px; color: $text-placeholder; margin-top: 5px; }
 .oi-remark { margin-top: 6px; }
 .remark-input { font-size: 12px; background: #f7f8fa; border-radius: 6px; padding: 6px 8px; }
 .oi-remark-text { font-size: 12px; color: #fa8c16; margin-top: 4px; }

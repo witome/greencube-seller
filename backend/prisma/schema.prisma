@@ -497,9 +497,14 @@ model AftersaleOrder {
   /// 1 少货 / 2 品质问题 / 3 错货 / 4 其他
   type         Int      @db.TinyInt
   reason       String?  @db.VarChar(255)
-  /// 差异数量 = qty_accepted − qty_received
+  /// 差异数量：**客户在申请页填报的「涉及数量」**（卡AE 2026-09-30 起；上限 = 该明细 qty_received，为空时用 qty_accepted）
+  /// ⚠️ 历史口径 = qty_accepted − qty_received（「拒收自动建单」时代）；该自动建单已取消，新行一律为客户填报数
   qtyDiff      Decimal  @map("qty_diff") @db.Decimal(10, 2)
-  /// 差异金额（已从结算/账单中剔除）
+  /// 差异金额：**仅供参考的记录**，= qtyDiff × order_item.sale_price（成交价快照）
+  /// ⚠️ 卡AE（2026-09-30）改注释对齐实现：**并没有从结算 / 账单里剔除任何钱**。
+  ///    结算按 `qtyAccepted × supplyPrice` 算、压根不看售后；客户账单页是占位实现。
+  ///    售后全程**不动钱**（不调微信退款、不改 Settlement、不改账单、不新增扣款/抵扣）。
+  ///    ⇒ 别照旧注释去接「扣款」逻辑 —— 要接扣款必须单开卡，并同步改这里的注释。
   amountDiff   Decimal  @map("amount_diff") @db.Decimal(12, 2)
   /// 待处理/处理中/已解决/已关闭
   status       Int      @default(0) @db.TinyInt

@@ -5,6 +5,16 @@
       <view class="addr">今日备货 · 有货直接备，缺货异常申报</view>
     </view>
 
+    <!-- 卡AE（2026-09-30）新增：售后待办横幅（0 时不显示） -->
+    <view v-if="aftersalePending > 0" class="todo-banner" @tap="goAftersale">
+      <text class="ic">🔔</text>
+      <view class="tb-main">
+        <text class="t">有 {{ aftersalePending }} 条售后待处理</text>
+        <text class="s">客户提的少货 / 品质问题，请配合运营核实</text>
+      </view>
+      <text class="go">查看 ›</text>
+    </view>
+
     <!-- 待办统计 -->
     <view class="stat-row">
       <view class="stat-chip" @tap="go('/subpkg-supplier/pages/stock-list')">
@@ -18,6 +28,11 @@
       <view class="stat-chip" @tap="go('/subpkg-supplier/pages/finance')">
         <view class="num green">{{ pendingSettle }}</view>
         <view class="lbl">待对账</view>
+      </view>
+      <!-- 卡AE 新增第 4 格：售后待处理（点击进售后列表） -->
+      <view class="stat-chip" @tap="goAftersale">
+        <view class="num red">{{ aftersalePending }}</view>
+        <view class="lbl">售后待处理</view>
       </view>
     </view>
 
@@ -36,6 +51,12 @@
         </view>
         <view class="gbtn" @tap="go('/subpkg-supplier/pages/finance')">
           <view class="gi" style="background:#F3EDFF;">💰</view><view class="gt">历史与应付</view>
+        </view>
+        <!-- 卡AE 新增第 5 格：售后（只读；红点＝待处理条数，0 时不显示） -->
+        <view class="gbtn" @tap="goAftersale">
+          <view class="gi" style="background:#FFECEC;border:1px dashed #FA5151;">🛠</view>
+          <view class="gt" style="color:#D64550;font-weight:700;">售后</view>
+          <view v-if="aftersalePending > 0" class="bd">{{ aftersalePending }}</view>
         </view>
       </view>
     </view>
@@ -86,6 +107,10 @@ const pendingOrders = ref([])
 const myGoodsCount = ref(0)
 const pendingSettle = ref(0)
 const stallName = ref('')
+// 卡AE（2026-09-30）：售后待处理条数。来源 = GET /supplier/aftersale 返回的 pendingCount
+// （**复用同一个接口**，不另开端点 —— 一个档口的售后量级很小，首页多取一次整列表可接受；
+//   这也是本卡「待办数怎么给」的落地选择，已在交接页写清）
+const aftersalePending = ref(0)
 
 const supplierTabs = [
   { path: '/subpkg-supplier/pages/home', icon: '📋', label: '今日待办' },
@@ -96,6 +121,8 @@ const supplierTabs = [
 ]
 
 const go = (url) => uni.navigateTo({ url })
+// 卡AE：售后页是二级页（不在底部导航里），从首页/统计格/快捷格统一从这里进
+const goAftersale = () => uni.navigateTo({ url: '/subpkg-supplier/pages/aftersale' })
 
 const isShortage = (it) => it.qtyDeclared !== null && Number(it.qtyDeclared) < Number(it.qtyOrdered)
 const goDeclare = (orderId) => uni.navigateTo({ url: `/subpkg-supplier/pages/stock-declare?orderId=${orderId}` })
@@ -116,6 +143,12 @@ onShow(async () => {
   pendingOrders.value = await supplierApi.getStockList()
   const goods = await supplierApi.getMyGoods({})
   myGoodsCount.value = goods.total || goods.list?.length || 0
+
+  // 卡AE：售后待处理数（首页红点）。失败不影响首页其它内容 —— 静默保持 0，不弹错
+  try {
+    const as = await supplierApi.getAftersales()
+    aftersalePending.value = as?.pendingCount || 0
+  } catch (e) { /* ignore */ }
 })
 </script>
 
@@ -127,8 +160,18 @@ onShow(async () => {
 .stat-row { display: flex; gap: 10px; margin-bottom: 10px; }
 .stat-chip { flex: 1; background: #fff; border-radius: 8px; padding: 12px; text-align: center; }
 .num { font-size: 20px; font-weight: 700; }
-.num.orange { color: #ff8f1f; } .num.blue { color: #3b7cff; } .num.green { color: #00b96b; }
+.num.orange { color: #ff8f1f; } .num.blue { color: #3b7cff; } .num.green { color: #00b96b; } .num.red { color: #fa5151; }
 .lbl { font-size: 12px; color: $text-second; margin-top: 2px; }
+/* 卡AE：快捷格右下角红点数字（0 时不渲染） */
+.gbtn .bd { position: absolute; top: -4px; right: -2px; background: #fa5151; color: #fff; font-size: 10px; border-radius: 8px; padding: 0 5px; line-height: 14px; font-weight: 700; }
+.gbtn { position: relative; }
+/* 卡AE：售后待办横幅（照原型 B1 的 todo-banner） */
+.todo-banner { display: flex; align-items: center; gap: 8px; background: #fff1f1; border: 1px dashed #fa5151; border-radius: 10px; padding: 9px 10px; margin-bottom: 10px; }
+.todo-banner .ic { font-size: 18px; }
+.todo-banner .tb-main { flex: 1; }
+.todo-banner .t { display: block; font-size: 13px; font-weight: 700; color: #d64550; }
+.todo-banner .s { display: block; font-size: 11px; color: #b25b5b; margin-top: 2px; }
+.todo-banner .go { font-size: 12px; color: #d64550; font-weight: 700; }
 .stock-card { background: #fff; border-radius: 8px; padding: 12px; margin: 0 12px 10px; }
 .sc-head { display: flex; justify-content: space-between; }
 .sc-title { font-weight: 700; color: $text-title; }

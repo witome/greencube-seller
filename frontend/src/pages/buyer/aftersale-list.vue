@@ -1,15 +1,15 @@
 <template>
   <view class="page">
-    <!-- 状态筛选 -->
+    <!-- 状态筛选（三档：待处理 / 已解决 / 已关闭） -->
     <scroll-view scroll-x class="chips-row">
       <view v-for="t in tabs" :key="t.value" :class="['chip', { on: filter === t.value }]" @tap="filter = t.value">{{ t.label }}</view>
     </scroll-view>
 
-    <!-- 售后工单 -->
-    <view v-for="a in shown" :key="a.aftersaleId" class="as-card">
+    <!-- 售后工单：点卡片进详情页（原型 A3-b） -->
+    <view v-for="a in shown" :key="a.aftersaleId" class="as-card" @tap="goDetail(a)">
       <view class="as-head">
         <text class="as-no">售后单 #{{ a.aftersaleId }} · 订单 #{{ a.orderId }}</text>
-        <text :class="['as-status', 'st-' + a.status]">{{ a.statusText }}</text>
+        <text :class="['as-status', 'st-' + tierOf(a.status)]">{{ tierText(a.status) }}</text>
       </view>
 
       <view class="as-line">
@@ -20,11 +20,10 @@
 
       <!-- 现场照片（2026-09-19 卡I）：有照片才渲染，没有照片的行不出现空框；点开看大图 -->
       <view v-if="(a.attachments || []).length" class="photo-grid">
-        <view v-for="(p, i) in a.attachments" :key="i" class="photo-item" @tap="viewPhotos(a.attachments, p)">
+        <view v-for="(p, i) in a.attachments" :key="i" class="photo-item" @tap.stop="viewPhotos(a.attachments, p)">
           <image :src="fullUrl(p)" mode="aspectFill" class="photo-img" />
         </view>
       </view>
-      <view v-if="(a.attachments || []).length" class="photo-tip">已上传 {{ a.attachments.length }} 张，点图看大图</view>
 
       <view class="as-meta">
         <text v-if="a.qtyDiff" class="as-meta-i">数量差 {{ a.qtyDiff }}</text>
@@ -32,15 +31,22 @@
         <text class="as-meta-i">提交 {{ fmtTime(a.createdAt) }}</text>
       </view>
 
-      <!-- 处理结果 -->
-      <view v-if="a.status === 2" class="as-result">
-        🛡 已解决<text v-if="a.compensateAmount !== null && a.compensateAmount !== undefined"> · 补偿 ¥{{ Number(a.compensateAmount).toFixed(2) }}</text><text v-if="a.compensateMethod">{{ ' · ' + methodText(a.compensateMethod) }}</text>
-      </view>
-      <view v-else-if="a.status === 3" class="as-result closed">已关闭</view>
-      <view v-else class="as-pending">⏳ 运营将在 24 小时内响应</view>
+      <!-- 卡AE 新增：归属供应商（未拆单/无明细 → 待分派） -->
+      <view class="as-sup">供应商：<text class="b">{{ supplierText(a) }}</text></view>
 
-      <view v-if="a.handleRemark" class="as-remark">处理说明：{{ a.handleRemark }}</view>
-      <view v-if="a.handledAt" class="as-handled">处理时间 {{ fmtTime(a.handledAt) }}</view>
+      <!-- 处理结果：三档文案 + 处理说明（口径 6i / 原型 A3-a） -->
+      <view v-if="tierOf(a.status) === 2" class="as-result">
+        🛡 已解决<text v-if="a.compensateAmount !== null && a.compensateAmount !== undefined"> · 补偿 ¥{{ Number(a.compensateAmount).toFixed(2) }}（{{ methodText(a.compensateMethod) }}）</text>
+        <text v-if="a.handleRemark" class="as-result-remark">处理说明：{{ a.handleRemark }}</text>
+        <text class="as-result-note">补偿为线下给出，系统仅记录，不会自动退款</text>
+      </view>
+      <view v-else-if="tierOf(a.status) === 3" class="as-result closed">
+        已关闭，有疑问请联系运营
+        <text v-if="a.handleRemark" class="as-result-remark">处理说明：{{ a.handleRemark }}</text>
+      </view>
+      <view v-else class="as-pending">⏳ 已提交，运营会联系你</view>
+
+      <view v-if="a.handledAt && tierOf(a.status) === 3" class="as-handled">处理时间 {{ fmtTime(a.handledAt) }}</view>
     </view>
 
     <view v-if="!shown.length && !loading" class="empty">{{ filter === 'ing' ? '暂无售后中的工单' : '暂无售后记录' }}</view>
@@ -83,22 +89,32 @@ const tabs = [
 
 const TYPE_TEXT = { 1: '少货', 2: '品质问题', 3: '错货', 4: '其他' }
 const METHOD_TEXT = { 1: '退款', 2: '补货', 3: '下次账单抵扣' }
+// 补偿方式为空 = 仅致歉（卡AE 口径：不新增 compensate_method=4，空即为仅致歉）
+const METHOD_EMPTY = '仅致歉'
+
+// 卡AE 口径 6i：客户侧**只显示三档**（待处理 / 已解决 / 已关闭）。
+// status=1「处理中」本期不启用（后端无写入点）—— 万一历史库里已有 1，
+// 归到「待处理」档展示（它同样是「还在这条线上、等运营」），不额外造第四档文案。
+const tierOf = (s) => (s === 2 ? 2 : s === 3 ? 3 : 0)
+const tierText = (s) => ({ 0: '待处理', 2: '已解决', 3: '已关闭' }[tierOf(s)])
 
 const list = ref([])
 const filter = ref('all')
 const loading = ref(false)
 
 const typeText = (t) => TYPE_TEXT[t] || '其他'
-const methodText = (m) => METHOD_TEXT[m] || ''
+const methodText = (m) => (m ? METHOD_TEXT[m] || '' : METHOD_EMPTY)
+// 供应商归属（后端经 order_item.supplier_id 反查；归不到 → 待分派）
+const supplierText = (a) => a.supplierText || a.supplierName || '待分派'
 
 // 点缩略图看大图：预览逻辑复用 utils/photo-upload 的 previewPhotos
 // （与上传侧同一套相对路径→绝对地址口径，页面里不重复拼 host）
 const viewPhotos = (list, current) => previewPhotos(list, current)
 
 const shown = computed(() => {
-  if (filter.value === 'ing') return list.value.filter((a) => a.status === 0 || a.status === 1)
-  if (filter.value === 'done') return list.value.filter((a) => a.status === 2)
-  if (filter.value === 'closed') return list.value.filter((a) => a.status === 3)
+  if (filter.value === 'ing') return list.value.filter((a) => tierOf(a.status) === 0)
+  if (filter.value === 'done') return list.value.filter((a) => tierOf(a.status) === 2)
+  if (filter.value === 'closed') return list.value.filter((a) => tierOf(a.status) === 3)
   return list.value
 })
 
@@ -120,6 +136,8 @@ const load = async () => {
 }
 
 const goApply = () => uni.navigateTo({ url: '/pages/buyer/aftersale' })
+// 详情页复用同一个列表接口（不新增后端接口），只带 id 过去
+const goDetail = (a) => uni.navigateTo({ url: `/pages/buyer/aftersale-detail?id=${a.aftersaleId}` })
 
 onLoad((opts) => {
   if (opts && opts.filter) filter.value = opts.filter
@@ -142,7 +160,6 @@ onShow(async () => {
 .as-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: $text-second; }
 .as-status { font-size: 12px; font-weight: 600; }
 .st-0 { color: #ff8f1f; }
-.st-1 { color: #1989fa; }
 .st-2 { color: #00b96b; }
 .st-3 { color: $text-placeholder; }
 .as-line { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
@@ -153,13 +170,16 @@ onShow(async () => {
 .photo-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .photo-item { width: 72px; height: 72px; }
 .photo-img { width: 72px; height: 72px; border-radius: 8px; background: $bg-soft; }
-.photo-tip { margin-top: 6px; font-size: 11px; color: $text-second; }
 .as-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .as-meta-i { font-size: 11px; color: $text-second; }
-.as-result { margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: #eafaf1; color: #00b96b; font-size: 12px; }
+/* 卡AE 新增：供应商归属（照原型 A3-a 的 as-sup：蓝底一行） */
+.as-sup { font-size: 12px; color: #2a6bd8; background: #f2f7ff; border-radius: 7px; padding: 6px 8px; margin-top: 8px; }
+.as-sup .b { color: $text-title; font-weight: 700; }
+.as-result { margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: #eafaf1; color: #00b96b; font-size: 12px; line-height: 1.6; }
 .as-result.closed { background: #f7f8fa; color: $text-second; }
+.as-result-remark { display: block; margin-top: 4px; color: $text-body; }
+.as-result-note { display: block; margin-top: 4px; color: $text-second; font-size: 11px; }
 .as-pending { margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: #fff8ec; color: #ff8f1f; font-size: 12px; }
-.as-remark { font-size: 12px; color: $text-second; margin-top: 6px; }
 .as-handled { font-size: 11px; color: $text-placeholder; margin-top: 4px; }
 
 .empty { text-align: center; color: $text-placeholder; padding: 40px 0; font-size: 13px; }

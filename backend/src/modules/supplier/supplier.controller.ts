@@ -31,4 +31,12 @@ export class SupplierController {
   async updateMyProfile(@CurrentUser('userId') userId: bigint, @Body() dto: UpdateSupplierProfileDto) {
     return this.service.updateSelfProfile(userId, dto)
   }
+
+  /// 售后台账（卡AE 2026-09-30）—— **只读**：只看归属本档口的工单 + 待处理条数（首页红点）
+  /// 只按 token 的 userId 取自己的 supplier 档案，代码里没有任何 supplierId 入参，杜绝越权读别家
+  @Get('aftersale')
+  @Roles(Role.SUPPLIER)
+  async myAftersales(@CurrentUser('userId') userId: bigint) {
+    return this.service.myAftersales(userId)
+  }
 }
