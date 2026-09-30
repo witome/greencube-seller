@@ -12,7 +12,10 @@ import { WechatPayClient } from './wechat-pay.client'
  * 两条 prepay 场景（服务端取金额，绝不收前端金额）：
  *  A. 待确认订单付款：status=10 且 payMethod=0，金额 = amountOrdered + deliveryFee（沿用 order.service.pay 口径②=A）
  *  B. COD 送达后「微信直接支付」：payMethod=2 且 status ∈ {60,70}，金额 = amountFinal ?? (amountOrdered + deliveryFee)
- *     —— 该场景订单已交付，回调只落「流水已支付」，**不推进订单**（核销口径仍以 payProof 为准，卡L 拍板不变）。
+ *     —— 卡AG（2026-09-30）改：该场景回调**推进 60→70**（「支付即收货」，钱到账 = 收货完成）；
+ *        订单已是 70 时不再推进（completeOrderOnPayment 只在 60 时才动）。
+ *        ⚠️ 核销口径仍以 payProof 为准（卡L 拍板不变）—— payProof 是"配送员收到的现金"，
+ *        本场景是"客户线上直付"，两者是两条独立的钱路，判已付款以线上到账优先（pay-status.util）。
  *
  * 回调幂等：流水已 status=1 直接返回成功，不重复推进、不新增审计；
  * 金额核对不一致/验签失败：callbackPayload 留痕后拒绝（HTTP 仍回 200 空体，由 controller 处理，避免微信重试风暴）。
@@ -137,7 +140,7 @@ export class WechatPayService {
   }
 
   /**
-   * 微信回调入口：验签 → 解密 → 幂等 → 金额核对 → 推进订单（10→30）/ 落「已支付」
+   * 微信回调入口：验签 → 解密 → 幂等 → 金额核对 → 推进订单（10→30；卡AG 起 60→70）/ 落「已支付」
    * 所有被拒分支：callbackPayload 留痕 + 抛 BizException（controller 统一回 200 空体并记日志）
    */
   async confirmPayment(notifyBody: Record<string, any>, headers: Record<string, string | undefined>, rawBody: string) {
@@ -197,9 +200,13 @@ export class WechatPayService {
       throw new BizException(ErrorCode.PARAM_ERROR, '回调金额与支付单不一致')
     }
 
-    // 事务：流水置已成功 + 原始回调全量留痕；订单 10→30 复用 completePaidOrder
-    // （COD 送达后线上支付场景订单已是 60/70，不推进——核销仍走 payProof 口径）
-    const shouldAdvance = rec.order.status === OrderStatus.PENDING_CONFIRM
+    // 事务：流水置已成功 + 原始回调全量留痕
+    //   ① 待确认(10) → completePaidOrder 推进 10→30（既有口径）
+    //   ② 已送达(60) → 卡AG「支付即收货」推进 60→70
+    //   ③ 其它状态（配送中 50 / 已完成 70 / 已取消 91…）→ 只落「已支付」，订单不动（既有口径）
+    const orderStatus = rec.order.status
+    const shouldAdvance = orderStatus === OrderStatus.PENDING_CONFIRM
+    const shouldComplete = orderStatus === OrderStatus.DELIVERED
     await this.prisma.$transaction(async (tx) => {
       await tx.paymentRecord.update({
         where: { id: rec.id },
@@ -214,10 +221,15 @@ export class WechatPayService {
       })
       if (shouldAdvance) {
         await this.orderService.completePaidOrder(tx, rec.orderId)
+      } else if (shouldComplete) {
+        await this.orderService.completeOrderOnPayment(tx, rec.orderId, {
+          source: 'wechat-notify',
+          operatorId: 0n, // 系统触发（口径同超时关单 / 发货录入）
+        })
       }
     })
-    if (!shouldAdvance) {
-      this.logger.log(`[wxpay] 订单 ${Number(rec.orderId)} 非 10 状态（${rec.order.status}），回调仅落已支付不推进`)
+    if (!shouldAdvance && !shouldComplete) {
+      this.logger.log(`[wxpay] 订单 ${Number(rec.orderId)} 非 10/60 状态（${rec.order.status}），回调仅落已支付不推进`)
     }
     return { payNo: rec.payNo, status: 1, alreadyConfirmed: false, orderId: Number(rec.orderId) }
   }

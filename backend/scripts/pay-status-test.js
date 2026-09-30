@@ -10,9 +10,14 @@
  *   1 纯函数四档判定逐一命中（含「两条并存 → 以线上为准」、photos 空数组=无凭证）
  *   2 采购方订单列表：新增 payStatusText / onlinePaidAt / paidProofAt
  *   3 采购方订单详情：payStatus/payStatusText 四档逐一命中（不论 payMethod 的线上到账）
- *   4 退款回退：流水置 2 → 自动回退为「待收款」（onlinePaidAt 变 null）
+ *   4 退款回退：流水置 2 → 自动回退（onlinePaidAt 变 null）
  *   5 「我已付款」接口（POST /buyer/order/:id/claim-paid）仍可调通（证明没被删，只是前端不调用）
  *   6 后台对账：三档归组 + 「待收款」子标注 + 两条并存警示 + 历史口径只读标注 + 汇总计数与新三档一致
+ *
+ * ⚠️ 卡AG（2026-09-30）改动说明：本卡给采购方侧文案加了**客户版映射**
+ *    （cod_pending 对采购方显示「未支付」，运营侧仍是「待收款」），
+ *    因此本脚本里**采购方侧**的 cod_pending 期望值由「待收款」改为「未支付」；
+ *    后台对账侧期望值不变（仍「待收款」）。判定 code 与金额口径均未变。
  */
 const { spawn } = require('child_process')
 const fs = require('fs')
@@ -102,10 +107,14 @@ process.on('SIGINT', () => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // 与 pay-status.util 的文案保持一致（改文案要同步改这里）
+// ⚠️ 卡AG（2026-09-30）：文案分**两套受众** ——
+//   运营版（payStatusOf().text，用于后台对账）：cod_pending = 「待收款」
+//   客户版（buyerPayStatusTextOf()，用于采购方列表/详情）：cod_pending = 「未支付」（与 unpaid 同文案）
+//   本脚本的采购方侧断言用客户版（T_UNPAID），后台对账侧断言用运营版（T_PENDING）。
 const T_WECHAT = '已付款 · 微信直接支付'
 const T_PROOF = '已付款 · 扫码付款'
-const T_PENDING = '待收款'
-const T_UNPAID = '未支付'
+const T_PENDING = '待收款' // 运营版（后台对账）
+const T_UNPAID = '未支付' // 客户版（采购方侧；unpaid 与 cod_pending 都是它）
 const T_GROUP_PAID_WECHAT = '已付款 · 微信直接支付'
 const T_GROUP_PAID_PROOF = '已付款 · 扫码付款'
 const T_GROUP_UNPAID = '未收'
@@ -255,7 +264,9 @@ async function main() {
   const dUnpaid = await call('GET', `/order/${oUnpaid.orderId}`, null, A.token)
   check('① 未支付：payStatusText=未支付', dUnpaid.json?.data?.payStatus === 'unpaid' && dUnpaid.json?.data?.payStatusText === T_UNPAID, dUnpaid.json?.data)
   const dCod = await call('GET', `/order/${oCod.orderId}`, null, A.token)
-  check('② 待收款：COD 已送达未收', dCod.json?.data?.payStatus === 'cod_pending' && dCod.json?.data?.payStatusText === T_PENDING, dCod.json?.data)
+  // 卡AG（2026-09-30）：采购方侧是**客户版**文案 —— cod_pending 对客户也显示「未支付」
+  // （code 不变仍是 cod_pending，运营侧同单仍是「待收款」，见第 6 节）
+  check('② COD 已送达未收：payStatus=cod_pending，客户版文案=未支付', dCod.json?.data?.payStatus === 'cod_pending' && dCod.json?.data?.payStatusText === T_UNPAID, dCod.json?.data)
   const dProof = await call('GET', `/order/${oProof.orderId}`, null, A.token)
   check('③ 已付款·扫码付款：有凭证', dProof.json?.data?.payStatus === 'paid_proof' && dProof.json?.data?.payStatusText === T_PROOF, dProof.json?.data)
   check('③ paidProofAt 透出（供前端显示时间）', !!dProof.json?.data?.paidProofAt)
@@ -271,17 +282,18 @@ async function main() {
   const lProof = listMap.get(oProof.orderId)
   const lWechat = listMap.get(oWechat.orderId)
   const lUnpaid = listMap.get(oUnpaid.orderId)
-  check('列表含 payStatusText（待收款单）', lCod?.payStatusText === T_PENDING, lCod)
+  check('列表含 payStatusText（COD 已送达未收 → 客户版「未支付」）', lCod?.payStatusText === T_UNPAID, lCod)
   check('列表含 payStatusText（已付款·扫码付款单）', lProof?.payStatusText === T_PROOF, lProof)
   check('列表含 payStatusText（已付款·微信直接支付单）', lWechat?.payStatusText === T_WECHAT, lWechat)
   check('列表含 payStatusText（未支付单）', lUnpaid?.payStatusText === T_UNPAID, lUnpaid)
   check('列表 onlinePaidAt / paidProofAt 透出', !!lWechat?.onlinePaidAt && !!lProof?.paidProofAt)
 
-  // ── 4. 退款回退：流水置 2 → 待收款 ──
+  // ── 4. 退款回退：流水置 2 → 客户版「未支付」 ──
   console.log('\n【4. 退款回退：支付流水置 2 → 自动回退（不需要新字段）】')
   await prisma.paymentRecord.updateMany({ where: { orderId: BigInt(oWechat.orderId) }, data: { status: 2 } })
   const dRefund = await call('GET', `/order/${oWechat.orderId}`, null, A.token)
-  check('退款后详情回退为「待收款」', dRefund.json?.data?.payStatus === 'cod_pending' && dRefund.json?.data?.payStatusText === T_PENDING, dRefund.json?.data)
+  // 卡AG：采购方侧文案是客户版 —— 回退到 cod_pending 后显示「未支付」（不是「待收款」）
+  check('退款后详情回退为 cod_pending + 客户版「未支付」', dRefund.json?.data?.payStatus === 'cod_pending' && dRefund.json?.data?.payStatusText === T_UNPAID, dRefund.json?.data)
   check('退款后 onlinePaidAt 变 null', dRefund.json?.data?.onlinePaidAt === null, dRefund.json?.data?.onlinePaidAt)
   // 恢复流水，供对账用例使用
   await prisma.paymentRecord.updateMany({ where: { orderId: BigInt(oWechat.orderId) }, data: { status: 1 } })
@@ -307,7 +319,9 @@ async function main() {
 
   const rCod = rowOf(oCod.orderId)
   check('对账行：COD 未收 → 未收 + 子标注「待收款」', rCod?.payStatusGroupText === T_GROUP_UNPAID && rCod?.payStatusSubText === '待收款', rCod)
-  check('对账行 payStatusText 与采购方四档同源', rCod?.payStatusText === T_PENDING, rCod?.payStatusText)
+  check('对账行：COD 未收 → 运营版「待收款」（与客户版不同源受众，卡AG）', rCod?.payStatusText === T_PENDING, rCod?.payStatusText)
+  check('对账行：同单采购方看「未支付」、运营看「待收款」（同源不同受众）',
+    dCod.json?.data?.payStatusText === T_UNPAID && rCod?.payStatusText === T_PENDING)
 
   const rProof = rowOf(oProof.orderId)
   check('对账行：现金凭证 → 已付款·扫码付款', rProof?.payStatusGroupText === T_GROUP_PAID_PROOF, rProof)

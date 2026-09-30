@@ -42,7 +42,8 @@ export class PaymentService {
     return this.confirmPayment(payNo, this.sign(rec.payNo, String(rec.amount)), payload)
   }
 
-  /// 回调入口（无 token，HMAC 验签）：验签 → 幂等 → 事务内推进订单 10→30（复用拆单逻辑）
+  /// 回调入口（无 token，HMAC 验签）：验签 → 幂等 → 事务内推进订单
+  ///   10 → 30（复用拆单逻辑）；卡AG 起 60 → 70（支付即收货，见 completeOrderOnPayment）
   async confirmPayment(payNo: string, signature: string, payload: Record<string, any>) {
     const rec = await this.prisma.paymentRecord.findUnique({
       where: { payNo },
@@ -64,7 +65,15 @@ export class PaymentService {
       await this.appendCallback(rec.id, { ...payload, signature, rejected: true, reason: '支付单已关闭' })
       throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '支付单已关闭')
     }
-    if (rec.order.status !== OrderStatus.PENDING_CONFIRM) {
+
+    // 卡AG（2026-09-30）：允许接收「支付成功」的订单状态只有两类 ——
+    //   ① 待确认(10)：既有口径，回调推进 10→30（补拆 + payMethod=1）
+    //   ② 已送达(60)：**支付即收货**，回调推进 60→70（钱到账即视为收货完成）
+    // 其它状态（已取消 91 / 配送中 50 等）**照旧拒绝**，口径未放宽（187 基线用例亦依赖此拒绝）
+    const orderStatus = rec.order.status
+    const isPendingConfirm = orderStatus === OrderStatus.PENDING_CONFIRM
+    const isDelivered = orderStatus === OrderStatus.DELIVERED
+    if (!isPendingConfirm && !isDelivered) {
       await this.appendCallback(rec.id, {
         ...payload, signature, rejected: true, reason: `订单状态 ${rec.order.status} 不允许支付确认`,
       })
@@ -83,7 +92,15 @@ export class PaymentService {
           ],
         },
       })
-      await this.orderService.completePaidOrder(tx, rec.orderId)
+      if (isPendingConfirm) {
+        await this.orderService.completePaidOrder(tx, rec.orderId)
+      } else {
+        // 卡AG：支付即收货（方法内部再校验一次状态，非 60 时原样返回、不动）
+        await this.orderService.completeOrderOnPayment(tx, rec.orderId, {
+          source: 'mock-callback',
+          operatorId: 0n, // 系统触发（口径同超时关单 / 发货录入）
+        })
+      }
     })
     return { payNo, status: 1, alreadyConfirmed: false, orderId: Number(rec.orderId) }
   }

@@ -15,7 +15,8 @@
  *   4 金额不一致 → 拒绝 + 留痕 + 订单不动
  *   5 退款：out_refund_no / 金额 / out_trade_no 三者一致；重复退款幂等
  *   6 超时关单（ORDER_PAY_TIMEOUT_MINUTES=1）→ 订单 91、流水 2、审计有记录
- *   5b（加菜）COD 送达后「微信直接支付」→ prepay 金额取 amountFinal、回调只落已支付不推进订单
+ *   5b（加菜）COD 送达后「微信直接支付」→ prepay 金额取 amountFinal、回调 60→70
+ *       （卡AG 2026-09-30「支付即收货」：钱到账 = 收货完成；本行原为"不推进订单"，已按新口径改）
  *   7 回归：验收测试.js 副本（sed 到 3013）期望 187 通过 / 0 失败（输出原样透传）
  */
 const { spawn, spawnSync } = require('child_process')
@@ -309,7 +310,7 @@ async function main() {
   }
 
   // ── 5b. 加菜：COD 送达后「微信直接支付」 ──
-  console.log('\n【5b. COD 送达后微信直接支付：金额取 amountFinal、回调只落已支付不推进订单】')
+  console.log('\n【5b. COD 送达后微信直接支付：金额取 amountFinal、回调 60→70（卡AG 支付即收货）】')
   {
     const o = await createOrder()
     if (o) {
@@ -322,7 +323,8 @@ async function main() {
         const rec = await getRecord(p.json.data.payNo)
         check('流水已支付(status=1)', rec?.status === 1)
         const od = await call('GET', `/order/${o.orderId}`, null, token)
-        check('订单不推进(仍 60 已送达)', od.json?.data?.status === 60)
+        // 卡AG（2026-09-30）：钱到账 = 收货完成 → 60 → 70（本行原为「仍 60」，按新口径改）
+        check('回调后订单 60→70（支付即收货）', od.json?.data?.status === 70, od.json?.data?.status)
         const payAudit = await auditFind(o.orderId, 'ORDER_PAY')
         check('审计注明 COD 送达后线上支付', !!payAudit && String(payAudit.after?.note || '').includes('COD 送达后线上支付'))
       }

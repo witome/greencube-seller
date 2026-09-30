@@ -4,6 +4,8 @@ import { BizException, ErrorCode, OrderStatus } from '../../common/constants/err
 import { DeliverDto, ReportDto, PayProofDto } from './dto/courier.dto'
 import { AuditService } from '../audit/audit.service'
 import { OrderShippingService } from '../wx/order-shipping.service'
+// 卡AG（2026-09-30）：配送员提交收款凭证 = 钱到账 → 订单「已送达(60)」转「已完成(70)」
+import { OrderService } from '../order/order.service'
 
 /// 配送任务状态：0 待取货 / 1 已取货待出发 / 2 已出发配送中 / 3 已完成 / 4 异常
 const TaskStatus = { PENDING_PICKUP: 0, DELIVERING: 1, DEPARTED: 2, DONE: 3, EXCEPTION: 4 } as const
@@ -15,6 +17,8 @@ export class CourierService {
     private audit: AuditService,
     // 卡S1（2026-09-29）：送达后要往微信录发货信息（不录 = 用户的钱被平台冻结）
     private readonly orderShipping: OrderShippingService,
+    // 卡AG（2026-09-30）：收款凭证落库后推进 60→70（复用 OrderService.completeOrderOnPayment，不另写第二套）
+    private readonly orderService: OrderService,
   ) {}
 
   private async getCourier(userId: bigint) {
@@ -413,6 +417,11 @@ export class CourierService {
 
   // ────────────────────────────────────────
   // 货到付款收款凭证：配送员上传客户付款拍照，记录到订单，运营后台可查
+  //
+  // ⚠️ 卡AG（2026-09-30 大辉拍板 3a②）：**凭证落库 = 钱到账 = 收货完成** ——
+  //    本方法在同一事务里 ①写 payProof ②写审计 ③调 completeOrderOnPayment 推进 60→70。
+  //    订单不是 60（已 70 / 已取消 / 其它）时只落凭证、状态不动（方法内部自行判定并原样返回）。
+  //    「客户未付款」标记（写进 payProof 的那个标记）属卡AH，本卡不做，也不影响这里的状态口径。
   // ────────────────────────────────────────
   async payProof(userId: bigint, orderId: number, dto: PayProofDto) {
     const courier = await this.getCourier(userId)
@@ -420,19 +429,30 @@ export class CourierService {
     if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
     if (order.payMethod !== 2) throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '非货到付款订单')
 
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: {
-        payProof: { photos: dto.photos, courierId: Number(courier.id), paidAt: new Date().toISOString() },
-      },
-    })
-    // 2026-09-12 #14 收口：直写 → AuditService（action 值逐字保留 COD_PAY_PROOF）
-    await this.audit.log({
-      operatorId: userId,
-      action: 'COD_PAY_PROOF',
-      entity: 'order',
-      entityId: orderId,
-      after: { photos: dto.photos },
+    // 凭证 / 审计 / 状态推进 同一事务（2026-09-15 涉钱收口：避免"凭证记上了、订单没推进"的中间态）
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          payProof: { photos: dto.photos, courierId: Number(courier.id), paidAt: new Date().toISOString() },
+        },
+      })
+      // 2026-09-12 #14 收口：直写 → AuditService（action 值逐字保留 COD_PAY_PROOF）
+      await this.audit.log(
+        {
+          operatorId: userId,
+          action: 'COD_PAY_PROOF',
+          entity: 'order',
+          entityId: orderId,
+          after: { photos: dto.photos },
+        },
+        tx,
+      )
+      // 卡AG：钱到账 → 收货完成（仅当订单当前是 60 已送达；否则原样返回、不动）
+      await this.orderService.completeOrderOnPayment(tx, order.id, {
+        source: 'courier-pay-proof',
+        operatorId: userId,
+      })
     })
 
     return { orderId, recorded: true }

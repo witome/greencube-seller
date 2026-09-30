@@ -14,7 +14,9 @@ import { PayOrderDto } from './dto/pay-order.dto'
 import { allocateByPriority } from '../../common/utils/split.util'
 import { AuditService } from '../audit/audit.service'
 // 卡S2（2026-09-29）：支付/收款状态口径唯一实现 —— 列表/详情/后台对账三处都必须调它，禁止内联判定
-import { payStatusOf, hasPayProof, hasWechatPaidRecord, onlinePaidAtOf } from '../../common/utils/pay-status.util'
+// 卡AG（2026-09-30）：采购方侧文案走**客户版**映射（cod_pending 对客户也显示「未支付」）；
+//   运营对账仍用 payStatusOf().text（「待收款」）
+import { payStatusOf, buyerPayStatusTextOf, hasPayProof, hasWechatPaidRecord, onlinePaidAtOf } from '../../common/utils/pay-status.util'
 
 @Injectable()
 export class OrderService {
@@ -193,9 +195,10 @@ export class OrderService {
           statusText: this.statusText(o.status),
           itemCount: o._count.items,
           amountFinal: o.amountFinal ? Number(o.amountFinal) : null,
-          // ── 卡S2 新增：支付状态（四档文案唯一来源 = pay-status.util）──
+          // ── 卡S2 新增：支付状态（四档判定唯一来源 = pay-status.util）──
+          // 卡AG：**文案走客户版**（cod_pending 对客户也显示「未支付」）；code 不变，前端只按 code 配色
           payStatus: pay.code,
-          payStatusText: pay.text,
+          payStatusText: buyerPayStatusTextOf(pay),
           onlinePaidAt,
           paidProofAt: (o.payProof as any)?.paidAt ?? null,
           // 订单明细（商品名 + 数量，供首页展开展示）
@@ -299,9 +302,11 @@ export class OrderService {
       buyerPaidClaimAt: order.buyerPaidClaimAt ? order.buyerPaidClaimAt.toISOString() : null,
       paidProofAt: (order.payProof as any)?.paidAt ?? null,
       onlinePaidAt,
-      // 卡S2（2026-09-29）：四档支付状态（文案唯一来源 = pay-status.util），前端只做展示与配色
+      // 卡S2（2026-09-29）：四档支付状态（判定唯一来源 = pay-status.util），前端只做展示与配色
+      // 卡AG（2026-09-30）：**文案走客户版** —— cod_pending（COD 已送达未收）对采购方也显示「未支付」，
+      //   客户不需要区分"还没到收货"与"该收钱了"；「待收款」只留给配送员/运营侧的作业界面
       payStatus: pay.code,
-      payStatusText: pay.text,
+      payStatusText: buyerPayStatusTextOf(pay),
     }
   }
 
@@ -639,6 +644,59 @@ export class OrderService {
     return { orderId: Number(orderId), payMethod: 1, status: OrderStatus.STOCKING }
   }
 
+  /// ────────────────────────────────────────────────────────────────
+  /// 卡AG（2026-09-30 大辉拍板 3a）：**支付即收货** —— 钱到账 → 「已送达(60)」直接转「已完成(70)」。
+  ///
+  /// 「钱到账」的两个触发点（两条路径都必须调本方法，缺一不可）：
+  ///   ① 线上支付回调成功：payment.service.confirmPayment（mock 通道）
+  ///                      / wechat-pay.service.confirmPayment（真实微信通道）
+  ///   ② 配送员提交货到付款收款凭证：courier.service.payProof
+  ///
+  /// ⚠️ 口径（不可自行放宽/收紧）：**只有订单当前是「已送达(60)」才推进**；
+  ///    其它状态一律**不动**并原样返回（例如下单即付的单子在回调时还在 10/30，绝不能跳到 70；
+  ///    已取消(91)/配送中(50) 等也不碰）。调用方负责决定"要不要调"，本方法负责决定"推不推"。
+  /// ⚠️ 必须传 tx（与调用方的流水/凭证写入**同一事务**），不接受 prisma 直连 —— 避免
+  ///    「钱记上了、订单没推进」或反过来的中间态。
+  /// ⚠️ audit action = `ORDER_COMPLETE_ON_PAYMENT`（本卡自拟，见交接页），
+  ///    operatorId：客户线上支付回调 = 0n（系统触发，口径同超时关单/发货录入）；配送员留证 = 配送员 userId。
+  /// ────────────────────────────────────────────────────────────────
+  async completeOrderOnPayment(
+    tx: any,
+    orderId: bigint,
+    opts: { source: string; operatorId: bigint },
+  ): Promise<{ advanced: boolean; status?: number; reason?: string }> {
+    const order = await tx.order.findUnique({ where: { id: orderId } })
+    if (!order) return { advanced: false, reason: 'order-not-found' }
+    if (order.status !== OrderStatus.DELIVERED) {
+      return { advanced: false, reason: `order-status-${order.status}-is-not-delivered` }
+    }
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: { status: OrderStatus.COMPLETED },
+    })
+
+    // 铁律 3：订单状态变更（60→70，本卡起收货完成的**唯一**自动触发点），写审计
+    await this.audit.log(
+      {
+        operatorId: opts.operatorId,
+        action: 'ORDER_COMPLETE_ON_PAYMENT',
+        entity: 'order',
+        entityId: Number(orderId),
+        before: { status: order.status, statusText: this.statusText(order.status) },
+        after: {
+          status: OrderStatus.COMPLETED,
+          statusText: this.statusText(OrderStatus.COMPLETED),
+          source: opts.source, // wechat-notify | mock-callback | courier-pay-proof
+          note: '支付即收货：钱到账即视为收货完成（客户侧不再点「确认收货」）',
+        },
+      },
+      tx,
+    )
+
+    return { advanced: true, status: OrderStatus.COMPLETED }
+  }
+
   // ────────────────────────────────────────
   // 自动拆单：按供应商优先级（priority 升序）+ 当日可供量分配
   // 无供应商 / 可供量为 0 的商品保留原明细，不分配（运营后续手动改拆单处理）
@@ -682,7 +740,14 @@ export class OrderService {
   }
 
   // ────────────────────────────────────────
-  // 逐项接受/拒收
+  // 逐项接受/拒收（确认收货）
+  //
+  // ⚠️ 卡AG（2026-09-30 大辉拍板 3d）：**采购方前端入口已下线**（order-detail.vue 不再出现
+  //   「确认收货（全部接受）」按钮）—— 收货完成改由「钱到账」自动推进
+  //   （见 completeOrderOnPayment：线上支付成功 / 配送员提交收款凭证 → 60→70）。
+  //   **本接口一行未删，保留兼容**：老版本小程序包点了仍要走得通，运营后台也留有兜底手段。
+  //   ⚠️ 不要因为"前端不用了"就删掉本方法或它的审计。
+  //
   // ⚠️ 卡AE（2026-09-30）口径变更：**拒收不再自动建售后工单**
   //   —— 原「决策 3」在本卡的收货事务里自动生成 type=1「少货」工单，已按大辉拍板移除。
   //      理由：售后是**客户事后另起的一条线**（客户提申请 → 运营线下谈 → 运营点处理完成），

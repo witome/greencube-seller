@@ -167,9 +167,12 @@
       <view class="cancel-link" @tap="cancel">取消订单</view>
     </view>
 
-    <!-- 收货操作 -->
-    <view class="row-btns" v-if="order.status === 60">
-      <view class="pbtn primary" @tap="receive">确认收货（全部接受）</view>
+    <!-- 收货说明（卡AG 2026-09-30：「确认收货（全部接受）」按钮**已下线**）
+         ⚠️ 收货完成改由「钱到账」自动推进：线上支付成功 / 配送员提交收款凭证 → 订单 60→70。
+            客户侧不再需要（也不能）手动确认收货，所以这里**不留按钮位**，只给一句口径说明。
+            后端 POST /order/:id/receive 仍保留，仅为兼容老版本小程序包与运营兜底，本页不再调用。 -->
+    <view class="card receive-hint" v-if="order.status === 60">
+      <view class="receive-hint-text">送达后按付款方式完成收款即视为收货完成，无需手动确认</view>
     </view>
     </view>
 
@@ -423,13 +426,9 @@ const cancel = async () => {
   setTimeout(() => uni.navigateBack(), 600)
 }
 
-const receive = async () => {
-  await buyerApi.receiveOrder(orderId.value, {
-    items: order.value.items.map((i) => ({ orderItemId: i.orderItemId, qtyReceived: i.qtyAccepted ?? i.qtyOrdered, rejectQty: 0 })),
-  })
-  uni.showToast({ title: '已确认收货', icon: 'success' })
-  setTimeout(load, 600)
-}
+// 卡AG（2026-09-30）：原 `receive()`（调 buyerApi.receiveOrder 把订单推到已完成）**已删除** ——
+// 收货完成改由后端「钱到账」自动推进（线上支付成功 / 配送员提交收款凭证 → 60→70）。
+// 后端接口 POST /order/:id/receive 仍保留，只服务老版本小程序包与运营兜底，本页不再调用。
 
 onLoad(async (opts) => {
   // 卡S1（2026-09-29）：微信「小程序购物订单」/发货通知跳进来带的是**支付单号**
@@ -489,6 +488,9 @@ onLoad(async (opts) => {
 .order-remark-row { align-items: center; }
 .order-remark-input { flex: 1; margin-left: 12px; font-size: 12px; background: #f7f8fa; border-radius: 6px; padding: 6px 8px; text-align: right; }
 .row-btns { padding: 12px; }
+/* 卡AG：收货说明（原「确认收货（全部接受）」按钮位替换为一句口径说明，不留按钮） */
+.receive-hint { background: #fff; border-radius: 8px; padding: 12px; margin: 0 12px 10px; }
+.receive-hint-text { font-size: 12px; color: $text-second; text-align: center; line-height: 1.6; }
 .pay-card { background: #fff; border-radius: 8px; padding: 12px; margin: 0 12px 10px; }
 .card-title { font-size: 14px; font-weight: 700; color: $text-title; margin-bottom: 8px; }
 .pay-row { display: flex; gap: 10px; margin-top: 4px; }

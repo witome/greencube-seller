@@ -11,7 +11,10 @@
         <text class="oc-status">{{ o.statusText }}</text>
       </view>
       <!-- 卡S2（2026-09-29）：支付状态标签 —— 文案来自后端 payStatusText（唯一实现 pay-status.util），
-           前端只做配色：已付款=绿 / 待收款=橙 / 未支付=灰 -->
+           前端只做配色（按 code）：已付款=绿 / cod_pending=橙 / 其它未付=灰
+           卡AG（2026-09-30）：后端给**采购方**的 payStatusText 是**客户版** ——
+           cod_pending（COD 已送达未收）与 unpaid 一样显示「未支付」，客户侧不会再看到「待收款」；
+           配色仍按 code 走（该档橙色在列表里正好提示"这一单还欠着钱"），本页**不自己判任何支付状态**。 -->
       <view class="oc-pay-row">
         <text :class="['oc-pay', 'oc-pay-' + payClass(o.payStatus)]">{{ o.payStatusText }}</text>
       </view>

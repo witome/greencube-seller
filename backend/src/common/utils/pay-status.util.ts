@@ -8,13 +8,22 @@
 ///   3. cod_pending  「待收款」 —— 货到付款(payMethod=2)、已送达(60/70)，既无线上到账也无凭证
 ///   4. unpaid       「未支付」 —— 其余（下单后还没付）
 ///
+/// ⚠️ 上面四档是**内部/运营口径**。卡AG 起**客户（采购方）看到的文案另有一套**
+///    （见文件末尾 buyerPayStatusTextOf）：客户侧 cod_pending 与 unpaid **都显示「未支付」**。
+///
 /// 「已付款」必须有资金证据：线上到账 或 配送员凭证。采购方**不能**再自己声明
 /// （「我已付款」按钮已下线，POST /buyer/order/:id/claim-paid 接口保留仅为兼容老版本小程序包）。
 ///
 /// 调用点（必须都走这里，页面/服务里禁止内联 `payMethod === 2 && ...` 这类判定）：
-///   - backend/src/modules/order/order.service.ts            list()（采购方订单列表）
-///   - backend/src/modules/order/order.service.ts            detail()（采购方订单详情）
-///   - backend/src/modules/admin-finance/admin-finance.service.ts  dailyReconciliation()（每日对账）
+///   - backend/src/modules/order/order.service.ts            list()（采购方订单列表）→ 取**客户版**文案
+///   - backend/src/modules/order/order.service.ts            detail()（采购方订单详情）→ 取**客户版**文案
+///   - backend/src/modules/buyer/buyer.service.ts            collectBlockers()（注销门槛，只用 code 不算文案）
+///   - backend/src/modules/admin-finance/admin-finance.service.ts  dailyReconciliation()（每日对账）→ **运营版**文案
+///
+/// ⚠️ 卡AG（2026-09-30）：**同一套判定、两套文案** ——
+///   客户版（采购方）见下方 buyerPayStatusTextOf()：cod_pending 与 unpaid 对客户**都显示「未支付」**；
+///   运营版（运营后台）就是 payStatusOf().text，cod_pending 仍是「待收款」（那是作业提示，不能对客户露出）。
+///   只有在**采购方侧接口**才用客户版；运营后台 / 配送员侧一律用运营版。
 
 /// 四档状态码
 export type PayStatusCode = 'unpaid' | 'cod_pending' | 'paid_wechat' | 'paid_proof'
@@ -94,6 +103,30 @@ export function payStatusGroup(code: PayStatusCode): { text: string; subText: st
     default:
       return { text: '未收', subText: null }
   }
+}
+
+// ────────────────────────────────────────────────────────────────
+// 卡AG（2026-09-30 大辉拍板 1a）：**面向采购方（客户）的文案映射**
+//
+// 客户视角只认「钱付没付」：
+//   unpaid       → 「未支付」（还没给钱）
+//   cod_pending  → 「未支付」（货到付款、已送达、钱还没收到 —— 对客户同样是「没给钱」）
+//   paid_wechat  → 「已付款 · 微信直接支付」（照旧）
+//   paid_proof   → 「已付款 · 扫码付款」（照旧）
+//
+// ⚠️ 「待收款」是给**作业方**看的话（配送员该去收这笔钱 / 运营去盯），不能对客户露出；
+//    反过来也不许在作业端被抹成「未支付」（否则配送员不知道要去收钱）。
+// ⚠️ 这是**同一份判定的第二套文案**，不是第二套判定：判定仍只有 payStatusOf 一处，
+//    页面/服务里禁止内联任何 `payMethod === 2 && ...`。
+// ⚠️ 只有采购方侧接口调它；运营对账（dailyReconciliation）与配送员侧继续用 payStatusOf().text。
+// ────────────────────────────────────────────────────────────────
+
+/// 客户版「未支付」（unpaid 与 cod_pending 共用同一句）
+export const BUYER_UNPAID_TEXT = '未支付'
+
+/// 把判定结果翻成**客户版**文案（两个「已付款」档原样透传，其余一律「未支付」）
+export function buyerPayStatusTextOf(status: Pick<PayStatusResult, 'code' | 'text'>): string {
+  return status.code === 'paid_wechat' || status.code === 'paid_proof' ? status.text : BUYER_UNPAID_TEXT
 }
 
 /// 老数据里点过「我已付款」（order.buyerPaidClaimAt 有值）的只读标注。
