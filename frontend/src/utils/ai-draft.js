@@ -36,3 +36,32 @@ export function itemCount() {
   const d = draft.value
   return ((d && d.items) || []).length
 }
+
+/**
+ * 「有菜没上架」跨页状态（2026-09-30 卡AO）
+ *
+ * 要解决的问题：客户在**别的页面**按住右下角 FAB 说的菜如果还没上架，
+ * 采购需求确实登记到后台了，但客户当场看不到任何提示，也不知道能开到货通知；
+ * 而「🤔 我还没上架，已帮你记下」+「到货通知我」按钮只住在助手页 `kefu.vue` 的对话气泡里，
+ * 对话流 `messages` 是页面本地的、不共享 —— 所以这条信息在页外就丢了。
+ *
+ * 这里的做法：FAB 那一次说话留下一条**跨页状态**（没对上的菜名 + 采购需求是否真的登记成功），
+ * 助手页 `onLoad` 取走它、补一条与页内说话**完全同构**的 AI 气泡（现成的按钮就在那里），
+ * 取走即清。**不复制订阅逻辑** —— 订阅按钮与 `uni.requestSubscribeMessage` 仍只有助手页那一份。
+ *
+ * ⚠️ 与草稿同样口径：**模块级单例、不落 storage**，退出小程序即清。
+ * 结构：`{ texts: string[], recorded: boolean }` 或 `null`
+ *   texts    = 这句里没对上商品的菜名
+ *   recorded = 采购需求是否**真的登记成功**（失败就是 false，不许假装记下了）
+ */
+export const pendingUnmatched = ref(null)
+
+/** 写入待处理的「有菜没上架」状态（传 null / 假值即清空） */
+export function setPendingUnmatched(v) {
+  pendingUnmatched.value = v || null
+}
+
+/** 清空（助手页取走后立刻调用，避免每次进助手页都重复冒同一条气泡） */
+export function clearPendingUnmatched() {
+  pendingUnmatched.value = null
+}

@@ -122,7 +122,7 @@
 import { ref } from 'vue'
 import { onLoad, onShareAppMessage, onHide, onUnload } from '@dcloudio/uni-app'
 import { demandApi } from '@/api/modules'
-import { draft, clearDraft as clearSharedDraft } from '@/utils/ai-draft'
+import { draft, clearDraft as clearSharedDraft, pendingUnmatched, clearPendingUnmatched } from '@/utils/ai-draft'
 import { sendUtterance } from '@/utils/ai-order'
 
 const input = ref('')
@@ -148,6 +148,24 @@ onLoad(async () => {
     demandTmplId.value = cfg && cfg.configured ? cfg.templateId || '' : ''
   } catch (e) {
     demandTmplId.value = ''
+  }
+  // 卡AO（2026-09-30）：在外面（FAB 按住说）说了**我还没上架的菜**时，这里补一条与页内说话
+  // **完全同构**的 AI 气泡 —— 模板里现成的「🤔 我还没上架，已帮你记下，到货通知你 📩」+「到货通知我」
+  // 按钮就会照常渲染（按钮条件仍是 `v-if="demandTmplId"`，没配模板就只有文字）。
+  // ⚠️ 这条气泡不是在页内 send 出来的：除了 messages 与滚动，别的一律不碰。
+  // ⚠️ 取走就清 —— 内存态，且避免每次进助手页都重复冒同一条。
+  const pu = pendingUnmatched.value
+  if (pu && (pu.texts || []).length) {
+    messages.value.push({
+      role: 'ai',
+      changes: [],
+      needClarify: '',
+      unmatched: pu.texts,
+      demandRecorded: !!pu.recorded,
+      notifySubscribed: false,
+    })
+    clearPendingUnmatched()
+    scrollBottom()
   }
 })
 

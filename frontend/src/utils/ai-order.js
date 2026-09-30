@@ -1,5 +1,5 @@
 import { buyerApi, demandApi } from '@/api/modules'
-import { draft, setDraft } from '@/utils/ai-draft'
+import { draft, setDraft, setPendingUnmatched } from '@/utils/ai-draft'
 
 /**
  * 「送一句话给 AI」—— 全仓唯一共享实现（2026-09-30 卡AN）
@@ -65,6 +65,17 @@ export async function sendUtterance(text) {
     // 需要反问时草稿不动，也不登记（口径：不确定就反问）
     if (!parse.needClarify && (parse.unmatched || []).length) {
       demandRecorded = await reportDemand(parse.unmatched)
+    }
+    // 卡AO（2026-09-30）：把「有菜没上架」这件事记进**跨页状态** —— 页外（FAB 按住说）说完话后，
+    // 助手页 onLoad 会把它补成一条与页内说话同构的「已帮你记下」气泡（订阅按钮仍只有助手页那一份）。
+    //   · 非空 且 不是反问 → 留下（recorded 如实反映登记结果，失败就是 false，不做假装记下）
+    //   · 空 → 清掉上一次的
+    // 反问（needClarify）时不动这条状态：与「草稿不动、也不登记」同一口径。
+    const unmatched = parse.unmatched || []
+    if (unmatched.length && !parse.needClarify) {
+      setPendingUnmatched({ texts: unmatched, recorded: demandRecorded })
+    } else if (!unmatched.length) {
+      setPendingUnmatched(null)
     }
     return {
       draft: parse,

@@ -52,8 +52,16 @@
       </view>
     </view>
 
-    <!-- 卡AN：松手之后原地飘一条轻提示（约 2 秒自动消失，不跳页） -->
-    <view v-if="pillText" class="ai-order-fab-pill" :style="{ bottom: pillBottom }">{{ pillText }}</view>
+    <!-- 卡AN：松手之后原地飘一条轻提示（不跳页，自动消失）
+         卡AO：内容变长 → 2 秒放宽到 3.5 秒；「有菜没上架」的两种提示**可点**（点进助手页看详情）。
+         不可点的两种（全匹配 / 真没听清）点了没有任何反应。 -->
+    <view
+      v-if="pillText"
+      class="ai-order-fab-pill"
+      :class="{ 'ai-order-fab-pill-tap': pillTappable }"
+      :style="{ bottom: pillBottom }"
+      @tap="onPillTap"
+    >{{ pillText }}</view>
   </view>
 </template>
 
@@ -78,22 +86,49 @@ const pillBottom = computed(() => `calc(${props.offset + 64}px + env(safe-area-i
 const badgeCount = computed(() => itemCount())
 const badgeText = computed(() => (badgeCount.value <= 0 ? '' : badgeCount.value > 99 ? '99+' : String(badgeCount.value)))
 
-// ── 原地轻提示（约 2 秒）────────────────────────────────
+// ── 原地轻提示 ─────────────────────────────────────────
+// 卡AO：内容从「已记下 2 样 · …」变长到「… ｜ 🤔 秋葵5斤 我还没上架，已帮你记下」→ 2 秒读不完，放宽到 3.5 秒。
+// pillTappable：只有「有菜没上架」的两种提示可点（点进助手页，那里有现成的「到货通知我」按钮）。
+const PILL_MS = 3500
 const pillText = ref('')
+const pillTappable = ref(false)
 let pillTimer = null
-const showPill = (t) => {
+const hidePill = () => {
+  if (pillTimer) {
+    clearTimeout(pillTimer)
+    pillTimer = null
+  }
+  pillText.value = ''
+  pillTappable.value = false
+}
+const showPill = (t, tappable = false) => {
   pillText.value = t
+  pillTappable.value = !!tappable
   if (pillTimer) clearTimeout(pillTimer)
   pillTimer = setTimeout(() => {
     pillText.value = ''
+    pillTappable.value = false
     pillTimer = null
-  }, 2000)
+  }, PILL_MS)
+}
+// 提示条可点时 → 进助手页；不可点时点了**啥也不做**（不许误跳页）
+const onPillTap = () => {
+  if (!pillTappable.value) return
+  hidePill()
+  openAssistant()
 }
 
 // ── 语音（**必须**复用 utils/voice-record.js 的 createVoiceHold：全仓不许有第二份插件调用）──
 // 权限兜底（fingerDown）、幂等 stop、安全超时、离页停录全在那边实现，这里一行都不要重写。
 const voice = createVoiceHold({
-  // 松手识别成功 → 送进共享实现（解析 + 落共享草稿 + 未收录的菜静默登记采购需求）
+  // 松手识别成功 → 送进共享实现（解析 + 落共享草稿 + 未收录的菜静默登记采购需求 + 记下「有菜没上架」跨页状态）
+  // 卡AO（2026-09-30）：提示分四种情况，**绝不把「没这个菜」误报成「没听清」**——
+  //   ① 全匹配   ：🎤 已记下 N 样 · 土豆20斤 西红柿10斤
+  //   ② 混合     ：🎤 已记下 N 样 · 土豆20斤 ｜ 🤔 秋葵5斤 我还没上架，已帮你记下     ← 可点
+  //   ③ 全没上架 ：🤔 秋葵5斤 我还没上架，已帮你记下 · 点我看详情                     ← 可点
+  //   ④ 真没听清 ：没听清，请再说一遍
+  // ②③ 可点进助手页（订阅/到货通知的按钮只有那边一份，本卡**不复制订阅逻辑**）。
+  // 登记没成功（demandRecorded=false）时去掉「已帮你记下」——口径：不做假装记下。
   onDone: async (text) => {
     const res = await sendUtterance(text)
     if (res.error) {
@@ -101,13 +136,32 @@ const voice = createVoiceHold({
       return
     }
     const items = (res.draft && res.draft.items) || []
-    if (!items.length) {
-      showPill('没听清，请再说一遍')
+    const unmatched = res.unmatched || []
+    // 最多列 3 个，超出加 …
+    const brief = (arr, sep) => {
+      const s = arr.slice(0, 3).join(sep)
+      return arr.length > 3 ? `${s}…` : s
+    }
+    const got = brief(items.map((it) => (it.qtyText ? `${it.name}${it.qtyText}` : it.name)), ' ')
+    const miss = brief(unmatched, '、')
+    const noted = res.demandRecorded ? '，已帮你记下' : ''
+    if (items.length && !unmatched.length) {
+      // ① 全匹配（照旧）
+      showPill(`🎤 已记下 ${items.length} 样 · ${got}`)
       return
     }
-    // 「🎤 已记下 N 样 · 土豆20斤 西红柿10斤 大葱5斤」——N = 合并后的 items.length，名称最多列 3 个
-    const names = items.slice(0, 3).map((it) => (it.qtyText ? `${it.name}${it.qtyText}` : it.name))
-    showPill(`🎤 已记下 ${items.length} 样 · ${names.join(' ')}${items.length > 3 ? '…' : ''}`)
+    if (items.length && unmatched.length) {
+      // ② 混合：两者的信息都要给到
+      showPill(`🎤 已记下 ${items.length} 样 · ${got} ｜ 🤔 ${miss} 我还没上架${noted}`, true)
+      return
+    }
+    if (unmatched.length) {
+      // ③ 全没上架：听清了，只是这个菜我还没上架 —— 绝不报「没听清」
+      showPill(`🤔 ${miss} 我还没上架${noted} · 点我看详情`, true)
+      return
+    }
+    // ④ 真没听清（既没记下东西，也没有没上架的菜）
+    showPill('没听清，请再说一遍')
   },
   // 没听清 → 原地轻提示（与助手页同文案）；识别错误/超时 → toast
   onFail: (msg, meta) => {
@@ -290,7 +344,7 @@ const openAssistant = () => uni.navigateTo({ url: '/pages/buyer/kefu' })
   z-index: 901;
 }
 
-/* ===== 卡AN：松手后的原地轻提示（FAB 正上方，2 秒自动消失）===== */
+/* ===== 卡AN：松手后的原地轻提示（FAB 正上方，卡AO 起 3.5 秒自动消失）===== */
 .ai-order-fab-pill {
   position: fixed;
   right: 16px;
@@ -302,6 +356,11 @@ const openAssistant = () => uni.navigateTo({ url: '/pages/buyer/kefu' })
   padding: 8px 12px;
   border-radius: 10px;
   z-index: 901;
+}
+/* 卡AO：「有菜没上架」的提示可点（点进助手页看详情）—— 下划线 + 更亮的底色是「这里能点」的视觉交代 */
+.ai-order-fab-pill-tap {
+  background: rgba(0, 185, 107, 0.92);
+  text-decoration: underline;
 }
 
 /* ===== 卡AN：录音浮层（与助手页 kefu.vue 的 .rec-mask / .rec-box 同款）=====
