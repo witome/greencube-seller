@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>绿立方 · 采购方「注销账号」原型（卡AB · 待大辉确认）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #EEF1F4; color: #1F2329;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h1 span { font-size: 13px; color: #C87000; font-weight: 400; }
+  .sub { font-size: 13px; color: #6B7280; margin-bottom: 18px; line-height: 1.75; }
+  .sub b { color: #1F2329; }
+  .sub code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+
+  /* ===== 图纸容器（截图只截这一块） ===== */
+  #shots { background: #EEF1F4; padding: 18px; width: fit-content; }
+  .row { display: flex; gap: 22px; align-items: flex-start; }
+
+  /* ===== 红线图例（直接写在图上） ===== */
+  .legend {
+    background: #fff; border-radius: 14px; padding: 14px 16px; margin: 0 0 24px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.06); width: 1768px;
+  }
+  .legend .t { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .legend .li { font-size: 12.5px; line-height: 2; }
+  .legend .li b { font-weight: 700; }
+
+  .fig { display: flex; flex-direction: column; }
+  .fig-cap { font-size: 13px; font-weight: 700; margin: 0 0 8px; max-width: 336px; line-height: 1.5; }
+  .fig-cap span { font-weight: 400; color: #8A9099; font-size: 11px; display: block; }
+
+  .phone {
+    width: 336px; height: 660px; background: #fff;
+    border-radius: 40px; border: 8px solid #111; overflow: hidden;
+    display: flex; flex-direction: column; flex: 0 0 auto; position: relative;
+    box-shadow: 0 10px 26px rgba(0,0,0,.13);
+  }
+  .phone-top {
+    height: 34px; background: #00B96B; color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px; font-size: 12px; flex: 0 0 auto;
+  }
+  .capsule { display: flex; gap: 3px; align-items: center; }
+  .capsule span { width: 6px; height: 6px; border-radius: 50%; background: #fff; display: block; }
+  .phone-title {
+    background: #fff; padding: 9px 12px; font-size: 15px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #EEF1F4; flex: 0 0 auto;
+  }
+  .phone-title .back { color: #00B96B; font-weight: 400; font-size: 14px; }
+  .phone-body { flex: 1; overflow-y: auto; background: #F5F6F8; padding: 9px 10px; display: flex; flex-direction: column; }
+  .phone-body::-webkit-scrollbar { width: 0; }
+  .home-ind { flex: 0 0 auto; height: 14px; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .home-ind i { display: block; width: 96px; height: 4px; border-radius: 3px; background: #D5DAE0; }
+
+  .tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; white-space: nowrap; }
+  .tag.green { background: #E6F9F0; color: #00995A; }
+  .tag.orange { background: #FFF3E6; color: #C87000; }
+  .tag.gray { background: #F2F4F6; color: #8A9099; }
+  .tag.red { background: #FDEBEC; color: #D64550; }
+
+  /* ===== 屏① 「我的」页（现状照实画） ===== */
+  .mp-strip { display: flex; gap: 8px; align-items: center; border-radius: 8px; padding: 8px 10px; }
+  .mp-strip .ico { font-size: 14px; flex: 0 0 auto; }
+  .mp-strip .b { font-size: 11.5px; font-weight: 700; display: block; }
+  .mp-strip .s { font-size: 10px; opacity: .92; display: block; margin-top: 1px; }
+  .mp-strip.ok { background: linear-gradient(90deg, #E6F9F0, #F4FFF8); border: 1px solid #C9F0DD; color: #00B96B; }
+  .mp-prof { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 12px; padding: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.04); margin-top: 7px; }
+  .mp-ava { width: 40px; height: 40px; border-radius: 50%; background: #E6F9F0; display: flex; align-items: center; justify-content: center; font-size: 20px; flex: 0 0 auto; }
+  .mp-name { font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 5px; }
+  .mp-sub { font-size: 10px; color: #8A9099; margin-top: 2px; }
+  .mp-stats { display: flex; gap: 6px; margin-top: 7px; }
+  .mp-stat { flex: 1; background: #fff; border-radius: 10px; padding: 7px 2px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
+  .mp-stat .n { font-size: 13.5px; font-weight: 800; }
+  .mp-stat .l { font-size: 9.5px; color: #8A9099; margin-top: 1px; }
+  .c-orange { color: #FF8F1F; } .c-blue { color: #3B7CFF; } .c-red { color: #FA5151; }
+  .mp-menu { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.04); margin-top: 7px; }
+  .mi { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-bottom: 1px solid #F5F6F8; }
+  .mi:last-child { border-bottom: none; }
+  .mi .ico { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex: 0 0 auto; }
+  .i-green { background: #E6F9F0; } .i-blue { background: #E8F1FF; } .i-orange { background: #FFF3E6; } .i-teal { background: #E3F7F5; }
+  .mi .t { font-size: 12.5px; font-weight: 600; }
+  .mi .d { font-size: 10px; color: #8A9099; margin-top: 1px; }
+  .mi .ar { margin-left: auto; color: #C2C8D0; font-size: 15px; }
+  .mp-out { background: #fff; border-radius: 12px; text-align: center; padding: 9px; font-size: 12.5px; color: #4B5563; box-shadow: 0 1px 4px rgba(0,0,0,.04); margin-top: 7px; }
+  /* 改造后新增：注销账号入口 */
+  .mp-del { position: relative; background: #fff; border: 1.5px dashed #FA5151; border-radius: 12px; text-align: center; padding: 8px 8px 7px; margin-top: 8px; }
+  .mp-del .t { color: #FA5151; font-size: 12.5px; font-weight: 700; }
+  .mp-del .s { color: #8A9099; font-size: 9.5px; margin-top: 3px; line-height: 1.5; }
+  .mp-del .new { position: absolute; top: -8px; right: 8px; background: #FA5151; color: #fff; font-size: 9px; padding: 1px 6px; border-radius: 8px; }
+  /* 底部导航（BuyerTabBar 照实画） */
+  .tabbar { flex: 0 0 auto; display: flex; background: #fff; border-top: 1px solid #EDEEF0; padding: 5px 0 8px; }
+  .tb { flex: 1; text-align: center; font-size: 9px; color: #8A9099; }
+  .tb .ico { font-size: 17px; display: block; margin-bottom: 1px; filter: grayscale(1); opacity: .55; }
+  .tb.on { color: #00B96B; font-weight: 600; }
+  .tb.on .ico { filter: none; opacity: 1; }
+
+  /* ===== 通用卡片 / 按钮 ===== */
+  .expl { background: #fff; border-radius: 12px; padding: 10px 11px; font-size: 12px; color: #4B5563; line-height: 1.65; }
+  .expl b { color: #1F2329; }
+  .blk { display: flex; align-items: center; gap: 9px; background: #fff; border: 1px solid #FFE4BA; border-left: 3px solid #FF8F1F; border-radius: 10px; padding: 9px 10px; margin-top: 8px; }
+  .blk .ic { font-size: 16px; flex: 0 0 auto; }
+  .blk .t { font-size: 12px; font-weight: 700; }
+  .blk .s { font-size: 10px; color: #8A9099; margin-top: 2px; line-height: 1.5; }
+  .blk .go { margin-left: auto; flex: 0 0 auto; background: #FFF3E6; color: #C87000; font-size: 10.5px; font-weight: 600; padding: 5px 9px; border-radius: 8px; white-space: nowrap; }
+  .rl { border-radius: 8px; padding: 7px 9px; font-size: 10.5px; line-height: 1.55; font-weight: 600; margin-top: 9px; }
+  .rl.red { background: #FDEBEC; color: #D64550; border: 1px solid #FFD6D6; }
+  .rl.orange { background: #FFF3E6; color: #C87000; border: 1px solid #FFE4BA; }
+  .rl.green { background: #E6F9F0; color: #00995A; border: 1px solid #C9F0DD; }
+  .btn-dis { background: #E9EDF1; color: #B3B9C2; text-align: center; border-radius: 12px; padding: 11px; font-size: 13.5px; font-weight: 600; }
+  .btn-red { background: #FA5151; color: #fff; text-align: center; border-radius: 12px; padding: 11px; font-size: 13.5px; font-weight: 700; }
+  .cta { margin-top: auto; }
+  .cta-hint { text-align: center; font-size: 9.5px; color: #8A9099; margin-top: 6px; line-height: 1.5; }
+  .okbox { background: #fff; border-radius: 14px; padding: 16px; text-align: center; margin-top: 4px; }
+  .okring { width: 52px; height: 52px; border-radius: 50%; background: #E6F9F0; color: #00B96B; font-size: 26px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+  .okbox .t { font-size: 15px; font-weight: 800; margin-top: 8px; }
+  .okbox .s { font-size: 10.5px; color: #8A9099; margin-top: 3px; }
+  .ck-list { background: #fff; border-radius: 12px; margin-top: 8px; padding: 5px 11px; }
+  .ck { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: #1F2329; padding: 7px 0; border-bottom: 1px solid #F5F6F8; }
+  .ck:last-child { border-bottom: none; }
+  .ck .m { color: #00B96B; font-weight: 700; }
+  .ck .mut { color: #8A9099; font-size: 10px; }
+  /* 屏③ 确认页 */
+  .warnhead { background: linear-gradient(135deg, #FFF0F0, #FFE9E9); border: 1px solid #FFD6D6; border-radius: 12px; padding: 10px 11px; margin-top: 4px; }
+  .warnhead .t { font-size: 13px; font-weight: 800; color: #D64550; }
+  .warnhead .s { font-size: 10px; color: #B25B5B; margin-top: 3px; line-height: 1.55; }
+  .cons { background: #fff; border-radius: 12px; margin-top: 8px; padding: 2px 10px; }
+  .crow { display: flex; gap: 8px; padding: 9px 0; border-bottom: 1px solid #F5F6F8; }
+  .crow:last-child { border-bottom: none; }
+  .crow .ic { font-size: 15px; flex: 0 0 auto; }
+  .crow .t { font-size: 11.5px; font-weight: 700; line-height: 1.45; }
+  .crow .s { font-size: 10px; color: #8A9099; margin-top: 2px; line-height: 1.5; }
+  .mini { display: inline-block; font-size: 8.5px; padding: 1px 5px; border-radius: 6px; margin-left: 4px; vertical-align: 1px; font-weight: 600; }
+  .mini.red { background: #FDEBEC; color: #D64550; }
+  .mini.orange { background: #FFF3E6; color: #C87000; }
+  .mini.green { background: #E6F9F0; color: #00995A; }
+  .cbx-row { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 12px; padding: 11px; margin-top: 9px; font-size: 12.5px; font-weight: 600; }
+  .cbx { width: 17px; height: 17px; border: 1.5px solid #C9D2DA; border-radius: 4px; flex: 0 0 auto; }
+  .btns { display: flex; gap: 9px; margin-top: 11px; }
+  .btn { flex: 1; text-align: center; border-radius: 12px; padding: 11px 0; font-size: 13.5px; font-weight: 600; }
+  .btn.plain { background: #fff; color: #1F2329; border: 1px solid #E5E8EB; }
+  .btn.red-dis { background: #FA5151; opacity: .4; color: #fff; font-weight: 700; }
+  /* 屏④ 成功页 */
+  .done-hero { background: #fff; border-radius: 14px; padding: 18px 14px 15px; text-align: center; margin-top: 4px; }
+  .res { background: #fff; border-radius: 12px; margin-top: 8px; padding: 4px 11px; }
+  .res .ck { font-size: 11px; }
+  .exits { background: #fff; border-radius: 12px; margin-top: 8px; padding: 10px 11px 9px; }
+  .exits .cap { font-size: 11px; font-weight: 700; color: #8A9099; margin-bottom: 8px; }
+  .btn-green { background: #00B96B; color: #fff; text-align: center; border-radius: 11px; padding: 10px; font-size: 13px; font-weight: 700; }
+  .btn-plain2 { background: #fff; border: 1px solid #E5E8EB; color: #1F2329; text-align: center; border-radius: 11px; padding: 10px; font-size: 13px; font-weight: 600; margin-top: 7px; }
+  .exit-cap { font-size: 9.5px; color: #8A9099; text-align: center; margin-top: 4px; line-height: 1.5; }
+
+  /* ===== 每屏底部注脚：对应实现 ===== */
+  .note { width: 336px; font-size: 10.5px; color: #6B7280; line-height: 1.75; margin-top: 10px; }
+  .note .t { font-size: 12px; font-weight: 700; color: #1F2329; margin-bottom: 3px; display: block; }
+  .note b { color: #1F2329; }
+  .note code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 9.5px; }
+
+  .foot {
+    background: #fff; border-radius: 14px; padding: 14px 16px; margin-top: 26px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.06); width: 1768px;
+  }
+  .foot .t { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+  .foot .t2 { font-size: 14px; font-weight: 700; margin: 12px 0 6px; }
+  .foot .d { font-size: 12.5px; color: #6B7280; line-height: 1.9; }
+  .foot .d b { color: #1F2329; }
+  .foot code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 10.5px; }
+</style>
+</head>
+<body>
+
+<h1>🥬 绿立方 · 采购方「注销账号」流程原型 <span>（卡AB · 待大辉确认 · 点头后才排实现卡）</span></h1>
+<div class="sub">
+  一句话：只有<b>采购方</b>可自助注销——「我的」页底部新增红色入口 → <b>条件检查</b>（有未完成订单 / 未结清账款先拦下）→ <b>二次确认</b>（后果逐条明示＋勾选后才可提交）→ <b>注销成功</b>（同一微信可重新注册，历史数据不恢复）。<br>
+  📄 涉及：<code>frontend/src/pages/buyer/mine.vue</code>（仅加入口）；新增页面 3 个（条件检查 / 确认 / 成功）；注销相关后端接口一律标「<b>待实现</b>」，不在原型里虚构接口路径。
+</div>
+
+<div id="shots">
+
+  <div class="legend">
+    <div class="t">📏 红线（大辉已拍板，画进图里不改）</div>
+    <div class="li">🔴 <b>不可逆</b>：个人信息（店铺名称、联系人、电话、营业执照等）清除后<b>不可恢复</b> —— ③二次确认页必须明示</div>
+    <div class="li">🟠 <b>前置条件</b>：有未完成订单（待支付 / 备货 / 配送中）或未结清账款 → <b>拦截，不许注销</b>，先提示去处理（②）</div>
+    <div class="li">🟢 <b>可再注册</b>：注销后<b>同一微信</b>可重新注册，重新走注册＋审核，作为全新账号；历史订单不跟过来、数据不恢复（③④）</div>
+  </div>
+
+  <div class="row">
+
+    <!-- ① 我的页（现状 → 改造后） -->
+    <div class="fig">
+      <div class="fig-cap">① 采购方「我的」页 <span>现状 → 改造后：仅底部新增红色「注销账号」入口，其余各项保持不变</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title">我的</div>
+        <div class="phone-body">
+          <div class="mp-strip ok">
+            <span class="ico">✅</span>
+            <span><span class="b">账号已激活</span><span class="s">您可正常下单 · 资质信息以证照为准</span></span>
+          </div>
+          <div class="mp-prof">
+            <div class="mp-ava">🏪</div>
+            <div>
+              <div class="mp-name">老王家常菜 <span class="tag green">正常</span></div>
+              <div class="mp-sub">王老板 · 138****6666</div>
+            </div>
+          </div>
+          <div class="mp-stats">
+            <div class="mp-stat"><div class="n c-orange">¥386.50</div><div class="l">未付账款</div></div>
+            <div class="mp-stat"><div class="n c-blue">28</div><div class="l">本月订单</div></div>
+            <div class="mp-stat"><div class="n c-red">暂无</div><div class="l">售后中</div></div>
+          </div>
+          <div class="mp-menu">
+            <div class="mi"><div class="ico i-green">🏪</div><div><div class="t">餐馆资料</div><div class="d">营业执照 · 食品经营许可证</div></div><div class="ar">›</div></div>
+            <div class="mi"><div class="ico i-blue">📍</div><div><div class="t">收货地址</div><div class="d">配送时段 07:00-09:00</div></div><div class="ar">›</div></div>
+            <div class="mi"><div class="ico i-orange">💰</div><div><div class="t">账款记录</div><div class="d">COD · 额度 ¥0</div></div><div class="ar">›</div></div>
+            <div class="mi"><div class="ico i-teal">💬</div><div><div class="t">智能下单助手</div><div class="d">说一句话就能下单</div></div><div class="ar">›</div></div>
+            <div class="mi"><div class="ico i-teal">📩</div><div><div class="t">我的需求</div><div class="d">没上架的菜记在这儿，到货通知你</div></div><div class="ar">›</div></div>
+          </div>
+          <div class="mp-out">退出登录</div>
+          <div class="mp-del">
+            <span class="new">新增</span>
+            <div class="t">注销账号</div>
+            <div class="s">退出登录仅退出账号、资料保留；<b>注销账号＝删除账号</b>，个人信息将被清除且不可恢复</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="ico">🏠</span>首页</div>
+          <div class="tb"><span class="ico">🥕</span>商品</div>
+          <div class="tb"><span class="ico">🛒</span>购物车</div>
+          <div class="tb"><span class="ico">📦</span>订单</div>
+          <div class="tb on"><span class="ico">👤</span>我的</div>
+        </div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现</span>
+        页面：<code>frontend/src/pages/buyer/mine.vue</code>（现状照实画）。改造仅一处：在「退出登录」下方新增红色文字入口「注销账号」＋一句区分小字，防止误点。<br>
+        <b>退出登录 ≠ 注销</b>：退出仅清本机登录态、资料都在；注销＝删除账号（后果见③）。<br>
+        点「注销账号」→ 进入 ② 条件检查页（新页面，路由<b>待实现</b>）。
+      </div>
+    </div>
+
+    <!-- ②-A 条件检查：不满足 -->
+    <div class="fig">
+      <div class="fig-cap">②-A 注销条件检查页 <span>新增页 · 状态A：不满足条件 → 逐条列出拦住的事项，底部按钮置灰</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 注销账号</div>
+        <div class="phone-body">
+          <div class="expl">注销前，需要先处理完以下事项：<br><span style="color:#8A9099;font-size:10.5px">处理完回到本页，底部的「注销账号」才会亮起。</span></div>
+          <div class="blk">
+            <span class="ic">📦</span>
+            <span><span class="t">进行中的订单 2 个</span><br><span class="s">待支付 1 · 配送中 1，完成或取消后才能注销</span></span>
+            <span class="go">去处理 ›</span>
+          </div>
+          <div class="blk">
+            <span class="ic">💰</span>
+            <span><span class="t">未结清账款 ¥386.50</span><br><span class="s">2026-09 账款尚未结清，结清后才能注销</span></span>
+            <span class="go">去处理 ›</span>
+          </div>
+          <div class="rl orange">🟠 红线：有未完成订单或未结清账款 → 拦截，不允许注销</div>
+          <div class="cta">
+            <div class="btn-dis">注销账号</div>
+            <div class="cta-hint">处理完以上事项后，这里才能点</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（②-A）</span>
+        「去处理」分别跳既有页：订单 → <code>frontend/src/pages/buyer/order-list.vue</code>；账款 → <code>frontend/src/pages/buyer/bill.vue</code>（账款记录）。<br>
+        注销条件检查接口：<b>待实现</b>（本卡不虚构接口路径）。单量、金额为示意数据。
+      </div>
+    </div>
+
+    <!-- ②-B 条件检查：满足 -->
+    <div class="fig">
+      <div class="fig-cap">②-B 注销条件检查页 <span>新增页 · 状态B：满足条件 → 绿勾「当前可以注销」，红色按钮可点</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 注销账号</div>
+        <div class="phone-body">
+          <div class="okbox">
+            <div class="okring">✓</div>
+            <div class="t">当前可以注销</div>
+            <div class="s">进行中订单 0 · 未结清账款 ¥0.00</div>
+          </div>
+          <div class="ck-list">
+            <div class="ck"><span class="m">✓</span>无进行中的订单<span class="mut">（待支付 / 备货 / 配送中）</span></div>
+            <div class="ck"><span class="m">✓</span>无未结清账款</div>
+          </div>
+          <div class="rl green">🟢 注销后同一微信可重新注册，需重新审核，历史数据不恢复</div>
+          <div class="cta">
+            <div class="btn-red">申请注销</div>
+            <div class="cta-hint">点击后进入二次确认页，需再次确认注销后果</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（②-B）</span>
+        条件全绿才出现红色「申请注销」，点击进入 ③ 二次确认页。<br>
+        检查口径：进行中订单＝待支付 / 备货 / 配送中；未结清账款以账款记录（<code>frontend/src/pages/buyer/bill.vue</code>）为准。检查接口：<b>待实现</b>。
+      </div>
+    </div>
+
+    <!-- ③ 确认页（核心屏） -->
+    <div class="fig">
+      <div class="fig-cap">③ 注销确认页（核心屏） <span>新增页 · 二次确认：醒目警示卡片逐条写明后果，勾选后按钮才亮起</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 确认注销</div>
+        <div class="phone-body">
+          <div class="warnhead">
+            <div class="t">⚠️ 注销为危险操作，不可恢复</div>
+            <div class="s">请逐条确认以下后果；确认后你的账号将被删除。</div>
+          </div>
+          <div class="cons">
+            <div class="crow">
+              <span class="ic">🧹</span>
+              <span><span class="t">个人信息、收货地址将被清空<span class="mini red">🔴 不可恢复</span></span><br><span class="s">店铺名称、联系人、电话、营业执照等全部清除，清除后无法找回</span></span>
+            </div>
+            <div class="crow">
+              <span class="ic">📄</span>
+              <span><span class="t">历史订单与账款依规保留，但不再关联本人</span><br><span class="s">因税务要求存档，此后无法凭本账号查询、导出</span></span>
+            </div>
+            <div class="crow">
+              <span class="ic">⏳</span>
+              <span><span class="t">进行中订单、未结清账款须先处理完<span class="mini orange">🟠 前置条件</span></span><br><span class="s">有未完成事项时无法提交注销（见②-A）</span></span>
+            </div>
+            <div class="crow">
+              <span class="ic">🔄</span>
+              <span><span class="t">同一微信号可重新注册<span class="mini green">🟢 可再注册</span></span><br><span class="s">需重新走注册＋审核，作为全新账号；历史数据不恢复</span></span>
+            </div>
+          </div>
+          <div class="cbx-row"><span class="cbx"></span>我已知晓以上后果</div>
+          <div class="btns">
+            <div class="btn plain">再想想</div>
+            <div class="btn red-dis">确认注销</div>
+          </div>
+          <div class="cta-hint">勾选「我已知晓以上后果」后，「确认注销」才会亮起</div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（③）</span>
+        新增前端页面。「确认注销」提交接口：<b>待实现</b>。<br>
+        交互：必须勾选「我已知晓以上后果」，按钮才可用；「再想想」放弃并返回「我的」页。<br>
+        🔴 后果①为不可逆操作，页面必须明示（图上已用红色警示卡＋标签标出）。
+      </div>
+    </div>
+
+    <!-- ④ 成功 / 重新引导页 -->
+    <div class="fig">
+      <div class="fig-cap">④ 注销成功 / 重新引导页 <span>新增页 · 结果态：两个出口——「重新注册」重走审核 / 「先不注册」逛商品不看价</span></div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title">注销成功</div>
+        <div class="phone-body">
+          <div class="done-hero">
+            <div class="okring">✓</div>
+            <div class="t" style="font-size:16px;font-weight:800;margin-top:8px">账号已注销</div>
+            <div class="s" style="font-size:10.5px;color:#8A9099;margin-top:3px">个人信息已清除 · 本微信可重新注册</div>
+          </div>
+          <div class="res">
+            <div class="ck"><span class="m">✓</span>个人信息与收货地址已清除</div>
+            <div class="ck"><span class="m">✓</span>历史订单与账款已匿名化存档<span class="mut">（不再关联本人）</span></div>
+            <div class="ck"><span class="m">✓</span>账号已退出，不可再登录</div>
+          </div>
+          <div class="exits">
+            <div class="cap">接下来你可以：</div>
+            <div class="btn-green">重新注册</div>
+            <div class="exit-cap">重新走注册＋审核（1 待审核 → 2 正常），作为全新账号，历史数据不恢复</div>
+            <div class="btn-plain2">先不注册</div>
+            <div class="exit-cap">先逛逛：商品可见，价格显示 *（未注册看价星号口径）</div>
+          </div>
+          <div class="rl green">🟢 红线：同一微信注销后可重新注册，需重新审核，历史数据不恢复</div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（④）</span>
+        「重新注册」→ <code>frontend/src/pages/buyer/register.vue</code>：重新走注册＋审核（<code>Purchaser.accountStatus</code>：1 待审核 → 2 正常），原账号历史订单不跟过来。<br>
+        「先不注册」→ 未登录浏览态：可逛商品、价格显示 *，沿用「未注册看价星号」口径。<br>
+        账号数据清除 / 匿名化的落地方式：<b>待实现</b>。
+      </div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <div class="t">🚧 本版刻意不做（范围外，勿当遗漏）</div>
+    <div class="d">
+      ① <b>供应商 / 配送员的自助注销</b> —— 终止合作走运营，不在本卡；<br>
+      ② <b>注销冷静期</b>（如 7 天内可恢复）—— 第一版不做；<br>
+      ③ <b>客服在线申诉 / 咨询入口</b>；<br>
+      ④ <b>历史订单在重新注册后的关联与展示</b>。
+    </div>
+    <div class="t2">📌 通用口径</div>
+    <div class="d">
+      本卡只画原型：注销相关后端接口一律标「<b>待实现</b>」，大辉点头后另出实现卡，原型里不虚构接口路径；<br>
+      采购方状态字段 <code>Purchaser.accountStatus</code>：1 待审核 / 2 正常 / 3 驳回 / 5 停用；<br>
+      页面内的金额、单量均为示意数据。
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
