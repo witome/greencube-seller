@@ -4,6 +4,7 @@ import { RegisterDto } from './dto/register.dto'
 import { AppealDto } from './dto/appeal.dto'
 import { AftersaleDto } from './dto/aftersale.dto'
 import { UpdateBuyerProfileDto } from './dto/update-profile.dto'
+import { CancelAccountDto } from './dto/cancel-account.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -101,5 +102,21 @@ export class BuyerController {
   @Roles(Role.PURCHASER)
   async homeContent(@CurrentUser('userId') userId: bigint) {
     return this.service.getHomeContent(userId)
+  }
+
+  /// 卡AC（2026-09-30）：能不能自助注销 —— 返回 { canCancel, blockers }
+  /// 门槛：① 进行中订单清空 ② 未结清账款清空（支付状态复用既有四档判定）
+  @Get('account/cancel-eligibility')
+  @Roles(Role.PURCHASER)
+  async cancelEligibility(@CurrentUser('userId') userId: bigint) {
+    return this.service.cancelEligibility(userId)
+  }
+
+  /// 卡AC：自助注销（只作用于**采购方身份**；账号本身保留，其它身份不受影响）
+  /// body 必须显式 { confirm: true }；不满足门槛 → 业务错（文案里带上卡在哪儿）
+  @Post('account/cancel')
+  @Roles(Role.PURCHASER)
+  async cancelAccount(@CurrentUser('userId') userId: bigint, @Body() dto: CancelAccountDto) {
+    return this.service.cancelAccount(userId, dto)
   }
 }

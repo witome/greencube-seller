@@ -97,6 +97,14 @@
 
       <!-- 退出登录 -->
       <view v-if="profile" class="buyer-mine-logout" @tap="logout">退出登录</view>
+
+      <!-- 卡AC（2026-09-30）：自助注销入口（红字）。
+           与上面「退出登录」必须一眼分得清：退出登录只是退出、资料还在；注销是删除账号、不可恢复。
+           有采购方档案才显示（未注册/已注销没有档案，自然没有入口；停用态(5)会被 account-guard 拦走）。 -->
+      <view v-if="profile && accountStatus !== null" class="buyer-mine-cancel-wrap" @tap="go('/pages/buyer/account-cancel')">
+        <view class="buyer-mine-cancel">注销账号</view>
+        <view class="buyer-mine-cancel-tip">退出登录只是退出当前登录、资料还在；注销会删除账号与资料，不可恢复</view>
+      </view>
     </template>
 
     <BuyerTabBar active="/pages/buyer/mine" />
@@ -108,7 +116,7 @@ import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
 import { useUserStore } from '@/store/user'
-import { forgetPreferredRole } from '@/utils/preferred-role'
+import { logoutToLogin } from '@/utils/logout'
 import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
@@ -195,14 +203,8 @@ const onSwitchRole = () => {
   })
 }
 
-const logout = () => {
-  uni.removeStorageSync('token')
-  uni.removeStorageSync('currentRole')
-  uni.removeStorageSync('accountStatus')
-  uni.removeStorageSync('devRole')
-  forgetPreferredRole()
-  uni.reLaunch({ url: '/pages/login/index' })
-}
+// 卡AC：清理逻辑抽到 utils/logout.js 与注销共用，这里不再内联第二份（行为不变）
+const logout = () => logoutToLogin()
 
 const currentPeriod = () => {
   const d = new Date()
@@ -350,4 +352,9 @@ onShow(() => {
   padding: 13px; font-size: 14px; color: $text-second;
   box-shadow: 0 1px 4px rgba(0,0,0,.04);
 }
+
+/* ── 卡AC：注销账号（红字入口 + 与退出登录的区分说明）── */
+.buyer-mine-cancel-wrap { margin-top: 14px; text-align: center; padding: 0 4px; }
+.buyer-mine-cancel { font-size: 14px; color: #FA5151; font-weight: 600; }
+.buyer-mine-cancel-tip { font-size: 11px; color: $text-placeholder; margin-top: 4px; line-height: 1.5; }
 </style>

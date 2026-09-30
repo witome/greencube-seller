@@ -72,6 +72,11 @@ export const buyerApi = {
   urgeVerify: () => post('/buyer/urge-verify'),
   // 首页内容一次取全（横幅/公告/今日推荐位，2026-09-11 首页接口化卡）
   getHomeContent: () => get('/buyer/home-content'),
+
+  // 卡AC（2026-09-30）：自助注销 —— 先看能不能注销（canCancel + blockers），确认后再提交
+  getCancelEligibility: () => get('/buyer/account/cancel-eligibility'),
+  // confirm 由客户端固定传 true（服务端要求显式确认，缺省即参数错）
+  cancelAccount: () => post('/buyer/account/cancel', { confirm: true }),
 }
 
 /* ── 采购需求（客户要了、我们还没有的货）2026-09-25 ──

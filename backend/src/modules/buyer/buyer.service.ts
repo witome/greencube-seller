@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { randomBytes } from 'crypto'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AuditService } from '../audit/audit.service'
 import { BizException, ErrorCode, AccountStatus, OrderStatus } from '../../common/constants/error-codes'
@@ -6,6 +7,8 @@ import { RegisterDto } from './dto/register.dto'
 import { AppealDto } from './dto/appeal.dto'
 import { AftersaleDto } from './dto/aftersale.dto'
 import { UpdateBuyerProfileDto } from './dto/update-profile.dto'
+import { CancelAccountDto } from './dto/cancel-account.dto'
+import { payStatusOf, hasPayProof, hasWechatPaidRecord } from '../../common/utils/pay-status.util'
 
 @Injectable()
 export class BuyerService {
@@ -399,6 +402,195 @@ export class BuyerService {
       })
 
     return { deliveryNote, notice, recommendations, priceVisible }
+  }
+
+  // ────────────────────────────────────────
+  // 卡AC（2026-09-30）：采购方自助注销账号
+  // ────────────────────────────────────────
+  // 两条硬门槛，**两项都得清空**才可注销（缺一不可）：
+  //   ① 进行中订单：status ∈ {10,20,30,40,45,50}
+  //   ② 未结清账款：已进入应收（status ∈ {60,70,90}）且**支付状态仍为未付/待收款**的订单
+  //
+  // ⚠️ 支付状态一律复用 common/utils/pay-status.util.ts 的既有四档判定，这里**绝不写第二份**
+  //    （本项目反复出事的点）。只有 paid_wechat / paid_proof 算「已付」，
+  //    cod_pending（货到付款已送达未收）必须**算未结清**——钱还没到手就注销，账就烂了。
+  // ⚠️ 不许拿 bill() 当判据：那是占位实现（paidAmount 恒 0），会把买过东西的采购方全部拦住。
+  //
+  // 注销本体在一个事务内全部完成（详见 cancelAccount 内注释）。
+
+  /// ① 进行中（未完结）的订单状态：这类订单还没走完，不允许注销
+  private static readonly ONGOING_ORDER_STATUS = [
+    OrderStatus.PENDING_CONFIRM, // 10 待确认
+    OrderStatus.SPLITTED,        // 20 已拆单
+    OrderStatus.STOCKING,        // 30 备货中
+    OrderStatus.WAIT_DELIVERY,   // 40 待配送
+    OrderStatus.ASSIGNED,        // 45 已派单
+    OrderStatus.DELIVERING,      // 50 配送中
+  ]
+
+  /// ② 已进入应收的订单状态：送达/完成/结算（只有这三类才谈得上「账款结没结」）
+  private static readonly RECEIVABLE_ORDER_STATUS = [
+    OrderStatus.DELIVERED, // 60 已送达
+    OrderStatus.COMPLETED, // 70 已完成
+    OrderStatus.SETTLED,   // 90 已结算
+  ]
+
+  /// 匿名化后的店名（purchaser.shop_name 非空，故用占位串而不是 null）
+  private static readonly CANCELLED_SHOP_NAME = '已注销账号'
+
+  /// 应收金额口径：已验收定稿的看 amountFinal（已扣拒收）；尚未定稿的看下单应付额
+  /// (amountOrdered + deliveryFee，与支付单额度同一口径)。不另造算法。
+  private receivableAmount(o: { amountFinal?: any; amountOrdered: any; deliveryFee: any }): number {
+    if (o.amountFinal != null) return Number(o.amountFinal)
+    return Number(o.amountOrdered) + Number(o.deliveryFee)
+  }
+
+  /// 未结清账款明细（唯一实现：eligibility 与 cancel 都走它，两处口径不可能分叉）
+  private async collectBlockers(purchaserId: bigint) {
+    const blockers: Array<{ type: 'orders' | 'bill'; count: number; amount: number | null; label: string }> = []
+
+    const ongoingCount = await this.prisma.order.count({
+      where: { purchaserId, status: { in: BuyerService.ONGOING_ORDER_STATUS } },
+    })
+    if (ongoingCount > 0) {
+      blockers.push({
+        type: 'orders',
+        count: ongoingCount,
+        amount: null,
+        label: `你还有 ${ongoingCount} 个进行中的订单`,
+      })
+    }
+
+    const receivable = await this.prisma.order.findMany({
+      where: { purchaserId, status: { in: BuyerService.RECEIVABLE_ORDER_STATUS } },
+      select: {
+        status: true,
+        payMethod: true,
+        payProof: true,
+        amountOrdered: true,
+        amountFinal: true,
+        deliveryFee: true,
+        payments: { select: { channel: true, status: true } },
+      },
+    })
+    const unpaid = receivable.filter((o) => {
+      const code = payStatusOf({
+        payMethod: o.payMethod,
+        status: o.status,
+        onlinePaid: hasWechatPaidRecord(o.payments),
+        hasProof: hasPayProof(o.payProof),
+      }).code
+      return code === 'unpaid' || code === 'cod_pending'
+    })
+    if (unpaid.length > 0) {
+      const amount = Math.round(unpaid.reduce((s, o) => s + this.receivableAmount(o), 0) * 100) / 100
+      blockers.push({
+        type: 'bill',
+        count: unpaid.length,
+        amount,
+        label: `你还有未结清账款 ¥${amount.toFixed(2)}`,
+      })
+    }
+
+    return blockers
+  }
+
+  /// GET /buyer/account/cancel-eligibility —— 能不能注销、卡在哪儿
+  async cancelEligibility(userId: bigint) {
+    const purchaser = await this.prisma.purchaser.findUnique({
+      where: { userId },
+      select: { id: true, accountStatus: true },
+    })
+    if (!purchaser) throw new BizException(ErrorCode.NOT_FOUND, '未找到采购方档案')
+
+    const blockers = await this.collectBlockers(purchaser.id)
+    return { canCancel: blockers.length === 0, blockers }
+  }
+
+  /// POST /buyer/account/cancel —— 注销（只作用于**采购方身份**）
+  async cancelAccount(userId: bigint, dto: CancelAccountDto) {
+    // 必须显式 confirm：缺了 / false / 传字符串一律参数错（前端二次确认之外的服务端兜底）
+    if (dto.confirm !== true) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '请先确认注销后果（confirm 必须为 true）')
+    }
+
+    const purchaser = await this.prisma.purchaser.findUnique({
+      where: { userId },
+      select: { id: true, userId: true, accountStatus: true },
+    })
+    if (!purchaser) throw new BizException(ErrorCode.NOT_FOUND, '未找到采购方档案')
+    if (purchaser.accountStatus === AccountStatus.CANCELLED) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该账号已注销')
+    }
+
+    // 服务端独立再判一次门槛：不信任前端传的任何状态（页面可能停在旧数据上）
+    const blockers = await this.collectBlockers(purchaser.id)
+    if (blockers.length > 0) {
+      throw new BizException(
+        ErrorCode.ORDER_STATUS_INVALID,
+        '注销前请先处理完：' + blockers.map((b) => b.label).join('；'),
+      )
+    }
+
+    const oldUserId = purchaser.userId
+    const cancelledAt = new Date()
+
+    await this.prisma.$transaction(async (tx) => {
+      // ① 回收站用户：接管旧 purchaser 行的 userId（不可猜的 wx_openid、无身份、禁用态）。
+      //    存在的意义：让「原微信用户」从此**没有** purchaser 档案 → 可重新注册成全新账号；
+      //    历史订单仍挂在旧 purchaser 行上（对账/税务完整），但不再关联本人 ——
+      //    这就是原型「历史订单与账单依规保留，但不再关联本人」的实现方式。
+      //    ⚠️ 因此必须保住 Purchaser.userId 的 @unique（全仓 33 处 findUnique({ userId })）：
+      //       解绑而不是去约束，正是为了不碰那 33 处。
+      const trash = await tx.user.create({
+        data: {
+          wxOpenid: 'cancelled_' + randomBytes(16).toString('hex'),
+          name: '已注销',
+          roles: [],
+          status: 0,
+        },
+      })
+
+      // ② 清空该采购方的购物车（cart_item 挂在 user 上，按原 userId 清）
+      await tx.cartItem.deleteMany({ where: { userId: oldUserId } })
+
+      // ③ 本人 user 行的 PII 脱敏（手机号置 null 同时释放 user.phone 唯一约束，便于将来重注册）
+      await tx.user.update({ where: { id: oldUserId }, data: { name: null, phone: null } })
+
+      // ④ purchaser PII 匿名化 + 状态 6 + 解绑到回收站用户（最后一步：改完即与原微信再无关联）
+      await tx.purchaser.update({
+        where: { id: purchaser.id },
+        data: {
+          shopName: BuyerService.CANCELLED_SHOP_NAME,
+          contact: '',
+          phone: '',
+          address: '',
+          qualification: null,
+          businessLicenseNo: null,
+          businessLicenseImg: null,
+          foodPermitImg: null,
+          deliveryWindows: null,
+          accountStatus: AccountStatus.CANCELLED,
+          userId: trash.id,
+        },
+      })
+
+      // ⑤ 审计（随事务提交/回滚）。
+      //    ⚠️ 只记状态跃迁与「已匿名化」摘要：绝不能出现姓名 / 电话 / 执照号 / 地址。
+      await this.audit.log(
+        {
+          operatorId: userId,
+          action: 'BUYER_ACCOUNT_CANCEL',
+          entity: 'purchaser',
+          entityId: purchaser.id,
+          before: { accountStatus: purchaser.accountStatus },
+          after: { accountStatus: AccountStatus.CANCELLED, anonymized: true, cancelledAt: cancelledAt.toISOString() },
+        },
+        tx,
+      )
+    })
+
+    return { cancelled: true }
   }
 
   // ────────────────────────────────────────
