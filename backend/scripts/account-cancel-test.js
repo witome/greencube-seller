@@ -20,6 +20,24 @@
  * ⚠️ 前置：后端已起（3001）且 WX_MOCK_LOGIN=1（mock 登录下 code → openid 规则为 dev_<code>）
  */
 const BASE = process.env.AC_TEST_BASE || 'http://127.0.0.1:3001/api/v1'
+const fs = require('fs')
+const path = require('path')
+// Hermes 复核收口（2026-09-30）：本脚本原先没自己加载 backend/.env，
+// 按文档的 `node scripts/account-cancel-test.js` 直接跑会报
+// `Environment variable not found: DATABASE_URL`（Prisma 不自动读 .env）。
+// 仓库里 pay-status-test / demand-test / order-shipping-test 都是自己加载的，这里对齐。
+try {
+  const envTxt = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8')
+  for (const line of envTxt.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/)
+    if (!m) continue
+    let v = m[2].trim()
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1)
+    if (process.env[m[1]] === undefined) process.env[m[1]] = v
+  }
+} catch (e) {
+  console.error('读取 backend/.env 失败：', e.message)
+}
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 

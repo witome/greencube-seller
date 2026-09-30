@@ -38,7 +38,7 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi } from '@/api/modules'
 import { useUserStore } from '@/store/user'
-import { forgetPreferredRole } from '@/utils/preferred-role'
+import { logoutToLogin } from '@/utils/logout'
 import CustomTabBar from '@/components/CustomTabBar.vue'
 
 const profile = ref(null)
@@ -71,12 +71,9 @@ const switchRole = async (r) => {
   }
 }
 
-const logout = () => {
-  uni.removeStorageSync('token'); uni.removeStorageSync('currentRole')
-  uni.removeStorageSync('accountStatus'); uni.removeStorageSync('devRole')
-  forgetPreferredRole()
-  uni.reLaunch({ url: '/pages/login/index' })
-}
+// Hermes 复核收口（2026-09-30）：并到唯一共享实现 —— 原内联版本漏了 stopAllPollers()，
+// 会出现「退出登录后旧页轮询还拿旧身份打接口 → 反复弹权限错」。
+const logout = () => logoutToLogin()
 
 </script>
 
