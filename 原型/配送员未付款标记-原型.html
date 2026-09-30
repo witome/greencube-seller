@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>绿立方 · 配送员「客户未付款」+ 运营后台联动 原型（卡AF · 2026-09-30）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #EEF1F4; color: #1F2329;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h1 span { font-size: 13px; color: #C87000; font-weight: 400; }
+  .sub { font-size: 13px; color: #6B7280; margin-bottom: 18px; line-height: 1.75; max-width: 2864px; }
+  .sub b { color: #1F2329; }
+  .sub code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+
+  /* ===== 图纸容器（截图只截这一块） ===== */
+  #shots { background: #EEF1F4; padding: 18px; width: fit-content; }
+  .row { display: flex; gap: 22px; align-items: flex-start; }
+
+  /* ===== 分区标题条 ===== */
+  .sec {
+    width: 2864px; display: flex; align-items: center; gap: 10px;
+    background: #fff; border-radius: 12px; padding: 11px 16px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.06); margin: 26px 0 14px;
+  }
+  .sec:first-of-type { margin-top: 0; }
+  .sec .bar { width: 5px; height: 20px; border-radius: 3px; flex: 0 0 auto; }
+  .sec .t { font-size: 15px; font-weight: 800; }
+  .sec .d { font-size: 12px; color: #6B7280; }
+  .sec .cnt { margin-left: auto; font-size: 11.5px; color: #8A9099; }
+
+  /* ===== 红线图例 ===== */
+  .legend {
+    background: #fff; border-radius: 14px; padding: 14px 16px; margin: 0 0 22px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.06); width: 2864px;
+  }
+  .legend .t { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .legend .li { font-size: 12.5px; line-height: 2; }
+  .legend .li b { font-weight: 700; }
+  .legend .row2 { display: flex; gap: 26px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #E5E8EB; }
+  .legend .st { font-size: 12px; line-height: 1.95; color: #4B5563; flex: 1; }
+  .legend .st b { color: #1F2329; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+
+  .fig { display: flex; flex-direction: column; flex: 0 0 auto; }
+  .fig-cap { font-size: 13px; font-weight: 700; margin: 0 0 8px; max-width: 336px; line-height: 1.5; }
+  .fig-cap span { font-weight: 400; color: #8A9099; font-size: 11px; display: block; margin-top: 2px; }
+  .fig-cap.wide { max-width: 940px; }
+
+  /* ===== 手机壳 ===== */
+  .phone {
+    width: 336px; height: 660px; background: #fff;
+    border-radius: 40px; border: 8px solid #111; overflow: hidden;
+    display: flex; flex-direction: column; flex: 0 0 auto; position: relative;
+    box-shadow: 0 10px 26px rgba(0,0,0,.13);
+  }
+  .phone-top {
+    height: 34px; background: #00B96B; color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px; font-size: 12px; flex: 0 0 auto;
+  }
+  .capsule { display: flex; gap: 3px; align-items: center; }
+  .capsule span { width: 6px; height: 6px; border-radius: 50%; background: #fff; display: block; }
+  .phone-title {
+    background: #fff; padding: 9px 12px; font-size: 15px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #EEF1F4; flex: 0 0 auto;
+  }
+  .phone-title .back { color: #00B96B; font-weight: 400; font-size: 14px; }
+  .phone-body { flex: 1; overflow: hidden; background: #F5F6F8; padding: 9px 10px; display: flex; flex-direction: column; }
+  .phone-body::-webkit-scrollbar { width: 0; }
+  .home-ind { flex: 0 0 auto; height: 14px; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .home-ind i { display: block; width: 96px; height: 4px; border-radius: 3px; background: #D5DAE0; }
+
+  /* ===== 小程序通用件 ===== */
+  .tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; white-space: nowrap; font-weight: 600; }
+  .tag.green { background: #E6F9F0; color: #00995A; }
+  .tag.orange { background: #FFF3E6; color: #C87000; }
+  .tag.blue { background: #E8F1FF; color: #2A6BD8; }
+  .tag.gray { background: #F2F4F6; color: #8A9099; }
+  .tag.red { background: #FDEBEC; color: #D64550; }
+  .newbadge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #FA5151; border-radius: 8px; padding: 1px 6px; vertical-align: 1px; margin-left: 4px; }
+
+  .notice { background: #FFF8EC; color: #C87000; font-size: 11px; padding: 8px 9px; border-radius: 8px; margin-bottom: 7px; line-height: 1.55; flex: 0 0 auto; }
+  .card { background: #fff; border-radius: 12px; padding: 8px 9px; margin-bottom: 6px; flex: 0 0 auto; }
+  .card-title { font-size: 11.5px; font-weight: 700; color: #1F2329; margin-bottom: 5px; display: flex; align-items: center; }
+  .kv { display: flex; justify-content: space-between; font-size: 11.5px; padding: 3.5px 0; }
+  .kv .k { color: #8A9099; }
+  .kv .v { color: #1F2329; }
+  .kv .v.red { color: #FA5151; font-weight: 700; }
+
+  .qr-box { width: 118px; height: 118px; margin: 6px auto 4px; border: 1px solid #E5E8EB; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 30px; background: #FAFBFC; }
+  .qr-tip { text-align: center; font-size: 10px; color: #8A9099; }
+
+  .ph-grid { display: flex; gap: 6px; margin-top: 5px; }
+  .ph-item { width: 46px; height: 46px; border-radius: 7px; background: #E9EDF1; display: flex; align-items: center; justify-content: center; font-size: 17px; position: relative; }
+
+  .rl { border-radius: 8px; padding: 6px 9px; font-size: 10.5px; line-height: 1.6; font-weight: 600; margin-bottom: 7px; flex: 0 0 auto; }
+  .rl.red { background: #FDEBEC; color: #D64550; border: 1px solid #FFD6D6; }
+  .rl.orange { background: #FFF3E6; color: #C87000; border: 1px solid #FFE4BA; }
+  .rl.green { background: #E6F9F0; color: #00995A; border: 1px solid #C9F0DD; }
+  .rl .sm { display: block; font-weight: 400; font-size: 9.5px; opacity: .9; margin-top: 3px; }
+
+  .pbtn { border-radius: 22px; padding: 10px 0; text-align: center; font-size: 13.5px; font-weight: 700; }
+  .pbtn.primary { background: #00B96B; color: #fff; }
+  .pbtn.success { background: #3B7CFF; color: #fff; }
+  .pbtn.outline { background: #fff; border: 1px solid #D5DAE0; color: #4B5563; font-weight: 600; }
+  .pbtn.dis { background: #E9EDF1; color: #B3B9C2; }
+  .pbtn-hint { text-align: center; font-size: 9.5px; color: #8A9099; margin-top: 5px; }
+  .row-btns { display: flex; flex-direction: column; gap: 8px; margin-top: auto; flex: 0 0 auto; }
+  .queue-tip { font-size: 10.5px; color: #8A9099; text-align: center; }
+
+  /* 半屏 / 弹层 */
+  .sheet-mask { position: absolute; inset: 0; background: rgba(0,0,0,.34); display: flex; align-items: flex-end; }
+  .sheet { width: 100%; background: #fff; border-radius: 16px 16px 0 0; padding: 14px 14px 16px; }
+  .sheet .sh-t { font-size: 14.5px; font-weight: 800; }
+  .sheet .sh-s { font-size: 11px; color: #8A9099; margin-top: 4px; line-height: 1.6; }
+  .sbtn { border-radius: 22px; padding: 11px 0; text-align: center; font-size: 14px; font-weight: 700; margin-top: 9px; }
+  .sbtn.primary { background: #00B96B; color: #fff; }
+  .sbtn.outline { border: 1px solid #D5DAE0; color: #4B5563; background: #fff; }
+  .sbtn.warn { background: #FF8F1F; color: #fff; }
+  .sbtn.ghost { color: #8A9099; font-weight: 400; font-size: 13px; margin-top: 7px; }
+  .ta { background: #F5F6F8; border-radius: 8px; padding: 8px 9px; font-size: 11px; color: #4B5563; line-height: 1.6; min-height: 34px; }
+  .ta.ph { color: #B3B9C2; }
+  .fld-lb { font-size: 11px; font-weight: 700; margin: 2px 0 4px; }
+  .fld-lb span { font-weight: 400; color: #8A9099; }
+
+  /* 配送任务卡（配送员首页） */
+  .sc-card { background: #fff; border-radius: 12px; padding: 8px 10px; margin-bottom: 7px; flex: 0 0 auto; }
+  .sc-row { display: flex; align-items: center; gap: 7px; font-size: 11px; padding: 2.5px 0; }
+  .sc-label { color: #8A9099; width: 52px; }
+  .switch { width: 34px; height: 18px; border-radius: 10px; background: #D5DAE0; position: relative; }
+  .switch.on { background: #00B96B; }
+  .switch-dot { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+  .switch.on .switch-dot { left: 18px; }
+  .sc-val { color: #1F2329; font-weight: 600; }
+  .sc-val.ok { color: #00B96B; }
+  .sc-status { font-size: 10.5px; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #EDEEF0; color: #00B96B; }
+  .home-head { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 0 6px; flex: 0 0 auto; }
+  .home-head .hello { font-size: 12.5px; font-weight: 800; }
+  .home-head .addr { font-size: 10px; color: #8A9099; }
+  .task-card { background: #fff; border-radius: 12px; padding: 8px 9px; margin-bottom: 6px; flex: 0 0 auto; }
+  .tc-head { display: flex; justify-content: space-between; align-items: center; }
+  .tc-route { font-size: 11.5px; font-weight: 800; }
+  .tc-stations { font-size: 10px; color: #8A9099; margin-top: 3px; }
+  .cargo-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;
+    border-top: 1px solid #F5F6F8; margin-top: 5px; padding-top: 5px; }
+  .cargo-name { font-size: 11.5px; font-weight: 700; }
+  .cargo-tag { font-size: 9px; padding: 1px 5px; border-radius: 8px; margin-left: 4px; font-weight: 700; vertical-align: 1px; white-space: nowrap; }
+  .cargo-tag.orange { background: #FFF3E6; color: #C87000; }
+  .cargo-tag.blue { background: #E8F1FF; color: #2A6BD8; }
+  .cargo-tag.green { background: #E6F9F0; color: #00995A; }
+  .cargo-addr { font-size: 10px; color: #8A9099; margin-top: 2px; }
+  .cargo-items { font-size: 10px; color: #4B5563; margin-top: 2px; }
+  .cargo-ops { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex: 0 0 auto; }
+  .cargo-btn { font-size: 10px; padding: 3px 9px; border-radius: 12px; white-space: nowrap; }
+  .cargo-btn.cod { background: #FF8F1F; color: #fff; font-weight: 700; }
+  .cargo-btn.report { border: 1px solid #E5E8EB; color: #8A9099; }
+  .cargo-picked { font-size: 10px; color: #00B96B; }
+
+  .cmp-strip { background: #F7F8FA; border: 1px dashed #D5DAE0; border-radius: 9px; padding: 7px 9px; font-size: 9.5px; color: #6B7280; line-height: 1.65; flex: 0 0 auto; }
+  .cmp-strip b { color: #D64550; }
+  .cmp-strip code { background: #E9EDF1; border-radius: 3px; padding: 0 3px; }
+
+  /* ===== 浏览器窗口（运营后台） ===== */
+  .browser {
+    width: 940px; height: 660px; flex: 0 0 auto; background: #F5F7FA;
+    border: 1px solid #D5DAE0; border-radius: 10px; overflow: hidden;
+    display: flex; flex-direction: column; box-shadow: 0 10px 26px rgba(0,0,0,.13);
+  }
+  .bw-bar { height: 34px; background: #EFF1F4; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid #E2E6EB; flex: 0 0 auto; }
+  .bw-dots { display: flex; gap: 5px; }
+  .bw-dots i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+  .bw-dots i:nth-child(1) { background: #FF5F57; } .bw-dots i:nth-child(2) { background: #FEBC2E; } .bw-dots i:nth-child(3) { background: #28C840; }
+  .bw-url { flex: 1; background: #fff; border: 1px solid #E2E6EB; border-radius: 6px; height: 20px; font-size: 10px; color: #8A9099; display: flex; align-items: center; padding: 0 8px; }
+  .bw-body { flex: 1; overflow: hidden; padding: 11px 13px; position: relative; }
+  .bw-body::-webkit-scrollbar { width: 0; }
+
+  .adm-crumb { font-size: 11px; color: #909399; margin-bottom: 9px; }
+  .adm-card { background: #fff; border: 1px solid #EBEEF5; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
+
+  /* 顶部统计（订单履约页真实形态） */
+  .fulfill-stats { display: flex; gap: 8px; margin-bottom: 10px; }
+  .fstat { flex: 1; background: #fff; border: 1px solid #EBEEF5; border-radius: 6px; padding: 7px 4px; text-align: center; position: relative; }
+  .fstat.on { border-color: #409EFF; background: #ECF5FF; }
+  .fstat.hot { border-color: #F56C6C; background: #FEF0F0; }
+  .fstat .n { font-size: 17px; font-weight: 800; color: #303133; }
+  .fstat .n.orange { color: #E6A23C; } .fstat .n.blue { color: #409EFF; }
+  .fstat .n.red { color: #F56C6C; } .fstat .n.green { color: #67C23A; }
+  .fstat .l { font-size: 10px; color: #909399; margin-top: 1px; }
+  .adm-new { position: absolute; top: -8px; right: -4px; background: #FA5151; color: #fff; font-size: 8.5px; border-radius: 8px; padding: 0 5px; line-height: 13px; font-weight: 700; }
+  .rel { position: relative; }
+
+  .adm-toolbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .adm-radio { display: flex; border: 1px solid #DCDFE6; border-radius: 4px; }
+  .adm-radio div { font-size: 11px; padding: 5px 11px; border-right: 1px solid #DCDFE6; color: #606266; background: #fff; position: relative; }
+  .adm-radio div:last-child { border-right: none; }
+  .adm-radio div.on { background: #409EFF; color: #fff; border-color: #409EFF; }
+  .adm-select { border: 1px solid #DCDFE6; border-radius: 4px; font-size: 11px; padding: 5px 9px; color: #909399; display: flex; align-items: center; gap: 6px; min-width: 112px; justify-content: space-between; }
+  .adm-check { font-size: 11px; color: #606266; display: flex; align-items: center; gap: 5px; }
+  .adm-sq { width: 12px; height: 12px; border: 1px solid #DCDFE6; border-radius: 3px; flex: 0 0 auto; }
+  .adm-sq.on { background: #409EFF; border-color: #409EFF; color: #fff; font-size: 9px; text-align: center; line-height: 12px; }
+  .adm-btn { background: #409EFF; color: #fff; font-size: 11px; padding: 6px 14px; border-radius: 4px; }
+  .adm-btn.plain { background: #ECF5FF; color: #409EFF; }
+  .adm-tip { font-size: 10px; color: #909399; }
+
+  .adm-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .adm-table th { background: #FAFAFA; color: #606266; font-size: 10.5px; font-weight: 700; text-align: left; padding: 6px 5px; border-bottom: 1px solid #EBEEF5; white-space: nowrap; }
+  .adm-table td { font-size: 10.5px; color: #303133; padding: 6px 5px; border-bottom: 1px solid #EBEEF5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+  .adm-table tr:nth-child(even) td { background: #FAFAFA; }
+  .adm-table tr.marked td { background: #FEF6F6; }
+  .adm-table .muted { color: #909399; }
+  .adm-pager { display: flex; justify-content: flex-end; align-items: center; gap: 8px; font-size: 11px; color: #606266; margin-top: 10px; }
+  .adm-pager .pg { border: 1px solid #DCDFE6; border-radius: 4px; padding: 3px 9px; }
+  .adm-pager .pg.on { background: #409EFF; color: #fff; border-color: #409EFF; }
+  .adm-link { color: #409EFF; font-size: 10.5px; }
+  .ep-tag { font-size: 10px; border-radius: 3px; padding: 1px 6px; border: 1px solid; display: inline-block; }
+  .ep-tag.warn { color: #E6A23C; background: #FDF6EC; border-color: #F5DAB1; }
+  .ep-tag.danger { color: #F56C6C; background: #FEF0F0; border-color: #FBC4C4; }
+  .ep-tag.success { color: #67C23A; background: #F0F9EB; border-color: #C2E7B0; }
+  .ep-tag.info { color: #909399; background: #F4F4F5; border-color: #D3D4D6; }
+  .ep-tag.primary { color: #409EFF; background: #ECF5FF; border-color: #B3D8FF; }
+  .ep-btn { font-size: 10.5px; border: 1px solid #DCDFE6; border-radius: 4px; padding: 2px 8px; color: #606266; background: #fff; display: inline-block; }
+  .ep-btn.pri { background: #409EFF; border-color: #409EFF; color: #fff; }
+  .mark-cell { display: flex; align-items: center; gap: 4px; }
+  .mark-time { font-size: 9.5px; color: #F56C6C; }
+
+  .recon-cards { display: flex; gap: 8px; margin-bottom: 10px; }
+  .rcard { flex: 1; background: #fff; border: 1px solid #EBEEF5; border-radius: 6px; padding: 8px 10px; }
+  .rcard.hot { border-color: #FBC4C4; background: #FEF6F6; }
+  .rcard .lbl { font-size: 10.5px; color: #909399; }
+  .rcard .num { font-size: 16px; font-weight: 800; color: #303133; margin-top: 2px; }
+  .rcard .num.green { color: #67C23A; } .rcard .num.red { color: #F56C6C; }
+  .rcard .sub2 { font-size: 9.5px; color: #909399; margin-top: 3px; line-height: 1.5; }
+  .rcard .sub2.red { color: #F56C6C; font-weight: 700; }
+
+  /* 弹窗 / 抽屉 */
+  .mask { position: absolute; inset: 0; background: rgba(0,0,0,.28); display: flex; align-items: flex-start; justify-content: center; }
+  .ep-dialog { width: 620px; background: #fff; border-radius: 6px; margin-top: 20px; overflow: hidden; box-shadow: 0 12px 32px rgba(0,0,0,.18); }
+  .ep-dialog .dh { padding: 12px 16px; font-size: 14px; font-weight: 700; color: #303133; display: flex; align-items: center; }
+  .ep-dialog .dh .x { margin-left: auto; color: #909399; font-weight: 400; }
+  .ep-dialog .db { padding: 2px 16px 12px; }
+  .ep-dialog .df { padding: 10px 16px; border-top: 1px solid #EBEEF5; display: flex; justify-content: flex-end; gap: 9px; }
+  .sub-t { font-size: 11.5px; font-weight: 700; color: #303133; margin: 8px 0 5px; display: flex; align-items: center; gap: 5px; }
+  .adm-mini-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  .adm-mini-table th { background: #FAFAFA; color: #606266; padding: 5px 7px; border: 1px solid #EBEEF5; text-align: left; font-weight: 700; }
+  .adm-mini-table td { padding: 4px 7px; border: 1px solid #EBEEF5; color: #303133; }
+  .sum { background: #F7F9FC; border: 1px solid #EBEEF5; border-radius: 5px; padding: 8px 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+  .sum div { font-size: 11px; color: #303133; }
+  .sum div span { color: #909399; }
+  .ep-alert { background: #FEF0F0; border: 1px solid #FBC4C4; border-radius: 5px; padding: 8px 10px; font-size: 11px; color: #C45656; line-height: 1.65; }
+  .ep-alert.orange { background: #FDF6EC; border-color: #F5DAB1; color: #B88230; }
+  .ep-alert.green { background: #F0F9EB; border-color: #C2E7B0; color: #529B2E; }
+
+  /* 收款时间线（后台订单详情） */
+  .time-row { display: flex; gap: 8px; padding: 5px 0; }
+  .time-row .d { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; flex: 0 0 auto; }
+  .time-row .d.orange { background: #E6A23C; box-shadow: 0 0 0 3px #FDF6EC; }
+  .time-row .d.green { background: #67C23A; box-shadow: 0 0 0 3px #F0F9EB; }
+  .time-row .d.gray { background: #D3D4D6; }
+  .time-row .c { font-size: 11px; line-height: 1.6; }
+  .time-row .c b { display: block; font-size: 11.5px; }
+  .time-row .c em { font-style: normal; color: #909399; font-size: 10px; }
+
+  .kw { background: #EEF1F4; border-radius: 3px; padding: 0 4px; font-size: 9.5px; color: #8A9099; }
+
+  /* 流程卡（C 区右侧） */
+  .flow-card { width: 940px; background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.06); }
+  .flow-card .ft { font-size: 13px; font-weight: 800; margin-bottom: 4px; }
+  .flow-card .fs { font-size: 11px; color: #8A9099; line-height: 1.7; margin-bottom: 10px; }
+  .flow { display: flex; align-items: center; gap: 8px; }
+  .fnode { border-radius: 9px; padding: 8px 10px; font-size: 11px; line-height: 1.55; flex: 1; border: 1px solid; }
+  .fnode .fn-t { font-weight: 800; font-size: 11.5px; display: block; margin-bottom: 2px; }
+  .fnode.gray { background: #F7F8FA; border-color: #E5E8EB; color: #4B5563; }
+  .fnode.green { background: #F1FCF6; border-color: #C9F0DD; color: #0B7A4B; }
+  .fnode.orange { background: #FFF8EC; border-color: #FFE4BA; color: #B8730A; }
+  .fnode.red { background: #FEF3F4; border-color: #FFD6D6; color: #C33A46; }
+  .farrow { font-size: 15px; color: #C0C4CC; flex: 0 0 auto; }
+  .flow-note { margin-top: 10px; padding-top: 9px; border-top: 1px dashed #E5E8EB; font-size: 10.5px; color: #6B7280; line-height: 1.8; }
+  .flow-note b { color: #1F2329; }
+  .flow-note code { background: #E9EDF1; border-radius: 3px; padding: 0 4px; font-size: 10px; }
+
+  /* 三端对照卡 */
+  .cmp-card { width: 940px; background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.06); }
+  .cmp-card .ct { font-size: 13px; font-weight: 800; margin-bottom: 3px; }
+  .cmp-card .cs { font-size: 11px; color: #8A9099; line-height: 1.7; margin-bottom: 10px; }
+  .cmp-table { width: 100%; border-collapse: collapse; }
+  .cmp-table th { font-size: 11px; color: #6B7280; text-align: left; padding: 6px 8px; background: #F7F8FA; border: 1px solid #EBEEF5; font-weight: 700; }
+  .cmp-table td { font-size: 11.5px; color: #1F2329; padding: 9px 8px; border: 1px solid #EBEEF5; vertical-align: top; }
+  .cmp-table td.who { color: #6B7280; font-size: 11px; }
+  .cmp-big { font-size: 14px; font-weight: 800; }
+  .cmp-big.gray { color: #8A9099; } .cmp-big.orange { color: #C87000; } .cmp-big.blue { color: #409EFF; }
+  .cmp-sub { font-size: 10px; color: #909399; margin-top: 3px; line-height: 1.55; }
+
+  /* ===== 每屏底部注脚 ===== */
+  .note { width: 336px; font-size: 10.5px; color: #6B7280; line-height: 1.75; margin-top: 10px; }
+  .note.wide { width: 940px; }
+  .note .t { font-size: 12px; font-weight: 700; color: #1F2329; margin-bottom: 3px; display: block; }
+  .note b { color: #1F2329; }
+  .note code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 9.5px; }
+
+  .foot { background: #fff; border-radius: 14px; padding: 14px 16px; margin-top: 26px; box-shadow: 0 4px 14px rgba(0,0,0,.06); width: 2864px; }
+  .foot .t { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+  .foot .t2 { font-size: 14px; font-weight: 700; margin: 14px 0 6px; }
+  .foot .d { font-size: 12.5px; color: #6B7280; line-height: 1.95; }
+  .foot .d b { color: #1F2329; }
+  .foot code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 10.5px; }
+</style>
+</head>
+<body>
+
+<h1>🥬 绿立方 · 配送员「客户未付款」标记 + 运营后台联动 原型 <span>（卡AF · 2026-09-30 · 待大辉确认 · 点头后才排实现卡 AH）</span></h1>
+<div class="sub">
+  一句话：配送员送完货发现<b>客户没给钱</b>时，能一键显式标记「<b>客户未付款</b>」；运营后台立刻看得到这单要注意；<b>客户后来微信付了钱，标记自动失效</b>（线上到账永远优先）。<br>
+  📄 三块：<b>A 参考对照（1 屏 · 采购方侧，卡AG 实现）</b> · <b>C 配送员端（小程序 4 屏）</b> · <b>B 运营后台（PC 3 屏）</b>，共 <b>8 屏</b>。接口名一律照本卡写，本卡没写的标「<b>待实现</b>」，原型里不虚构接口路径。
+</div>
+
+<div id="shots">
+
+  <!-- ==================== 四条硬边界 ==================== -->
+  <div class="legend">
+    <div class="t">📏 四条硬边界（大辉 2026-09-30 拍板 2a~2e，画进图里不改）</div>
+    <div class="li">🔴 <b>不动钱</b>：这只是个<b>标记</b> —— 不改订单金额、不进结算、不进账单、不新增扣款/抵扣</div>
+    <div class="li">🔴 <b>线上到账优先</b>：标记后客户微信支付成功 → <b>自动变「已付款」</b>，标记<b>自动失效</b>，<b>不需要人工清理</b></div>
+    <div class="li">🟠 <b>只标「没收到钱」</b>：不填金额、不做催收动作（发消息/打电话/催收单）、不做「运营销账」——第一版不做</div>
+    <div class="li">🟠 <b>不新增字段</b>：标记写进订单<b>已有的收款凭证结构</b> <code>order.pay_proof</code>（Json：photos / courierId / paidAt）里，加一个 <code>unpaidMark</code> 子对象（实现卡里说明，原型只体现）</div>
+    <div class="row2">
+      <div class="st">
+        <b>同一单 · 三端各说各的（都不新增状态）</b><br>
+        <span class="dot" style="background:#8A9099"></span> 采购方（客户）→「<b>未支付</b>」<span class="kw">卡AG</span><br>
+        <span class="dot" style="background:#FF8F1F"></span> 配送员 → 橙色小标「<b>未收款</b>」<span class="kw">卡AF</span><br>
+        <span class="dot" style="background:#409EFF"></span> 运营后台 →「<b>待收款</b>」＋ 🔴「<b>配送员已标记未收款</b>」<span class="kw">卡AF</span><br>
+        <span style="color:#8A9099">四档付款状态仍是 <code>pay-status.util.ts</code> 唯一实现，本卡<b>不新增第五档</b>。</span>
+      </div>
+      <div class="st">
+        <b>标记往哪写（照本卡口径，勿自造）</b><br>
+        <code>order.pay_proof</code> 现结构：<code>{ photos:[], courierId, paidAt }</code>（<code>schema.prisma:358</code>）<br>
+        本卡追加：<code>unpaidMark: { by, at, remark }</code>（标记人 / 时间 / 备注）—— <b>不新表、不新列</b><br>
+        <b>判定优先级</b>：<code>hasWechatPaidRecord()</code> 为真 → 一律「已付款·微信直接支付」，<code>unpaidMark</code> <b>只作历史痕迹展示</b><br>
+        ⚠️ <code>hasPayProof()</code> 现有实现是「photos 数组非空」→ 加了 <code>unpaidMark</code> 后<b>不能</b>把它算成有凭证（实现卡必须防这个坑，否则「未付款」会被误判成「已付款·扫码付款」）
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== A 参考对照 ==================== -->
+  <div class="sec">
+    <span class="bar" style="background:#8A9099"></span>
+    <span class="t">A · 参考对照（不属于本卡实现，只作三端对照）</span>
+    <span class="d">同一单、同一时刻：客户 =「未支付」 / 配送员 =「未收款」 / 运营 =「待收款 ＋ 标记」</span>
+    <span class="cnt">1 屏</span>
+  </div>
+
+  <div class="row">
+
+    <!-- A0 采购方订单详情（付款文案） -->
+    <div class="fig">
+      <div class="fig-cap">A0 · 采购方订单详情（付款文案 · 对照）
+        <span>卡AG 实现：COD 已送达未收款在客户侧显示「未支付」（不是「待收款」）；本图仅作三端对照，本卡<b>不动这一屏</b></span>
+      </div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 订单详情</div>
+        <div class="phone-body">
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:15px;font-weight:800;color:#00B96B">已送达</span>
+              <span class="tag gray">货到付款</span>
+            </div>
+            <div class="kv" style="margin-top:4px"><span class="k">订单号</span><span class="v">20260930-0041</span></div>
+            <div class="kv"><span class="k">餐馆</span><span class="v">老王家常菜</span></div>
+            <div class="kv"><span class="k">送达时间</span><span class="v">2026-09-30 09:12</span></div>
+          </div>
+          <div class="card">
+            <div class="card-title">支付状态<span class="newbadge">卡AG 改文案</span></div>
+            <div class="rl red" style="margin-bottom:5px">💳 未支付
+              <span class="sm">客户视角只认「钱付没付」：还没给钱就一直显示「未支付」<br>（运营后台 / 配送员端同一条单显示「待收款」，那是作业提示）</span>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <span class="pbtn outline" style="flex:1;padding:8px 0;font-size:12px">扫码付款</span>
+              <span class="pbtn primary" style="flex:1;padding:8px 0;font-size:12px">微信直接支付</span>
+            </div>
+            <div class="pbtn-hint">付完款后，线上到账 → 本页自动变「已付款 · 微信直接支付」（无需人工）</div>
+          </div>
+          <div class="card">
+            <div class="card-title">商品明细</div>
+            <div class="kv"><span class="k">大白菜 × 20 斤</span><span class="v">¥38.00</span></div>
+            <div class="kv"><span class="k">土豆 × 10 斤</span><span class="v">¥25.00</span></div>
+            <div class="kv" style="border-top:1px dashed #EDEEF0;margin-top:3px;padding-top:5px">
+              <span class="k">合计（含运费 ¥5）</span><span class="v red">¥128.00</span>
+            </div>
+          </div>
+          <div class="rl orange">🟠 卡AG 同时会<b>去掉</b>「确认收货（全部接受）」按钮 —— 订单不再靠客户点确认推进，改为<b>钱到账即收货完成</b>
+            <span class="sm">未付款的 COD 单会一直停在「已送达」，这是有意为之，不是 bug</span>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（A0 · 参考，非本卡）</span>
+        页面：<code>frontend/src/pages/buyer/order-detail.vue</code>（现状已有 <code>payStatus</code> 三档分支 + COD 两个付款按钮）。<br>
+        🟠 <b>文案改动属卡AG</b>：<code>cod_pending</code> 在采购方侧显示「<b>未支付</b>」——做法是<b>在 <code>pay-status.util.ts</code> 同一文件里加「面向采购方的文案映射」</b>，<b>前端一个字都不许自己判</b>。<br>
+        🔴 本卡（AF）<b>一行都不改这一屏</b>，只放过来让人看清三端口径差异。
+      </div>
+    </div>
+
+    <!-- A0 三端对照表 -->
+    <div class="fig">
+      <div class="fig-cap wide">A0 · 同一单在三端各显示什么（对照表）
+        <span>三端文案不同，但都指向同一件事：<b>这笔钱还没进平台账</b>；谁改哪一栏，图上标死</span>
+      </div>
+      <div class="cmp-card">
+        <div class="ct">📋 同一单 · 三端文案对照（订单 20260930-0041 · 货到付款 · 已送达）</div>
+        <div class="cs">客户侧文案由 <code>pay-status.util.ts</code> 的「采购方文案映射」出（卡AG）；配送员端与运营后台的标记由本卡（AF）出。</div>
+        <table class="cmp-table">
+          <thead>
+            <tr><th style="width:190px">端 / 谁在看</th><th style="width:200px">显示文案</th><th>说明</th><th style="width:150px">谁实现</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="who">采购方（客户 · 小程序）</td>
+              <td><span class="cmp-big gray">未支付</span></td>
+              <td class="cmp-sub">客户不需要知道「是还没到收货」还是「该收钱了」，只认钱付没付</td>
+              <td class="cmp-sub"><b>卡AG</b>（文案映射）</td>
+            </tr>
+            <tr>
+              <td class="who">配送员（小程序 · 任务卡）</td>
+              <td><span class="cmp-big orange">未收款</span>
+                <div class="cmp-sub">＋ 橙色小标（仅配送员自己可见）</div></td>
+              <td class="cmp-sub">让配送员自己知道「这单还欠着这笔钱」，别忘回去收 / 别报错</td>
+              <td class="cmp-sub"><b>卡AF</b>（本卡）</td>
+            </tr>
+            <tr>
+              <td class="who">运营后台（PC）</td>
+              <td><span class="cmp-big blue">待收款</span>
+                <div class="cmp-sub" style="color:#F56C6C;font-weight:700">🔴 配送员已标记未收款</div></td>
+              <td class="cmp-sub">「待收款」是既有作业提示；<b>红色标记</b>是本卡新增，能被筛出来盯着</td>
+              <td class="cmp-sub"><b>卡AF</b>（本卡）</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="flow-note" style="margin-top:12px">
+          <b>要点：</b>三端都没有新增订单状态 —— 四档付款状态仍是 <code>pay-status.util.ts</code> 唯一实现；本卡<b>只在既有结构上加一个标记</b>，钱的链路一行不动。<br>
+          <b>客户付了钱之后：</b>三端同时回到「已付款」（客户=已付款·微信直接支付 / 配送员=标记消失 / 运营=标记变灰「已由线上支付覆盖」）。
+        </div>
+      </div>
+      <div class="note wide">
+        <span class="t">对应实现（A0 对照表）</span>
+        本表是<b>说明性对照</b>，不对应某个页面文件；它把「客户 / 配送员 / 运营」三端在同一时刻的文案钉在一起，供实现卡 AH 与卡AG 各自对齐。<br>
+        🔴 三端取数同源：都来自后端 <code>pay-status.util.ts</code> + <code>order.pay_proof</code>，<b>没有第二个判断口径</b>。
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ==================== C 配送员端 ==================== -->
+  <div class="sec">
+    <span class="bar" style="background:#00B96B"></span>
+    <span class="t">C · 配送员端（小程序 · 配送员）</span>
+    <span class="d">交付完成给出两条路 → 收款页新增次要按钮「客户未付款」→ 二次确认（备注选填）→ 任务列表橙色小标</span>
+    <span class="cnt">4 屏</span>
+  </div>
+
+  <div class="row">
+
+    <!-- C1 交付完成页 -->
+    <div class="fig">
+      <div class="fig-cap">C1 · 交付确认页（收款两条路）
+        <span>现状：拍照 + 确认交付后，只弹「交付完成，请收款」就直进收款页 → 改造后：有 COD 待收款单时，给出「客户已付款（上传凭证）」／「<b>客户未付款</b>」两条路</span>
+      </div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 交付确认</div>
+        <div class="phone-body">
+          <div class="notice">📸 交付前拍照留痕。配送员不接触现金。</div>
+          <div class="card">
+            <div class="card-title">交付确认</div>
+            <div class="kv"><span class="k">任务号</span><span class="v">T-20260930-07</span></div>
+            <div class="kv"><span class="k">订单总金额（货到付款）</span><span class="v red">¥128.00</span></div>
+            <div class="kv"><span class="k">现场照片</span><span class="v" style="color:#00B96B">📷 ＋ 拍照</span></div>
+            <div class="ph-grid"><span class="ph-item">🖼</span><span class="ph-item">🖼</span></div>
+            <div class="kv" style="margin-top:2px"><span class="k">备注</span><span class="v" style="color:#B3B9C2">选填</span></div>
+          </div>
+          <div class="cmp-strip">
+            <b>现状</b>：点「确认交付」后弹一句 toast「交付完成，请收款」→ 直接 <code>redirectTo</code> 进收款页（<code>cod-pay.vue</code>）。<br>
+            <b>改造后</b>：把这一句 toast 换成下图这个<b>半屏选择</b> —— 客户付没付，由配送员在当下明确说出口。
+          </div>
+          <div class="sheet-mask">
+            <div class="sheet">
+              <div class="sh-t">交付完成，本单需要收款</div>
+              <div class="sh-s">客户扫码付了吗？选完直接进下一步（本单 ¥128.00 · 还有 2 单待收款）</div>
+              <div class="sbtn primary">📷 客户已付款 · 上传收款凭证</div>
+              <div class="sbtn outline">⚠️ 客户未付款 · 标记并继续<span class="newbadge">新增</span></div>
+              <div class="sbtn ghost">取消</div>
+            </div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（C1）</span>
+        页面：<code>frontend/src/subpkg-courier/pages/deliver.vue</code>（现状照实画：任务号 / 金额 / 拍照 / 备注 + 「确认交付」）。<br>
+        <b>现状</b>：<code>confirm()</code> 调 <code>POST /courier/task/:taskId/deliver</code> → 后端返回 <code>codOrders</code> → 弹 toast → 进 <code>cod-pay.vue</code>。<br>
+        <b>改造</b>：把「toast + 直进收款页」换成<b>半屏两路选择</b>：<br>
+        ① 客户已付款 → 进收款页拍照留证（<b>既有流程，一行不改</b>）；<br>
+        ② 客户未付款 → 进 C3 二次确认（新增标记接口 · <b>待实现</b>）。<br>
+        🟠 未选就退出的情况按现状处理（<b>不新增必选门槛</b>，避免卡住配送员）。
+      </div>
+    </div>
+
+    <!-- C2 收款页 -->
+    <div class="fig">
+      <div class="fig-cap">C2 · 收款页（<b>本期核心</b>）
+        <span>现状：只有「付款拍照」→ 提交凭证判「已付款·扫码付款」 → 改造后：底部加一颗<b>次要样式</b>按钮「客户未付款」+ 页内写明标记后果</span>
+      </div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 收款</div>
+        <div class="phone-body">
+          <div class="notice">💰 货到付款：请客户扫下方收款码付款，付款成功后拍照留证</div>
+          <div class="card">
+            <div class="kv"><span class="k">订单号</span><span class="v">20260930-0041</span></div>
+            <div class="kv"><span class="k">店铺</span><span class="v">老王家常菜</span></div>
+          </div>
+          <div class="card" style="text-align:center">
+            <div class="card-title">平台收款码</div>
+            <div class="qr-box">▦</div>
+            <div class="qr-tip">请客户扫码支付，配送员不接触现金</div>
+          </div>
+          <div class="rl orange">⚠️ 客户没给钱？
+            <span class="sm">点下方「<b>客户未付款</b>」标记 —— 标记后<b>客户侧显示为「未支付」</b>；客户之后用<b>微信</b>付了，会自动变「已付款」，<b>标记自动失效</b>，不用你回来改。</span>
+          </div>
+          <div class="row-btns">
+            <div class="queue-tip">📋 本单收完后还有 2 单待收款</div>
+            <div class="pbtn primary">📷 付款拍照</div>
+            <div class="pbtn outline">⚠️ 客户未付款<span class="newbadge">新增 · 次要样式</span></div>
+            <div class="pbtn-hint">「客户未付款」是次要动作，不与「付款拍照」抢主色</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（C2）</span>
+        页面：<code>frontend/src/subpkg-courier/pages/cod-pay.vue</code>（现状照实画：收款码卡 + 「付款拍照」+ 提交凭证）。<br>
+        <b>新增</b>：底部次要按钮「客户未付款」—— <b>只在未线上收款（<code>!onlinePaid</code>）时出现</b>；已线上到账的单<b>不显示</b>（钱已到，标记毫无意义）。<br>
+        🔴 已线上收款的单（<code>online-banner</code>）本页<b>整块不给现金动作</b>，这条现状保持不动。<br>
+        标记接口 <b>待实现</b>（本卡未定路径，不虚构）；提交凭证仍走既有 <code>POST /courier/order/:orderId/pay-proof</code>。
+      </div>
+    </div>
+
+    <!-- C3 二次确认 -->
+    <div class="fig">
+      <div class="fig-cap">C3 · 「客户未付款」二次确认（半屏）
+        <span>内容：一句确认 + <b>备注（选填，如"客户说下午转"）</b> + 取消／确认标记；确认后回收款队列继续下一单。<b>出口：客户又给了 → 回收款页走上传凭证那条路，标记自动撤销</b></span>
+      </div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title"><span class="back">‹</span> 收款</div>
+        <div class="phone-body">
+          <div class="notice" style="opacity:.4">💰 货到付款：请客户扫下方收款码付款，付款成功后拍照留证</div>
+          <div class="card" style="opacity:.4">
+            <div class="kv"><span class="k">订单号</span><span class="v">20260930-0041</span></div>
+            <div class="kv"><span class="k">店铺</span><span class="v">老王家常菜</span></div>
+          </div>
+          <div class="sheet-mask">
+            <div class="sheet">
+              <div class="sh-t">确认这单没收到钱？</div>
+              <div class="sh-s">标记只是<b>提醒运营注意</b>这一单：不改订单金额、不进结算、不进账单。</div>
+              <div class="fld-lb">备注 <span>（选填，如「客户说下午转」）</span></div>
+              <div class="ta">客户说下午转，人已当面说好</div>
+              <div class="rl green" style="margin:8px 0 0">
+                🔄 客户后来又给了钱？<b>回收款页走「上传凭证」那条路</b>，标记自动撤销 / 改口（或客户线上付款 → 自动失效）
+              </div>
+              <div style="display:flex;gap:9px">
+                <div class="sbtn outline" style="flex:1">取消</div>
+                <div class="sbtn warn" style="flex:1.4">确认标记</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（C3）</span>
+        页面：<code>frontend/src/subpkg-courier/pages/cod-pay.vue</code>（同页半屏，<b>不新增页面文件</b>）。<br>
+        <b>交互</b>：确认后 → 写标记 → 回收款队列（<b>复用现有 <code>advance()</code></b>，继续下一单 / 收尾回首页）。<br>
+        🟠 <b>「撤销 / 改口」出口</b>（图上绿色块）：本卡刻意<b>不做独立「撤销标记」按钮</b> —— 走两条既有路自然覆盖：<br>
+        ① 回收款页拍凭证提交 → 有 <code>photos</code> → 判「已付款·扫码付款」；② 客户线上付款 → 标记自动失效。<br>
+        备注存进 <code>pay_proof.unpaidMark.remark</code>（<b>不新增字段</b>）。
+      </div>
+    </div>
+
+    <!-- C4 任务列表标记 -->
+    <div class="fig">
+      <div class="fig-cap">C4 · 配送员任务列表上的标记
+        <span>改造后：已标记未付款的单，在配送员自己列表里有<b>橙色小标「未收款」</b>（跟「客户称已付」「已线上收款」同一排、同一套样式）</span>
+      </div>
+      <div class="phone">
+        <div class="phone-top"><span>9:41</span><span class="capsule"><span></span><span></span><span></span></span></div>
+        <div class="phone-title">配送任务</div>
+        <div class="phone-body">
+          <div class="sc-card">
+            <div class="sc-row"><span class="sc-label">上线状态</span><span class="switch on"><span class="switch-dot"></span></span><span class="sc-val ok">上线中</span></div>
+            <div class="sc-row"><span class="sc-label">接单模式</span><span class="switch on"><span class="switch-dot"></span></span><span class="sc-val">自动接单</span></div>
+            <div class="sc-status">✅ 空闲可接单 · 当前 2 个任务</div>
+          </div>
+          <div class="home-head"><span class="hello">🚚 配送任务</span><span class="addr">进行中 2 个 · 已完成 3 单</span></div>
+          <div class="task-card">
+            <div class="tc-head"><span class="tc-route">T-20260930-07</span><span class="tag orange">配送中</span></div>
+            <div class="tc-stations">3 件货物 · 2/3 已取</div>
+            <div class="cargo-item">
+              <div>
+                <div class="cargo-name">老王家常菜<span class="cargo-tag orange">未收款</span><span class="newbadge">新增</span></div>
+                <div class="cargo-addr">幸福路 12 号 · 09:00-11:00</div>
+                <div class="cargo-items">大白菜×20斤、土豆×10斤</div>
+              </div>
+              <div class="cargo-ops"><span class="cargo-picked">✓ 已取</span><span class="cargo-btn cod">货到付款</span></div>
+            </div>
+            <div class="cargo-item">
+              <div>
+                <div class="cargo-name">城东食堂<span class="cargo-tag blue">客户称已付</span></div>
+                <div class="cargo-addr">建设路 88 号 · 09:00-11:00</div>
+              </div>
+              <div class="cargo-ops"><span class="cargo-picked">✓ 已取</span></div>
+            </div>
+            <div class="cargo-item">
+              <div>
+                <div class="cargo-name">城西饭店<span class="cargo-tag green">已线上收款</span></div>
+                <div class="cargo-addr">西关街 3 号 · 09:00-11:00</div>
+              </div>
+              <div class="cargo-ops"><span class="cargo-picked">✓ 已取</span></div>
+            </div>
+          </div>
+          <div class="cmp-strip">
+            <b>三标同排</b>：<span style="color:#C87000">未收款</span>（配送员标记 · 新增）／<span style="color:#2A6BD8">客户称已付</span>（客户自称 · 既有）／<span style="color:#00995A">已线上收款</span>（钱真到账 · 既有）。<br>
+            点该单的「货到付款」进收款页 → 可<b>补上传凭证</b>撤销标记（即 C3 的「改口」出口）。
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note">
+        <span class="t">对应实现（C4）</span>
+        页面：<code>frontend/src/subpkg-courier/pages/home.vue</code>（现状照实画：上线状态卡 + 任务卡 + <code>cargo-item</code>）。<br>
+        <b>既有同类标</b>：<code>cargo-claim-tag</code>「客户称已付」、<code>cargo-online-tag</code>「已线上收款」→ 新增 <code>cargo-unpaid-tag</code>「未收款」<b>沿用同一套样式</b>（橙色）。<br>
+        数据来源：<code>GET /courier/today-tasks</code> 的站点对象加 <code>unpaidMarkedAt</code>（<b>待实现</b>，与既有 <code>buyerPaidClaimAt</code> / <code>onlinePaidAt</code> 同位置）。<br>
+        🟠 标记<b>只在配送员自己列表可见</b>（客户的订单页不显示谁标记的），避免客户侧变成"被点名"。
+      </div>
+    </div>
+
+    <!-- C 区流程卡 -->
+    <div class="fig">
+      <div class="fig-cap wide">C 区流程：标记怎么产生、怎么自动消失
+        <span>两条出口都<b>不需要人工清理</b> —— 这是本卡最关键的口径，实现卡 AH 必须照这个走</span>
+      </div>
+      <div class="flow-card">
+        <div class="ft">🔄 「客户未付款」标记 全流程</div>
+        <div class="fs">标记只写一个 Json 子对象，不进任何金额计算；消失有两条自动路。</div>
+        <div class="flow">
+          <div class="fnode gray"><span class="fn-t">① 交付完成</span>拍照留痕 → 确认交付<br><span style="color:#8A9099">既有流程</span></div>
+          <div class="farrow">➜</div>
+          <div class="fnode gray"><span class="fn-t">② 客户付了吗？</span>半屏二选一<br><span style="color:#8A9099">本卡新增选择</span></div>
+          <div class="farrow">➜</div>
+          <div class="fnode orange"><span class="fn-t">③ 客户未付款</span>二次确认（备注选填）<br>写 <code>pay_proof.unpaidMark</code></div>
+          <div class="farrow">➜</div>
+          <div class="fnode orange"><span class="fn-t">④ 后台可见</span>订单列表红标 + 每日对账标红<br>配送员列表橙标</div>
+        </div>
+        <div class="flow-note">
+          <b>两条自动失效出口（顺序无关，终态一致）：</b><br>
+          <span class="dot" style="background:#3B7CFF"></span> <b>客户线上付款</b>（微信）→ <code>hasWechatPaidRecord()</code> 为真 → 判「已付款 · 微信直接支付」，标记<b>只作历史痕迹</b>展示，后台显示「已由线上支付覆盖（标记自动失效）」<br>
+          <span class="dot" style="background:#00B96B"></span> <b>配送员现场收到钱</b> → 回收款页拍照提交凭证 → 有 <code>photos</code> → 判「已付款 · 扫码付款」<br>
+          🔴 <b>不做</b>运营端「已收款 / 销账」按钮、<b>不做</b>催收动作、<b>不填</b>金额 —— 详见页脚「刻意没做的」。
+        </div>
+      </div>
+      <div class="note wide">
+        <span class="t">对应实现（C 区流程）</span>
+        标记落库：<code>order.pay_proof</code> 追加 <code>unpaidMark: { by: 配送员userId, at: ISO时间, remark }</code>（<b>不新增表、不新增列</b>，照 2d 口径）。<br>
+        🔴 <b>实现卡必须防的坑</b>：<code>pay-status.util.ts</code> 的 <code>hasPayProof()</code> 现实现是「<code>payProof.photos</code> 非空 → <code>true</code>；非数组但有 <code>payProof</code> 也算 <code>true</code>」。加了 <code>unpaidMark</code> 后<b>不能</b>把它算成有凭证，否则「未付款」会被误判成「已付款·扫码付款」（钱一分没到，账却说已收）。
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ==================== B 运营后台 ==================== -->
+  <div class="sec">
+    <span class="bar" style="background:#409EFF"></span>
+    <span class="t">B · 运营后台（PC · Element Plus）</span>
+    <span class="d">订单列表加「收款标记」列与筛选 → 每日对账把标记单标红 → 详情加标记时间线（含「已被线上支付覆盖」）</span>
+    <span class="cnt">3 屏</span>
+  </div>
+
+  <div class="row">
+
+    <!-- B1 订单列表 -->
+    <div class="fig">
+      <div class="fig-cap wide">B1 · 订单履约（订单列表）
+        <span>现状：有订单号/餐馆/金额/客户称已付/收款凭证/配送员/状态等列，<b>没有收款标记</b> → 改造后：加「收款标记」列（红标 + 标记时间，悬浮显示备注与标记人）+ 顶部统计与筛选加「已标记未收款」</span>
+      </div>
+      <div class="browser">
+        <div class="bw-bar">
+          <span class="bw-dots"><i></i><i></i><i></i></span>
+          <span class="bw-url">http://localhost:5190/order</span>
+        </div>
+        <div class="bw-body">
+          <div class="adm-crumb">订单履约 / 待处理订单（含已送达 · 只读查看）</div>
+          <div class="fulfill-stats">
+            <div class="fstat on"><div class="n">42</div><div class="l">全部</div></div>
+            <div class="fstat"><div class="n orange">6</div><div class="l">待核单</div></div>
+            <div class="fstat"><div class="n blue">9</div><div class="l">备货中</div></div>
+            <div class="fstat"><div class="n red">2</div><div class="l">缺货异常</div></div>
+            <div class="fstat"><div class="n green">18</div><div class="l">已送达</div></div>
+            <div class="fstat"><div class="n orange">3</div><div class="l">客户称已付</div></div>
+            <div class="fstat hot"><div class="n red">2</div><div class="l">已标记未收款</div><span class="adm-new">新增</span></div>
+          </div>
+          <div class="adm-card">
+            <div class="adm-toolbar">
+              <div class="adm-radio">
+                <div class="on">全部</div>
+                <div class="rel">仅看已标记未收款<span class="adm-new" style="left:50%;right:auto;transform:translateX(-50%)">新增</span></div>
+              </div>
+              <div class="adm-select">按送达日筛<span>▾</span></div>
+              <div class="adm-check"><span class="adm-sq"></span>只看未核销（无配送员凭证）</div>
+              <div class="adm-btn plain">去对账</div>
+              <div class="adm-tip">「收款标记」= 配送员显式标记「客户未付款」，<b style="color:#F56C6C">不代表已销账</b></div>
+            </div>
+          </div>
+          <div class="adm-card" style="padding:0;overflow:hidden">
+            <table class="adm-table">
+              <colgroup>
+                <col style="width:64px"><col style="width:104px"><col style="width:76px">
+                <col style="width:86px"><col style="width:132px"><col style="width:74px">
+                <col style="width:70px"><col style="width:92px"><col style="width:132px">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>订单号</th><th>餐馆</th><th>金额</th>
+                  <th>客户称已付</th>
+                  <th style="color:#409EFF">收款标记 <span class="kw">新增</span></th>
+                  <th>收款凭证</th><th>配送员</th><th>状态</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="marked">
+                  <td>#0041</td><td>老王家常菜</td><td>¥128.00</td>
+                  <td class="muted">—</td>
+                  <td>
+                    <div class="mark-cell"><span class="ep-tag danger">🔴 配送员已标记未收款</span></div>
+                    <div class="mark-time">09-30 12:10</div>
+                  </td>
+                  <td class="muted">—</td><td>王师傅</td>
+                  <td><span class="ep-tag primary">已送达</span></td>
+                  <td><span class="ep-btn">明细</span></td>
+                </tr>
+                <tr>
+                  <td>#0040</td><td>城东食堂</td><td>¥96.00</td>
+                  <td><span class="ep-tag warn">客户称已付</span></td>
+                  <td class="muted">—</td>
+                  <td class="adm-link">📷 凭证(1)</td><td>李师傅</td>
+                  <td><span class="ep-tag success">已完成</span></td>
+                  <td><span class="ep-btn">明细</span></td>
+                </tr>
+                <tr class="marked">
+                  <td>#0038</td><td>城西饭店</td><td>¥215.00</td>
+                  <td class="muted">—</td>
+                  <td>
+                    <div class="mark-cell"><span class="ep-tag danger">🔴 配送员已标记未收款</span></div>
+                    <div class="mark-time">09-30 10:44</div>
+                  </td>
+                  <td class="muted">—</td><td>王师傅</td>
+                  <td><span class="ep-tag primary">已送达</span></td>
+                  <td><span class="ep-btn">明细</span></td>
+                </tr>
+                <tr>
+                  <td>#0037</td><td>老王家常菜</td><td>¥63.00</td>
+                  <td class="muted">—</td>
+                  <td class="muted">—</td>
+                  <td class="muted">—</td><td>李师傅</td>
+                  <td><span class="ep-tag success">已完成</span></td>
+                  <td><span class="ep-btn">明细</span></td>
+                </tr>
+                <tr>
+                  <td>#0035</td><td>城东食堂</td><td>¥140.00</td>
+                  <td class="muted">—</td>
+                  <td class="muted">—</td>
+                  <td class="adm-link">📷 凭证(2)</td><td>赵师傅</td>
+                  <td><span class="ep-tag primary">已送达</span></td>
+                  <td><span class="ep-btn">明细</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="adm-pager" style="padding:0 12px 10px">
+              <span>共 42 条</span><span class="pg">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg">›</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note wide">
+        <span class="t">对应实现（B1）</span>
+        页面：<code>admin-web/src/views/order/OrderFulfill.vue</code>（路由 <code>/order</code>，<b>本卡实际文件名就是它，不存在 OrderList.vue</b>）→ <code>GET /admin/order/pending</code> + <code>GET /admin/order/delivered</code>。<br>
+        <b>现状列</b>：订单号 / 餐馆 / 送达日 / 商品数 / 金额 / 缺货 / 客户称已付 / 收款凭证 / 配送员 / 状态 / 操作；顶部统计 6 格（全部 / 待核单 / 备货中 / 缺货异常 / 已送达 / 客户称已付）。<br>
+        <b>改造</b>：① 加「<b>收款标记</b>」列（命中显示红标 + 标记时间，<code>el-tooltip</code> 悬浮显示<b>备注与标记人</b>）；② 顶部统计加第 7 格「已标记未收款」；③ 筛选加「<b>全部 / 仅看已标记未收款</b>」。<br>
+        <b>待实现</b>：两接口的返回里各加 <code>unpaidMark</code>（含 <code>byName</code> / <code>at</code> / <code>remark</code>）—— 与既有 <code>payProof</code> 同一条查询带出，<b>不新增接口</b>。
+      </div>
+    </div>
+
+    <!-- B2 每日对账 -->
+    <div class="fig">
+      <div class="fig-cap wide">B2 · 每日对账
+        <span>现状：已有「应收 / 实收 / 未收（待收款 · COD 已送达未收）」口径与「只看未收款」 → 改造后：把<b>配送员标记过的单单独标红</b>，一眼看出哪些是配送员确认没收到的</span>
+      </div>
+      <div class="browser">
+        <div class="bw-bar">
+          <span class="bw-dots"><i></i><i></i><i></i></span>
+          <span class="bw-url">http://localhost:5190/finance/daily-reconciliation</span>
+        </div>
+        <div class="bw-body">
+          <div class="adm-crumb">资金结算 / 每日对账（2026-09-30）</div>
+          <div class="adm-card" style="display:flex;align-items:center;gap:9px;padding:8px 12px">
+            <div class="adm-select" style="min-width:126px">2026-09-30<span>▾</span></div>
+            <div class="adm-btn">查询</div>
+            <div class="adm-tip">口径：应收 = <code>amountFinal</code>（未核单回退 <code>amountOrdered</code> + 运费）；实收 = 已支付微信流水 + 有收款凭证的 COD 单</div>
+          </div>
+          <div class="recon-cards">
+            <div class="rcard"><div class="lbl">应收</div><div class="num">¥12,480</div><div class="sub2">18 单（已送达/已完成）</div></div>
+            <div class="rcard"><div class="lbl">实收</div><div class="num green">¥11,997</div><div class="sub2">微信直付 11 单 · 扫码付款 4 单</div></div>
+            <div class="rcard hot"><div class="lbl">未收</div><div class="num red">¥483</div><div class="sub2">待收款（COD 已送达未收）3 单</div>
+              <div class="sub2 red">🔴 其中配送员已标记未收款 2 单 · ¥343.00<span class="adm-new" style="position:static;margin-left:4px">新增</span></div>
+            </div>
+            <div class="rcard"><div class="lbl">应付供应商（参考值）</div><div class="num">¥9,120</div><div class="sub2">Σ 验收数量 × 供货价 · 正式结算仍按月</div></div>
+            <div class="rcard"><div class="lbl">毛利粗算</div><div class="num green">¥3,360</div><div class="sub2">未扣配送成本 / 服务费 / 退款</div></div>
+          </div>
+          <div class="adm-card" style="padding:0;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:14px;padding:9px 12px;border-bottom:1px solid #EBEEF5">
+              <span style="font-size:12px;font-weight:700">当天订单清单</span>
+              <div class="adm-check"><span class="adm-sq"></span>只看未收款</div>
+              <div class="adm-check"><span class="adm-sq on">✓</span>只看已标记未收款<span class="adm-new" style="position:static;margin-left:4px">新增</span></div>
+              <span class="adm-tip" style="margin-left:auto">红色行 = 配送员显式标记「客户未付款」</span>
+            </div>
+            <table class="adm-table">
+              <colgroup>
+                <col style="width:62px"><col style="width:104px"><col style="width:64px"><col style="width:74px">
+                <col style="width:74px"><col style="width:196px"><col style="width:72px"><col style="width:80px">
+              </colgroup>
+              <thead>
+                <tr><th>订单号</th><th>餐馆</th><th>配送员</th><th>应收</th><th>未收</th><th>收款状态</th><th>收款凭证</th><th>送达</th></tr>
+              </thead>
+              <tbody>
+                <tr class="marked">
+                  <td>#0041</td><td>老王家常菜</td><td>王师傅</td><td>¥128.00</td><td class="muted">¥128.00</td>
+                  <td><span class="ep-tag danger" style="font-size:9.5px">🔴 配送员已标记未收款</span>
+                    <div class="mark-time">标记 09-30 12:10 · 客户说下午转</div></td>
+                  <td class="muted">—</td><td class="muted">09:12</td>
+                </tr>
+                <tr class="marked">
+                  <td>#0038</td><td>城西饭店</td><td>王师傅</td><td>¥215.00</td><td class="muted">¥215.00</td>
+                  <td><span class="ep-tag danger" style="font-size:9.5px">🔴 配送员已标记未收款</span>
+                    <div class="mark-time">标记 09-30 10:44</div></td>
+                  <td class="muted">—</td><td class="muted">10:02</td>
+                </tr>
+                <tr>
+                  <td>#0036</td><td>城东食堂</td><td>李师傅</td><td>¥140.00</td><td class="muted">¥140.00</td>
+                  <td><span class="ep-tag primary">未收</span> <span class="muted" style="font-size:9.5px">待收款</span></td>
+                  <td class="muted">—</td><td class="muted">09:40</td>
+                </tr>
+                <tr>
+                  <td>#0035</td><td>城西饭店</td><td>赵师傅</td><td>¥401.00</td><td class="muted">—</td>
+                  <td><span class="ep-tag success">已付款 · 扫码付款</span></td>
+                  <td class="adm-link">📷 2</td><td class="muted">09:20</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="note wide">
+        <span class="t">对应实现（B2）</span>
+        页面：<code>admin-web/src/views/finance/DailyReconciliation.vue</code> → <code>GET /admin/finance/daily-reconciliation</code>（后端 <code>admin-finance.service.ts#dailyReconciliation</code>）。<br>
+        <b>现状已有</b>：5 张 KPI 卡（应收 / 实收 / 未收 / 应付供应商参考值 / 毛利粗算）+ 当天订单清单表 + 「只看未收款」勾选；「未收」卡已带子标注「待收款（COD 已送达未收）N 单」。<br>
+        <b>改造</b>：① 「未收」卡加子标注「其中配送员已标记未收款 N 单 · ¥xxx」；② 清单表被标记的行<b>整行标红</b> + 状态列红标（带标记时间与备注）；③ 勾选区加「只看已标记未收款」。<br>
+        🔴 <b>钱一分不动</b>：标记<b>不参与</b>应收/实收/未收金额计算 —— 上面这几个数一个都不变，只是<b>多一层"为什么没收"的注解</b>。
+      </div>
+    </div>
+
+    <!-- B3 后台订单详情 -->
+    <div class="fig">
+      <div class="fig-cap wide">B3 · 后台订单详情（明细弹窗）
+        <span>改造后：加一条<b>标记时间线</b>「配送员标记客户未付款 · 时间 · 人 · 备注」；<b>若之后线上支付成功，同一位置显示「已由线上支付覆盖（标记自动失效）」</b> —— 这条是"自动失效"的可视证据</span>
+      </div>
+      <div class="browser">
+        <div class="bw-bar">
+          <span class="bw-dots"><i></i><i></i><i></i></span>
+          <span class="bw-url">http://localhost:5190/order</span>
+        </div>
+        <div class="bw-body" style="padding:0">
+          <div style="padding:11px 13px;opacity:.3">
+            <div class="adm-crumb">订单履约 / 待处理订单</div>
+            <div class="adm-card" style="padding:0;overflow:hidden">
+              <table class="adm-table">
+                <thead><tr><th>订单号</th><th>餐馆</th><th>金额</th><th>收款标记</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr><td>#0041</td><td>老王家常菜</td><td>¥128.00</td><td>🔴 已标记未收款</td><td>已送达</td></tr>
+                  <tr><td>#0040</td><td>城东食堂</td><td>¥96.00</td><td>—</td><td>已完成</td></tr>
+                  <tr><td>#0038</td><td>城西饭店</td><td>¥215.00</td><td>🔴 已标记未收款</td><td>已送达</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="mask" style="align-items:center">
+            <div class="ep-dialog" style="margin-top:0">
+              <div class="dh">订单明细 #0041 <span class="x">✕</span></div>
+              <div class="db">
+                <div class="sum">
+                  <div><span>餐馆：</span>老王家常菜</div>
+                  <div><span>送达日：</span>2026-09-30</div>
+                  <div><span>配送员：</span>王师傅</div>
+                  <div><span>收款状态：</span><span style="color:#67C23A;font-weight:700">已付款 · 微信直接支付</span></div>
+                </div>
+
+                <div class="sub-t">💰 收款记录 <span class="kw">新增</span></div>
+                <div style="border:1px solid #EBEEF5;border-radius:5px;padding:6px 10px">
+                  <div class="time-row">
+                    <span class="d orange"></span>
+                    <span class="c"><b>配送员标记「客户未付款」</b>
+                      <em>2026-09-30 12:10 · 王师傅 · 备注：客户说下午转</em></span>
+                  </div>
+                  <div class="time-row" style="border-top:1px dashed #EBEEF5;padding-top:6px">
+                    <span class="d green"></span>
+                    <span class="c"><b style="color:#529B2E">已由线上支付覆盖（标记自动失效）</b>
+                      <em>2026-09-30 14:32 · 微信直接支付 ¥128.00 · 流水号 4200…0913</em></span>
+                  </div>
+                </div>
+                <div class="ep-alert green" style="margin-top:7px">
+                  ✅ 线上到账优先：标记<b>不需要人工清理</b>，客户一付款就自动失效；本条只作历史痕迹保留。
+                </div>
+                <div class="ep-alert orange" style="margin-top:6px;padding:6px 10px">
+                  ⚠️ 若<b>未</b>发生线上支付：只显示上面那条橙色标记行，下方绿色行不出现。
+                </div>
+
+                <div class="sub-t">商品明细</div>
+                <table class="adm-mini-table">
+                  <thead><tr><th>商品</th><th>订购</th><th>实交(申报)</th><th>销售价</th></tr></thead>
+                  <tbody>
+                    <tr><td>大白菜</td><td>20 斤</td><td>20 斤</td><td>¥1.90</td></tr>
+                    <tr><td>土豆</td><td>10 斤</td><td>10 斤</td><td>¥2.50</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="df"><span class="ep-btn">关闭</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note wide">
+        <span class="t">对应实现（B3）</span>
+        页面：<b>后台没有独立 <code>OrderDetail.vue</code></b> —— 订单详情是 <code>admin-web/src/views/order/OrderFulfill.vue</code> 里的<b>「订单明细」弹窗</b>（<code>detailDialog</code>，数据走 <code>GET /admin/order/:id/detail</code>）。<br>
+        <b>改造</b>：弹窗内新增「<b>收款记录</b>」块（时间线两行）—— 数据取两处：① <code>order.pay_proof.unpaidMark</code>（标记人 / 时间 / 备注）；② 已支付的微信流水（时间 / 金额 / 流水号）。<br>
+        🟠 <b>「已被线上支付覆盖」是纯展示推导</b>：<code>hasWechatPaidRecord() &amp;&amp; unpaidMark 存在</code> → 画绿色行 + 把标记降级为历史痕迹 —— <b>不新增任何字段</b>。
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ==================== 尾部 ==================== -->
+  <div class="foot">
+    <div class="t">🚧 这一版刻意没做的（范围外，勿当遗漏）</div>
+    <div class="d">
+      ① 运营端<b>「已收款 / 销账」按钮</b>（不做 —— 避免又开一条钱的链路）；<br>
+      ② <b>催收动作</b>（发消息 / 打电话 / 生成催收单）；<br>
+      ③ 标记<b>不带金额</b>（不填"欠多少钱"，只标"没收到钱"）；<br>
+      ④ <b>不做自动关单、不做超时处理</b>（未付款的 COD 单一直停在「已送达」是有意为之）；<br>
+      ⑤ <b>不改</b>订单金额、<b>不改</b>结算、<b>不改</b>账单（红线）；<br>
+      ⑥ 不做<b>独立「撤销标记」按钮</b>（走既有两条路自然覆盖：补上传凭证 / 客户线上付款）；<br>
+      ⑦ 不做配送员端<b>标记数量/趋势统计</b>、不做标记排行榜（避免变成 KPI 压力）。
+    </div>
+    <div class="t2">📌 通用口径</div>
+    <div class="d">
+      · 本卡只画原型：<b>接口 / 页面一律照本卡写</b>，本卡没写的标「待实现」，原型里<b>不虚构接口路径</b>；大辉点头后才排实现卡（AH）。<br>
+      · <b>不新增表、不新增字段</b>：标记写进既有的 <code>order.pay_proof</code>（Json）—— 追加 <code>unpaidMark: { by, at, remark }</code> 子对象。<br>
+      · <b>四档付款状态仍是唯一实现</b> <code>backend/src/common/utils/pay-status.util.ts</code>（<code>paid_wechat</code> / <code>paid_proof</code> / <code>cod_pending</code> / <code>unpaid</code>）——<b>不新增第五档</b>，页面里不许内联判断。<br>
+      · ⚠️ <b>实现卡必须防的坑</b>：<code>hasPayProof()</code> 现口径是「<code>payProof</code> 存在即算有凭证（photos 非数组时也算 true）」→ 加了 <code>unpaidMark</code> 后<b>必须只认 <code>photos</code></b>，否则「未付款」会被误判成「已付款·扫码付款」。<br>
+      · <b>本卡不动任何钱的链路</b>：标记<b>不参与</b>应收 / 实收 / 未收 / 结算 / 账单的任何计算，只作"为什么没收"的注解与提醒。<br>
+      · 页面内的金额、单量、时间、店名、人名均为<b>示意数据</b>。
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
