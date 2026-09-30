@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { AiOp, DraftContext, IParser, LlmTurnResult, ParseResult, ParsedItem, ProductRow } from './parser.types'
 import { normalizeQtyToJin, resolveDeliveryDate } from './parser.util'
+import { filterMisMatched, MatchCandidate } from './match-guard'
 
 /**
  * 大模型解析器（阿里云百炼 · OpenAI 兼容协议）
@@ -48,11 +49,27 @@ export class LlmParser implements IParser {
     const items: ParsedItem[] = []
     const seen = new Set<string>()
     const draftItems = Array.isArray(draft?.items) ? draft.items : []
+    // ① 先按「商品 + 模型声称的原话字眼」收候选（去重后），再过服务端硬护栏 ——
+    //    没上架的菜被模型配成别的商品时，这里直接丢掉，绝不写进草稿（见 match-guard.ts 文件头）
+    const candidates: MatchCandidate<ProductRow>[] = []
+    const rawItems = new Map<string, any>()
     for (const it of draftItems) {
       const p = byId.get(String(it?.productId))
       if (!p) continue // 模型编的 id / 清单外的商品 → 丢弃
       if (seen.has(String(p.id))) continue // 同一商品重复 → 只留第一条
       seen.add(String(p.id))
+      candidates.push({ product: p, matched: typeof it?.matched === 'string' ? it.matched.trim() : undefined })
+      rawItems.set(String(p.id), it)
+    }
+    const guarded = filterMisMatched(raw, candidates)
+    if (guarded.rejectedTexts.length || guarded.rejectedUnnamed) {
+      this.logger.warn(
+        `配错商品的条目已丢弃（客户原话「${raw}」）：${JSON.stringify(guarded.rejectedTexts)} 无名=${guarded.rejectedUnnamed}`,
+      )
+    }
+    for (const c of guarded.ok) {
+      const p = c.product
+      const it = rawItems.get(String(p.id)) || {}
 
       const price = Number(p.salePrice)
       const qtyNum = Number(it?.qty)
@@ -76,7 +93,8 @@ export class LlmParser implements IParser {
       })
     }
 
-    // 一个都没匹配上 → 抛错降级（规则版说不定能匹配上，绝不给客户一张空草稿）
+    // 一个都没匹配上（或全被护栏丢掉）→ 抛错降级
+    // （规则版说不定能匹配上，且它会把原话原样放进 unmatched，绝不给客户一张空草稿）
     if (!items.length) throw new Error('大模型未匹配到任何在售商品')
 
     // 日期：模型可能没填，或填了「明天」以外的说法 → 统一用共享口径再判一次原话（两处都错了才算错）
@@ -84,9 +102,14 @@ export class LlmParser implements IParser {
     const deliveryDate = resolveDeliveryDate(modelDate || raw)
 
     const remark = typeof draft?.remark === 'string' ? draft.remark.trim() : ''
-    const unmatched = (Array.isArray(draft?.unmatched) ? draft.unmatched : [])
-      .filter((x: any) => typeof x === 'string' && x.trim())
-      .map((s: string) => s.trim())
+    // unmatched = 模型自己承认没对上的 + **被护栏丢掉的配错条目**（客户要的是「这个菜我还没上架」，
+    // 而不是「你说的话我当没看见」）—— 去重后保持原话顺序
+    const unmatched = [
+      ...(Array.isArray(draft?.unmatched) ? draft.unmatched : [])
+        .filter((x: any) => typeof x === 'string' && x.trim())
+        .map((s: string) => s.trim()),
+      ...guarded.rejectedTexts,
+    ].filter((v: string, i: number, arr: string[]) => arr.indexOf(v) === i)
 
     const total = Math.round(items.reduce((s, i) => s + i.amount, 0) * 100) / 100
 
@@ -131,15 +154,44 @@ export class LlmParser implements IParser {
           qty: it.qty,
           unit: it.unit,
           qtyText: it.qtyText,
+          matched: typeof it?.matched === 'string' ? it.matched.trim() : undefined,
         }))
     }
 
-    const unmatched = (Array.isArray(obj?.unmatched) ? obj.unmatched : [])
+    const modelUnmatched = (Array.isArray(obj?.unmatched) ? obj.unmatched : [])
       .filter((x: any) => typeof x === 'string' && x.trim())
       .map((s: string) => s.trim())
 
+    // ── 服务端硬护栏（与单句口径 parse() 同一套 match-guard，见 match-guard.ts 文件头）──
+    // 模型把「没上架的菜」配成近亲菜时：丢弃这条 op，把客户原话字眼并进 unmatched。
+    // 兜底方向：matched 缺省 → 通过（宁松不严，绝不因模型少带字段把正常下单判成「没上架」）。
+    const byId = new Map<string, ProductRow>()
+    for (const p of products) byId.set(String(p.id), p)
+    const validOps: AiOp[] = []
+    const candidates: MatchCandidate<ProductRow>[] = []
+    for (const op of ops) {
+      const p = byId.get(String(op?.productId))
+      if (!p) continue // 模型编的 id → 丢弃（applyOps 同样会丢）
+      validOps.push(op)
+      candidates.push({ product: p, matched: typeof op?.matched === 'string' ? op.matched.trim() : undefined })
+    }
+    const guarded = filterMisMatched(raw, candidates)
+    const keptOps: AiOp[] = []
+    for (const c of guarded.ok) {
+      const idx = candidates.indexOf(c)
+      if (idx >= 0) keptOps.push(validOps[idx])
+    }
+    if (guarded.rejectedTexts.length || guarded.rejectedUnnamed) {
+      this.logger.warn(
+        `多轮配错商品已丢弃（客户原话「${raw}」）：${JSON.stringify(guarded.rejectedTexts)} 无名=${guarded.rejectedUnnamed}`,
+      )
+    }
+    // unmatched = 模型自报没对上的 + 被护栏丢掉的配错条目（去重、保持原话顺序）
+    const unmatched = [...modelUnmatched, ...guarded.rejectedTexts]
+      .filter((v: string, i: number, arr: string[]) => arr.indexOf(v) === i)
+
     return {
-      ops,
+      ops: keptOps,
       deliveryDate: typeof obj?.deliveryDate === 'string' ? obj.deliveryDate.trim() : '',
       remark: typeof obj?.remark === 'string' ? obj.remark.trim() : '',
       unmatched,
@@ -214,7 +266,8 @@ export class LlmParser implements IParser {
 5. 清单里没有的菜名，哪怕与清单里某个菜是近亲、看起来像同一种东西，也绝对不许配。例如：客户要杏鲍菇而清单只有香菇/金针菇 → 必须进 unmatched，不许配成香菇；客户要牛肉而清单只有猪肉 → 必须进 unmatched。判断标准只有一个：客户说的名字与清单商品名称是否对得上，不按「长得像、是一类东西」判断。
 6. 没能对应上清单的菜名，必须把客户原话一字不差地放进 unmatched 数组：不要丢弃、不要缩写改写、不要猜成别的商品，更不许强行配一个「长得像」的商品凑数。
 7. 只输出 JSON，不要解释、不要 markdown 代码块。格式固定为：
-{"items":[{"productId":1,"qty":50,"unit":"斤","qtyText":"50斤"}],"deliveryDate":"","remark":"","unmatched":[]}
+{"items":[{"productId":1,"qty":50,"unit":"斤","qtyText":"50斤","matched":"土豆"}],"deliveryDate":"","remark":"","unmatched":[]}
+每个商品都要给 matched：客户原话里**对应这个商品的那一段字**，从原话**原样摘录**（不许改写、不许编造、不许拿商品名凑数）。例如客户说「土豆50斤」，这条的 matched 就是「土豆」。
 8. deliveryDate 只能填「今天」「明天」「后天」三者之一；客户没提时间就填空字符串。remark 放客户的其他要求（如「要嫩一点的」），没有就填空字符串。
 
 在售商品清单（格式：id | 名称 | 单位 | 规格 | 单价）：
@@ -246,7 +299,8 @@ ${this.productList(products)}`
    能确定指的是哪一个时，照常输出对应的 op。
 6. 客户这句话只提了配送时间或其他要求（没提商品）→ ops 留空，只填 deliveryDate / remark。例如「明天早上送」→ {"ops":[],"deliveryDate":"明天"}。
 7. 只输出 JSON，不要解释、不要 markdown 代码块。格式固定为：
-{"ops":[{"op":"add","productId":1,"qty":50,"unit":"斤","qtyText":"50斤"}],"deliveryDate":"","remark":"","unmatched":[],"needClarify":""}
+{"ops":[{"op":"add","productId":1,"qty":50,"unit":"斤","qtyText":"50斤","matched":"土豆"}],"deliveryDate":"","remark":"","unmatched":[],"needClarify":""}
+每个商品都要给 matched：客户原话里**对应这个商品的那一段字**，从原话**原样摘录**（不许改写、不许编造、不许拿商品名凑数）。例如客户说「土豆50斤」，这条的 matched 就是「土豆」。
 8. deliveryDate 只能填「今天」「明天」「后天」三者之一；客户这句话没提时间就填空字符串（系统会沿用草稿里的日期）。remark 放客户的其他要求，没有就填空字符串。
 9. 清单里没有的菜名，哪怕与清单里某个菜是近亲、看起来像同一种东西，也绝对不许配。例如：客户要杏鲍菇而清单只有香菇/金针菇 → 必须进 unmatched，不许配成香菇；客户要牛肉而清单只有猪肉 → 必须进 unmatched。判断标准只有一个：客户说的名字与清单商品名称是否对得上，不按「长得像、是一类东西」判断。
 10. 客户这句话里没能对应上清单的菜名，必须把客户原话一字不差地放进 unmatched 数组：不要丢弃、不要缩写改写、不要猜成别的商品，更不许强行配一个「长得像」的商品凑数。

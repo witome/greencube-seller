@@ -46,10 +46,18 @@ export function createVoiceHold({ onPartial, onDone, onFail, maxMs = 30000 } = {
 
   let manager = null
   let safetyTimer = null
+  let stopTimer = null
   let waveTimer = null
   let fingerDown = false // ① 手指是否还按在按钮上（首次授权弹窗会吃掉松手）
   let stopping = false   // ③ 已发出 stop()、等回调 —— 防重复 stop（-30012）
   let failCount = 0      // 「没听清」连击计数（只有空结果计数，与卡U 版一致）
+
+  const clearStopTimer = () => {
+    if (stopTimer) {
+      clearTimeout(stopTimer)
+      stopTimer = null
+    }
+  }
 
   // ── 波形装饰（纯装饰，随机高度营造「正在听」的感觉）──
   function startWave() {
@@ -88,6 +96,7 @@ export function createVoiceHold({ onPartial, onDone, onFail, maxMs = 30000 } = {
     }
     manager.onStop = (res) => {
       clearTimeout(safetyTimer)
+      clearStopTimer()
       stopping = false
       stopWave()
       // ⑤ 离页主动停过录 → 不再喂给调用方
@@ -106,6 +115,7 @@ export function createVoiceHold({ onPartial, onDone, onFail, maxMs = 30000 } = {
     }
     manager.onError = (err) => {
       clearTimeout(safetyTimer)
+      clearStopTimer()
       stopping = false
       stopWave()
       // ② 离页时主动 stop 会回 -30012（当前无识别任务）—— 吞掉，别弹给用户
@@ -158,10 +168,12 @@ export function createVoiceHold({ onPartial, onDone, onFail, maxMs = 30000 } = {
     partial.value = ''
     stopping = false
     recording.value = true
+    clearStopTimer() // 清掉上一次 stop 后未回调的兜底，别让它误杀这一轮新录音
     try {
       manager.start({ lang: 'zh_CN', duration: maxMs })
     } catch (e) {
       clearTimeout(safetyTimer)
+      clearStopTimer()
       recording.value = false
       stopWave()
       uni.showToast({ title: '录音启动失败，请重试', icon: 'none' })
@@ -189,10 +201,27 @@ export function createVoiceHold({ onPartial, onDone, onFail, maxMs = 30000 } = {
       manager.stop()
     } catch (e) {
       clearTimeout(safetyTimer)
+      clearStopTimer()
       stopping = false
       recording.value = false
       stopWave()
+      return
     }
+    // ⑥ 松手兜底（2026-09-30）：录音太短时 WechatSI 偶发不回调 onStop，浮层就一直挂着。
+    //    给一个短超时 —— stop() 后 5 秒仍没有 onStop/onError 就强制收尾，绝不把客户晾在
+    //    全屏遮罩里 35 秒（safetyTimer 只管「一直录到上限」这条线，救不了「stop 后丢回调」）。
+    clearStopTimer()
+    stopTimer = setTimeout(() => {
+      stopTimer = null
+      if (recording.value) {
+        recording.value = false
+        partial.value = ''
+        stopping = false
+        stopWave()
+        clearTimeout(safetyTimer)
+        if (onFail) onFail('没听清，请再说一遍', { kind: 'empty' })
+      }
+    }, 5000)
   }
 
   // ⑥ 按住期间防页面误滚：配 @touchmove.prevent 用，仅吞事件
@@ -202,6 +231,7 @@ export function createVoiceHold({ onPartial, onDone, onFail, maxMs = 30000 } = {
   function stopForLeave() {
     fingerDown = false
     stopWave()
+    clearStopTimer()
     if (!recording.value) return
     clearTimeout(safetyTimer)
     recording.value = false

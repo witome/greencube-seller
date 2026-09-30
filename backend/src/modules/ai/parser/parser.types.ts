@@ -85,6 +85,12 @@ export interface AiOp {
   qty?: number | string
   unit?: string
   qtyText?: string
+  /**
+   * 模型**声称**的「客户原话里对应这个商品的那一段字」（2026-09-30 新增，纯新增字段）。
+   * 服务端用它核对模型有没有把「没上架的菜」配成别的商品（见 parser/match-guard.ts）；
+   * 它**不参与任何业务写入**，价格/数量一律仍以服务端从 product 表取的值与 op 里的量为准。
+   */
+  matched?: string
 }
 
 /** 一条变化记录（供前端气泡显示） */
