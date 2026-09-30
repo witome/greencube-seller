@@ -314,7 +314,7 @@
     <div class="t">📏 三条硬边界（大辉 2026-09-30 拍板，画进图里不改）</div>
     <div class="li">🔴 <b>不影响订单</b>：售后<b>不改</b>订单状态与金额 —— 客户侧申请页必须明确写出「<b>不会自动退款</b>」，避免客户以为退款会自动到账</div>
     <div class="li">🔴 <b>不自动退钱</b>：补偿是<b>线下</b>给的（微信转账 / 下次少收 / 补货），<b>系统只记录</b>，不调微信退款、不动账单</div>
-    <div class="li">🟠 <b>前置条件</b>：只有「<b>已送达 / 已完成</b>」的订单能提售后；<b>送达后 48 小时内</b>；<b>必须选到具体商品</b>（品质问题还必须传照片）</div>
+    <div class="li">🟠 <b>前置条件</b>：只有「<b>已送达 / 已完成</b>」的订单能提售后；<b>签收后 24 小时内</b>；<b>必须选到具体商品</b>（品质问题还必须传照片）</div>
     <div class="row2">
       <div class="st">
         <b>状态四档（客户侧文案）</b><br>
@@ -377,7 +377,7 @@
               <div class="oi-bottom"><span class="oi-price">¥25.00</span><span class="as-entry">申请售后</span></div>
             </div>
             <div class="kv" style="margin-top:4px"><span class="k">订单总金额</span><span class="v" style="color:#FA5151;font-weight:700">¥63.00</span></div>
-            <div class="field-hint">送达后 <b>48 小时</b>内可在商品行发起售后</div>
+            <div class="field-hint">签收后 <b>24 小时</b>内可在商品行发起售后</div>
           </div>
           <div class="cmp-strip">
             <b>对照</b>：订单还在「待配送 / 配送中」时，该位置<b>不出现</b>入口；若需给客户提示，则<b>灰显</b>并写「送达后可申请」（两种做法二选一，本图主画面取「不显示」）。
@@ -395,7 +395,7 @@
         <span class="t">对应实现（A1）</span>
         页面：<code>frontend/src/pages/buyer/order-detail.vue</code>（现状照实画，商品行右侧新增「申请售后」入口）。<br>
         <b>入口显示条件</b>：订单状态 ∈ 已送达(60) / 已完成(70)（前端只控制显隐，<b>真正的门槛必须写在后端</b> <code>POST /buyer/aftersale</code>）。<br>
-        <b>现状缺口</b>：后端 <code>buyer.service.submitAftersale</code> 目前<b>只校验订单归属</b>，既不校验订单状态，也不校验 48 小时、也没强制商品与照片 → 三档门槛都要补（<b>待实现</b>）。
+        <b>现状缺口</b>：后端 <code>buyer.service.submitAftersale</code> 目前<b>只校验订单归属</b>，既不校验订单状态，也不校验 24 小时（含签收后 24 小时这道）、也没强制商品与照片 → 三档门槛都要补（<b>待实现</b>）。
       </div>
     </div>
 
@@ -433,7 +433,7 @@
             <div class="ph-grid"><span class="ph-item" style="width:40px;height:40px;font-size:15px">🖼<span class="ph-del">✕</span></span></div>
           </div>
           <div class="rl red">🔴 提交后由运营<b>线下</b>处理：<b>不会自动退款</b>，也不影响订单金额与状态
-            <span class="sm">🛡 签收后 <b>48 小时</b>内可申请；数量以「交 / 收 数量」为准</span>
+            <span class="sm">🛡 签收后 <b>24 小时</b>内可申请；数量以「交 / 收 数量」为准</span>
           </div>
           <div class="pbtn primary">提交申请</div>
         </div>
@@ -443,7 +443,7 @@
         <span class="t">对应实现（A2）</span>
         页面：<code>frontend/src/pages/buyer/aftersale.vue</code> → <code>POST /buyer/aftersale</code>（后端 <code>buyer.service.submitAftersale</code>，DTO <code>dto/aftersale.dto.ts</code>）。<br>
         接口字段已有 <code>orderItemId</code> / <code>qtyDiff</code> / <code>type</code> / <code>reason</code> / <code>attachments</code>：<b>商品选择与涉及数量不用改接口，只改页面必填校验</b>。<br>
-        🟠 <b>文案口径冲突（请大辉确认）</b>：现有页面写的是「签收后 <b>24 小时</b>内可申请」，本卡拍板 <b>48 小时</b> → 图上已按 48 小时画，实现时需同步改文案 + 后端加时间门槛。<br>
+        ✅ <b>时限已定（大辉 2026-09-30）</b>：<b>签收后 24 小时内</b>可申请 —— 与现有页面文案一致，图上已按 24 小时画。<br>⚠️ 注意：现有页面那句 24 小时<b>只是提示文字、后端根本没校验</b>，实现时要把这道门槛真正加上（起算点 = 交付确认时间 <code>delivery_task.completed_at</code>）。<br>
         <b>待实现</b>：商品必选校验、「品质问题必须传照片」校验（前端 + 后端都要）。
       </div>
     </div>
@@ -1005,8 +1005,8 @@
     <div class="d">
       · 本卡只画原型：<b>接口 / 页面一律照本卡写</b>，本卡没写的标「待实现」，原型里不虚构接口路径；大辉点头后才排实现卡。<br>
       · <b>现有字段全部沿用</b>（表 <code>aftersale_order</code>）：<code>type</code> 1少货/2品质/3错货/4其他；<code>status</code> 0待处理/1处理中/2已解决/3已关闭（<code>1 处理中</code> 目前<b>无人写入</b>，是空档，实现卡要定谁触发）；<code>compensate_method</code> 1退款/2补货/3下次账单抵扣（<b>新增 4 仅致歉</b>）；<code>handle_remark</code> 255 字上限。<br>
-      · <b>本卡新增的只是「展示与门槛」</b>：供应商归属、48 小时门槛、商品必选、品质问题必传照片、处理说明必填 —— <b>不新加表、不动订单</b>。<br>
-      · 🟠 <b>两处需大辉当场拍板的冲突</b>：① 现有页面文案「24 小时内可申请」与本卡「48 小时」不一致；② <code>status=1 处理中</code> 无写入点（运营只点一次「处理完成」，客户只能看到 0→2→3）—— 要么保留空档、要么由运营「认领」时置 1。<br>
+      · <b>本卡新增的只是「展示与门槛」</b>：供应商归属、签收后 24 小时门槛、商品必选、品质问题必传照片、处理说明必填 —— <b>不新加表、不动订单</b>。<br>
+      · ✅ <b>两处冲突已当场拍板</b>：① 时限 = <b>签收后 24 小时</b>（与现有文案一致，实现时后端要真加校验）；② <code>status=1 处理中</code> 无写入点（运营只点一次「处理完成」，客户只能看到 0→2→3）—— 要么保留空档、要么由运营「认领」时置 1。<br>
       · 页面内的金额、单量、时间、店名均为<b>示意数据</b>。
     </div>
   </div>
