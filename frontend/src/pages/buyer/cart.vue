@@ -33,6 +33,7 @@ import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
+import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
 const cart = ref([])
@@ -79,8 +80,10 @@ const submitOrder = async () => {
 }
 
 // ⚠️ tabBar 页面切换回来只触发 onShow 不触发 onMounted，必须用 onShow 刷新，否则加购后切回购物车看不到新商品
-onShow(() => {
+onShow(async () => {
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
+  if (await guardBuyerSuspended()) return
   load()
 })
 </script>

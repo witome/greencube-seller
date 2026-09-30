@@ -314,6 +314,61 @@ export class AdminUserService {
   }
 
   // ────────────────────────────────────────
+  // 启用 / 停用采购方（卡AA 2026-09-30，大辉拍板）
+  // 只允许在 2（启用）与 5（运营停用）之间切换；目标当前状态不是 2/5 时报业务错误，
+  // 绝不影响待审核(1)/驳回(3)/终态驳回(4) 流程（那些走各自的审核接口）。
+  // 停用只挡新单（购物车/下单 assertActivePurchaser 只放行 2），进行中订单照常走完。
+  // 铁律 3：准入状态变更写审计 —— 停用=BUYER_SUSPEND / 启用=BUYER_REACTIVATE，
+  //         before/after 记 accountStatus，且与状态更新同事务（要么都成、要么都不成）。
+  // ────────────────────────────────────────
+  async updateBuyerStatus(id: number, status: number, operatorId: bigint) {
+    const p = await this.prisma.purchaser.findUnique({ where: { id: BigInt(id) } })
+    if (!p) throw new BizException(ErrorCode.NOT_FOUND, '采购方不存在')
+
+    // class-validator 已拦非 2/5，这里再兜一层（service 可被非 HTTP 路径复用）
+    if (status !== AccountStatus.ACTIVE && status !== AccountStatus.SUSPENDED) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '状态值不合法，只允许启用(2)或停用(5)')
+    }
+    if (p.accountStatus !== AccountStatus.ACTIVE && p.accountStatus !== AccountStatus.SUSPENDED) {
+      const actionWord = status === AccountStatus.SUSPENDED ? '停用' : '启用'
+      throw new BizException(
+        ErrorCode.ORDER_STATUS_INVALID,
+        `当前状态为「${this.statusText(p.accountStatus)}」，不可${actionWord}`,
+      )
+    }
+    // 「切换」语义：目标状态与当前状态相同（如对已停用账号再点停用）→ 不产生变更，直接拒绝
+    if (p.accountStatus === status) {
+      throw new BizException(
+        ErrorCode.ORDER_STATUS_INVALID,
+        `该采购方当前已是「${this.statusText(status)}」状态，无需重复操作`,
+      )
+    }
+
+    const action = status === AccountStatus.SUSPENDED ? 'BUYER_SUSPEND' : 'BUYER_REACTIVATE'
+
+    // 一个事务内完成改状态 + 审计
+    await this.prisma.$transaction(async (tx) => {
+      await tx.purchaser.update({
+        where: { id: p.id },
+        data: { accountStatus: status },
+      })
+      await this.audit.log(
+        {
+          operatorId,
+          action,
+          entity: 'purchaser',
+          entityId: p.id,
+          before: { accountStatus: p.accountStatus, shopName: p.shopName },
+          after: { accountStatus: status, shopName: p.shopName },
+        },
+        tx,
+      )
+    })
+
+    return { purchaserId: Number(p.id), accountStatus: status, statusText: this.statusText(status) }
+  }
+
+  // ────────────────────────────────────────
   // 供应商列表（管理页）
   // ────────────────────────────────────────
   async suppliers() {

@@ -31,8 +31,15 @@
             <view class="gc-name">{{ g.name }}</view>
             <view class="gc-spec">{{ g.specText || (g.weighType === 1 ? '称重' : '固定规格') }}</view>
             <view class="gc-bottom">
-              <text class="gc-price">¥{{ g.salePrice }}</text>
-              <text class="gc-unit">/{{ g.unit }}</text>
+              <!-- 卡AA：价格按审核状态脱敏 —— 不可见时 ¥** + 灰字引导注册，点价格区跳注册页 -->
+              <view v-if="g.priceVisible === false" class="gc-price-mask" @tap.stop="goRegister">
+                <text class="gc-price">¥**</text>
+                <text class="gc-mask-tip">注册审核通过后可见价格</text>
+              </view>
+              <template v-else>
+                <text class="gc-price">¥{{ g.salePrice }}</text>
+                <text class="gc-unit">/{{ g.unit }}</text>
+              </template>
               <!-- 未选：＋按钮；已选：步进器（可加减/输入数字） -->
               <view v-if="!cartMap[g.id]" class="gc-add" @tap.stop="increase(g)">＋</view>
               <view v-else class="stepper" @tap.stop>
@@ -74,6 +81,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 import { fullUrl } from '@/api/request'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
+import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
 const categories = ref([])
@@ -180,10 +188,14 @@ const loadMore = () => {
 
 const switchCate = (id) => { activeCate.value = id; loadGoods() }
 const goDetail = (id) => go(`/pages/buyer/goods-detail?id=${id}`)
+// 卡AA：价格不可见时点价格区 → 注册页
+const goRegister = () => go('/pages/buyer/register')
 
 onMounted(() => { loadCategories(); loadGoods() })
-onShow(() => {
+onShow(async () => {
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
+  if (await guardBuyerSuspended()) return
   // 上次加载失败（如后端不可达）时，回到本页自动补一次，避免一直卡在「加载中」
   if (loadError.value && !loading.value) loadGoods()
 })
@@ -206,6 +218,9 @@ onShow(() => {
 .gc-spec { font-size: 11px; color: $text-second; margin: 4px 0 8px; }
 .gc-bottom { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .gc-price { color: #fa5151; font-size: 16px; font-weight: 700; flex-shrink: 0; }
+/* 卡AA：价格脱敏态（¥** + 引导注册灰字，纵向排列，点击整块跳注册页） */
+.gc-price-mask { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.gc-mask-tip { font-size: 10px; color: $text-placeholder; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gc-unit { font-size: 11px; color: $text-second; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
 .gc-add { width: 26px; height: 26px; border-radius: 50%; background: $color-primary; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
 .stepper { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }

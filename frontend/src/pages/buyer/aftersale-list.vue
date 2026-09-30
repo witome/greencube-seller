@@ -61,6 +61,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 import { fullUrl } from '@/api/request'
 import { previewPhotos } from '@/utils/photo-upload'
+import { guardBuyerSuspended } from '@/utils/account-guard'
 import CustomTabBar from '@/components/CustomTabBar.vue'
 
 const buyerTabs = [
@@ -124,7 +125,9 @@ onLoad((opts) => {
   if (opts && opts.filter) filter.value = opts.filter
 })
 
-onShow(() => {
+onShow(async () => {
+  // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
+  if (await guardBuyerSuspended()) return
   load()
 })
 </script>

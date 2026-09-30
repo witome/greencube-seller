@@ -342,11 +342,25 @@ export class BuyerService {
   // 数据源 = platform_config 三个 key（运营侧 admin/finance/home-content 维护）
   //   横幅：未配置 → 中性默认文案；公告：enabled=false 或空 → null（前台不渲染）
   //   推荐位：id 有序数组 → 按顺序取在售商品，缺失/下架/非法 id 一律跳过；空 → 前台空态
+  // 卡AA（2026-09-30）：今日推荐价格按审核状态脱敏 —— 只有 purchaser 存在且
+  //   accountStatus=2 才返回真实 salePrice（priceVisible=true），否则 salePrice=null。
+  //   与 product.service 同一口径（各自 service 内小私有函数，口径文字对齐）。
   // ────────────────────────────────────────
-  async getHomeContent() {
-    const keys = await this.prisma.platformConfig.findMany({
-      where: { key: { in: ['home_delivery_note', 'home_notice', 'home_recommendations'] } },
+  private async priceVisibleFor(userId: bigint): Promise<boolean> {
+    const p = await this.prisma.purchaser.findUnique({
+      where: { userId },
+      select: { accountStatus: true },
     })
+    return !!p && p.accountStatus === AccountStatus.ACTIVE
+  }
+
+  async getHomeContent(userId: bigint) {
+    const [keys, priceVisible] = await Promise.all([
+      this.prisma.platformConfig.findMany({
+        where: { key: { in: ['home_delivery_note', 'home_notice', 'home_recommendations'] } },
+      }),
+      this.priceVisibleFor(userId),
+    ])
     const map = new Map(keys.map((k) => [k.key, k.value as any]))
 
     const note = map.get('home_delivery_note') || {}
@@ -378,11 +392,13 @@ export class BuyerService {
           unit: p.unit,
           weighType: p.weighType,
           specText: p.specText,
-          salePrice: Number(p.salePrice),
+          // 卡AA：未激活账号价格服务端抹除
+          salePrice: priceVisible ? Number(p.salePrice) : null,
+          priceVisible,
         }
       })
 
-    return { deliveryNote, notice, recommendations }
+    return { deliveryNote, notice, recommendations, priceVisible }
   }
 
   // ────────────────────────────────────────

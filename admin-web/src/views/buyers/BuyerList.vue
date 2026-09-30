@@ -27,6 +27,7 @@
           <el-radio-button :value="1">待审核</el-radio-button>
           <el-radio-button :value="3">已驳回</el-radio-button>
           <el-radio-button :value="2">已开通</el-radio-button>
+          <el-radio-button :value="5">运营停用</el-radio-button>
         </el-radio-group>
         <el-input
           v-model="keyword"
@@ -64,12 +65,15 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === 1" type="primary" link @click="openVerifyDrawer(row)">核实</el-button>
             <el-button v-else-if="row.status === 3" type="warning" link @click="openVerifyDrawer(row)">复核申诉</el-button>
             <el-button v-else type="primary" link @click="openVerifyDrawer(row)">详情</el-button>
             <el-button type="success" link @click="openEdit(row)">编辑</el-button>
+            <!-- 卡AA：启用/停用（仅 2↔5 切换；停用挡新单，已有订单不受影响） -->
+            <el-button v-if="row.status === 2" type="danger" link @click="toggleSuspend(row, 5)">停用</el-button>
+            <el-button v-else-if="row.status === 5" type="success" link @click="toggleSuspend(row, 2)">启用</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -228,8 +232,9 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { buyerAdminApi } from '../../api/modules'
+import request from '../../api/request'
 
 // ── 列表 ──
 const list = ref([])
@@ -278,6 +283,7 @@ function statusType(status) {
   if (status === 1) return 'warning'
   if (status === 2) return 'success'
   if (status === 3) return 'danger'
+  if (status === 5) return 'info' // 卡AA：运营停用（灰色 tag，后端 statusText=「运营停用」）
   return 'info'
 }
 
@@ -285,6 +291,7 @@ function statusText(status) {
   if (status === 1) return '待审核'
   if (status === 2) return '已激活'
   if (status === 3) return '已驳回'
+  if (status === 5) return '运营停用'
   return '未知'
 }
 
@@ -469,6 +476,30 @@ async function submitEdit() {
     /* 已提示 */
   } finally {
     editSaving.value = false
+  }
+}
+
+// ── 启用/停用（卡AA 2026-09-30）：仅 2↔5 切换，二次确认 ──
+async function toggleSuspend(row, targetStatus) {
+  const suspending = targetStatus === 5
+  try {
+    await ElMessageBox.confirm(
+      suspending
+        ? `确认停用「${row.shopName}」？停用后该采购方无法下新单，已有订单不受影响。`
+        : `确认启用「${row.shopName}」？启用后该采购方恢复下单资格。`,
+      suspending ? '停用采购方' : '启用采购方',
+      { confirmButtonText: suspending ? '确认停用' : '确认启用', cancelButtonText: '取消', type: suspending ? 'warning' : 'success' },
+    )
+  } catch (e) {
+    return // 用户取消
+  }
+  try {
+    // 新接口走 request 直调（modules.js 不在本卡白名单内）；响应拦截器已解包 { code, msg, data }
+    await request.put(`/admin/buyers/${row.purchaserId}/status`, { status: targetStatus })
+    ElMessage.success(suspending ? '已停用' : '已启用')
+    load()
+  } catch (e) {
+    /* 失败已由 request 拦截器提示 */
   }
 }
 

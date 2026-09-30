@@ -6,6 +6,7 @@ import { AssignDto } from './dto/assign.dto'
 import { CategoryDto } from './dto/category.dto'
 import { SupplierCategoriesDto } from './dto/supplier-categories.dto'
 import { UpdateBuyerDto, UpdateSupplierDto, UpdateCourierDto } from './dto/update-profile.dto'
+import { BuyerStatusDto } from './dto/buyer-status.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -64,6 +65,18 @@ export class AdminUserController {
   @Roles(Role.ADMIN, Role.BUSINESS_AGENT)
   async assignAgent(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() dto: AssignDto) {
     return this.service.assignAgent(Number(id), dto, userId)
+  }
+
+  /// 启用 / 停用采购方（卡AA 2026-09-30：只允许 2↔5 切换；停用挡新单，进行中订单不受影响）
+  /// 业务员可操作（与其它采购方审核接口同口径）
+  @Put('buyers/:id/status')
+  @Roles(Role.ADMIN, Role.BUSINESS_AGENT)
+  async updateBuyerStatus(
+    @Param('id') id: string,
+    @CurrentUser('userId') userId: bigint,
+    @Body() dto: BuyerStatusDto,
+  ) {
+    return this.service.updateBuyerStatus(Number(id), dto.status, userId)
   }
 
   /// 供应商列表

@@ -8,7 +8,12 @@
 
     <view class="card">
       <view class="gd-name">{{ goods.name }}</view>
-      <view class="gd-price">¥{{ goods.salePrice }} <text class="gd-unit">/{{ goods.unit }}</text></view>
+      <!-- 卡AA：价格按审核状态脱敏 —— 不可见时 ¥** + 灰字引导注册，点价格区跳注册页 -->
+      <view v-if="goods.priceVisible === false" class="gd-price-mask" @tap="goRegister">
+        <view class="gd-price">¥**</view>
+        <view class="gd-mask-tip">注册审核通过后可见价格</view>
+      </view>
+      <view v-else class="gd-price">¥{{ goods.salePrice }} <text class="gd-unit">/{{ goods.unit }}</text></view>
       <view class="gd-spec">{{ goods.specText || (goods.weighType === 1 ? '称重商品' : '固定规格') }}</view>
       <view class="gd-supply">今日可售 {{ goods.dailySupply }} {{ goods.unit }}</view>
     </view>
@@ -43,6 +48,9 @@ const goods = ref(null)
 const qty = ref(1)
 const id = ref('')
 
+// 卡AA：价格不可见时点价格区 → 注册页
+const goRegister = () => uni.navigateTo({ url: '/pages/buyer/register' })
+
 const addCart = async () => {
   await buyerApi.addToCart({ productId: Number(id.value), qty: qty.value })
   uni.showToast({ title: '已加入购物车', icon: 'success' })
@@ -76,6 +84,10 @@ onLoad(async (opts) => {
 .gd-cover-img { width: 100%; height: 200px; display: block; }
 .gd-name { font-size: 18px; font-weight: 700; color: $text-title; }
 .gd-price { color: #fa5151; font-size: 22px; font-weight: 700; margin: 8px 0; }
+/* 卡AA：价格脱敏态（¥** + 引导注册灰字，点击整块跳注册页） */
+.gd-price-mask { margin: 8px 0; }
+.gd-price-mask .gd-price { margin: 0; }
+.gd-mask-tip { font-size: 11px; color: $text-placeholder; margin-top: 2px; }
 .gd-unit { font-size: 13px; font-weight: 400; color: $text-second; }
 .gd-spec { font-size: 13px; color: $text-second; }
 .gd-supply { font-size: 12px; color: $color-primary; margin-top: 6px; }

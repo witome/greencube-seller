@@ -56,6 +56,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { demandApi } from '@/api/modules'
+import { guardBuyerSuspended } from '@/utils/account-guard'
 
 const list = ref([])
 const loading = ref(false)
@@ -81,7 +82,9 @@ async function load() {
   }
 }
 
-onShow(() => {
+onShow(async () => {
+  // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
+  if (await guardBuyerSuspended()) return
   if (loadError.value && !loading.value) load()
 })
 

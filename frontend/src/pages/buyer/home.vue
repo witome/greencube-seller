@@ -53,7 +53,12 @@
           <view class="buyer-home-rec-body">
             <view class="buyer-home-rec-name">{{ g.name }}</view>
             <view class="buyer-home-rec-spec">{{ g.specText || (g.weighType === 1 ? '称重商品' : '固定规格') }}</view>
-            <view class="buyer-home-rec-price">¥{{ g.salePrice }}<text class="buyer-home-rec-unit">/{{ g.unit }}</text></view>
+            <!-- 卡AA：价格按审核状态脱敏 —— 不可见时 ¥** + 灰字引导注册，点价格区跳注册页 -->
+            <view v-if="g.priceVisible === false" class="buyer-home-rec-mask" @tap.stop="goRegister">
+              <view class="buyer-home-rec-price">¥**</view>
+              <view class="buyer-home-rec-mask-tip">注册审核通过后可见价格</view>
+            </view>
+            <view v-else class="buyer-home-rec-price">¥{{ g.salePrice }}<text class="buyer-home-rec-unit">/{{ g.unit }}</text></view>
           </view>
         </view>
       </template>
@@ -89,6 +94,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
+import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 // #ifdef MP-WEIXIN
 import DevRoleSwitcher from '@/components/DevRoleSwitcher.vue'
@@ -154,13 +160,19 @@ const orderIcon = (status) => {
   return { e: '📦', bg: '#F0F1F3' }
 }
 
+// 卡AA：价格不可见时点价格区 → 注册页
+const goRegister = () => go('/pages/buyer/register')
+
 const loadProfile = async () => {
   try {
     const profile = await authApi.getProfile()
+    // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页；复用本次 profile 不重复请求
+    if (await guardBuyerSuspended(profile)) return true
     needRegister.value = !profile || !profile.purchaser
   } catch (e) {
     needRegister.value = true
   }
+  return false
 }
 
 const loadHomeContent = async () => {
@@ -197,7 +209,8 @@ onShow(async () => {
   uni.setNavigationBarTitle({ title: '辉崧鲜配 · 采购' })
   // H5 原生 tabBar 不支持 emoji，统一用自绘 BuyerTabBar 底栏，隐藏原生 tabBar
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
-  await loadProfile()
+  const blocked = await loadProfile()
+  if (blocked) return // 卡AA：已跳停用提示页，不再加载本页数据
   loadHomeContent()
   if (!needRegister.value) loadOrders()
   else { ordersLoading.value = false; activeOrders.value = [] }
@@ -320,6 +333,10 @@ onShow(async () => {
 .buyer-home-rec-spec { font-size: 10px; color: #8A9099; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .buyer-home-rec-price { font-size: 13px; color: #FA5151; font-weight: 800; margin-top: 1px; }
 .buyer-home-rec-unit { font-size: 10px; font-weight: 400; color: #8A9099; }
+/* 卡AA：价格脱敏态（¥** + 引导注册灰字，点击整块跳注册页） */
+.buyer-home-rec-mask { margin-top: 1px; }
+.buyer-home-rec-mask .buyer-home-rec-price { margin: 0; }
+.buyer-home-rec-mask-tip { font-size: 9px; color: #B9BFC7; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 推荐加载骨架 */
 .buyer-home-skeleton-line { height: 9px; border-radius: 4px; background: #EFF2F5; margin-top: 6px; width: 70%; }
 .buyer-home-skeleton-line--short { width: 50%; }

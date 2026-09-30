@@ -109,6 +109,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
 import { useUserStore } from '@/store/user'
 import { forgetPreferredRole } from '@/utils/preferred-role'
+import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
 const profile = ref(null)
@@ -245,6 +246,8 @@ const loadAftersaleCount = async () => {
 const syncProfile = async () => {
   const prev = accountStatus.value
   await loadProfile()
+  // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页（复用刚拉到的 profile），后续不再执行
+  if (await guardBuyerSuspended(profile.value)) return
   if (accountStatus.value === 2) {
     loadStats()
     loadAftersaleCount()

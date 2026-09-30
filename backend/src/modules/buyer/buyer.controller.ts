@@ -96,9 +96,10 @@ export class BuyerController {
   }
 
   /// 首页内容一次取全（横幅/公告/今日推荐位，2026-09-11 首页接口化卡）
+  /// 卡AA（2026-09-30）：今日推荐价格按审核状态脱敏（accountStatus=2 才可见）
   @Get('home-content')
   @Roles(Role.PURCHASER)
-  async homeContent() {
-    return this.service.getHomeContent()
+  async homeContent(@CurrentUser('userId') userId: bigint) {
+    return this.service.getHomeContent(userId)
   }
 }

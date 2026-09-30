@@ -31,6 +31,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
+import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
 const orders = ref([])
@@ -64,8 +65,10 @@ const switchStatus = (v) => { activeStatus.value = v; load() }
 const goDetail = (id) => uni.navigateTo({ url: `/pages/buyer/order-detail?id=${id}` })
 
 // tabBar 页用 onShow 刷新（原 onMounted 未导入会导致订单不加载）
-onShow(() => {
+onShow(async () => {
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
+  if (await guardBuyerSuspended()) return
   load()
 })
 </script>
