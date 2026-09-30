@@ -34,6 +34,7 @@
       <view class="gd-btn" @tap="addCart">加入购物车</view>
       <view class="gd-btn primary" @tap="buyNow">立即下单</view>
     </view>
+    <AiOrderFab :offset="80" />
   </view>
 </template>
 
@@ -43,6 +44,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 import { fullUrl } from '@/api/request'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
+import AiOrderFab from '@/components/AiOrderFab.vue'
 
 const goods = ref(null)
 const qty = ref(1)

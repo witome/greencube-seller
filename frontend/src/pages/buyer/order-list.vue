@@ -27,6 +27,7 @@
     <view v-if="!orders.length && !loading" class="empty">暂无订单</view>
 
     <BuyerTabBar active="/pages/buyer/order-list" />
+    <AiOrderFab :offset="80" />
   </view>
 </template>
 
@@ -36,6 +37,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
+import AiOrderFab from '@/components/AiOrderFab.vue'
 
 const orders = ref([])
 const activeStatus = ref('')

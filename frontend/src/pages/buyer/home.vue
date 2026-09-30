@@ -87,6 +87,7 @@
     <!-- #ifdef MP-WEIXIN -->
     <DevRoleSwitcher />
     <!-- #endif -->
+    <AiOrderFab :offset="80" />
   </view>
 </template>
 
@@ -96,6 +97,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
 import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
+import AiOrderFab from '@/components/AiOrderFab.vue'
 // #ifdef MP-WEIXIN
 import DevRoleSwitcher from '@/components/DevRoleSwitcher.vue'
 // #endif

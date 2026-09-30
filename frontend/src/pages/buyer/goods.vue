@@ -72,6 +72,7 @@
     </view>
 
     <BuyerTabBar active="/pages/buyer/goods" />
+    <AiOrderFab :offset="136" />
   </view>
 </template>
 
@@ -83,6 +84,7 @@ import { fullUrl } from '@/api/request'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
 import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
+import AiOrderFab from '@/components/AiOrderFab.vue'
 
 const categories = ref([])
 const goodsList = ref([])

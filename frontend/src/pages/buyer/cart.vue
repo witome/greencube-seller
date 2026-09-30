@@ -25,6 +25,7 @@
     </view>
 
     <BuyerTabBar active="/pages/buyer/cart" />
+    <AiOrderFab :offset="144" />
   </view>
 </template>
 
@@ -35,6 +36,7 @@ import { buyerApi } from '@/api/modules'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
 import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
+import AiOrderFab from '@/components/AiOrderFab.vue'
 
 const cart = ref([])
 
