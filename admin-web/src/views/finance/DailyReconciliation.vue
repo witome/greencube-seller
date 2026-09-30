@@ -39,6 +39,13 @@
         <div class="admin-dailyrec-card-lbl">未收</div>
         <div class="admin-dailyrec-card-num admin-dailyrec-num-red">¥{{ fmt(data?.summary?.unpaid) }}</div>
         <div class="admin-dailyrec-card-sub">待收款（COD 已送达未收）{{ data?.summary?.codUnpaidCount ?? 0 }} 单</div>
+        <!-- 卡AH（2026-09-30）：只是「为什么没收」的**注解** —— 🔴 不进上面的未收金额（钱一分不动） -->
+        <div
+          class="admin-dailyrec-card-sub"
+          :class="data?.summary?.unpaidMarkedCount ? 'admin-dailyrec-sub-red' : ''"
+        >
+          🔴 其中配送员已标记未收款 {{ data?.summary?.unpaidMarkedCount ?? 0 }} 单 · ¥{{ fmt(data?.summary?.unpaidMarkedAmount) }}
+        </div>
       </div>
       <div class="admin-dailyrec-card">
         <div class="admin-dailyrec-card-lbl">应付供应商（参考值）</div>
@@ -69,6 +76,8 @@
           <span>当天订单清单（已送达 / 已完成）</span>
           <div class="admin-dailyrec-cardhead-right">
             <el-checkbox v-model="onlyUnpaid" class="admin-dailyrec-onlyunpaid">只看未收款</el-checkbox>
+            <!-- 卡AH：只看已标记未收款（标记仍生效、未被线上到账覆盖） -->
+            <el-checkbox v-model="onlyMarked" class="admin-dailyrec-onlyunpaid">只看已标记未收款</el-checkbox>
             <el-button size="small" @click="copyList">复制清单</el-button>
             <el-button size="small" type="primary" @click="exportCsv">导出 CSV</el-button>
           </div>
@@ -82,8 +91,11 @@
         ⚠️ 线上到账与现金核销是<b>两条钱路</b>（前者进商户号线上账户、后者进收款码绑定账户），后台不做合并；
         同一行两条并存时会标出「可能重复收款」警示，请人工核对。
         老数据里采购方点过「我已付款」的订单只留「曾称已付（历史口径）」只读标注，<b>不代表钱已到账、不参与金额计算</b>。
+        <br />
+        <b>收款标记</b>（卡AH）＝配送员显式标记「<b>客户未付款</b>」：红色行 = 标记仍生效（这单当面没收到钱），
+        <b>不代表已销账</b>、不进任何金额口径；客户之后线上付款 → 标记自动失效（只留历史痕迹），无需人工清理。
       </div>
-      <el-table :data="shownList" v-loading="loading" stripe empty-text="这一天没有订单">
+      <el-table :data="shownList" v-loading="loading" stripe empty-text="这一天没有订单" :row-class-name="rowClassName">
         <el-table-column prop="orderId" label="订单号" width="90">
           <template #default="{ row }">#{{ row.orderId }}</template>
         </el-table-column>
@@ -100,17 +112,31 @@
             </span>
           </template>
         </el-table-column>
-        <!-- 收款状态（卡S2 三档收口）：tag 文案/子标注/警示文案全部来自后端，页面零判定 -->
-        <el-table-column label="收款状态" width="200">
+        <!-- 收款状态（卡S2 三档收口）：tag 文案/子标注/警示文案全部来自后端，页面零判定
+             卡AH（2026-09-30）：被配送员标记「客户未付款」且标记仍生效的行 → 红标 + 标记时间/备注；
+             标记已被线上到账覆盖的 → 仍走正常三档，另加一行灰色历史痕迹。 -->
+        <el-table-column label="收款状态" width="220">
           <template #default="{ row }">
-            <el-tag :type="payTagType(row.payStatus)" size="small" effect="light">{{ row.payStatusGroupText || row.payStatusText }}</el-tag>
-            <div v-if="row.payStatusSubText" class="admin-dailyrec-paynote">{{ row.payStatusSubText }}</div>
-            <!-- 卡S1：货到付款单也可能在**线上**付掉（送达后「微信直接支付」）→ 直接标出线上到账金额 -->
-            <div v-if="row.payMethod === 2 && row.wechatPaidAmount > 0" class="admin-dailyrec-paynote">线上到账 ¥{{ fmt(row.wechatPaidAmount) }}</div>
-            <!-- 卡S2：两条钱路并存 = 可能重复收款（防重复收款是本次收口的目的之一） -->
-            <div v-if="row.duplicateRisk" class="admin-dailyrec-paywarn">{{ row.duplicateWarnText }}</div>
-            <!-- 卡S2：老数据「客户称已付」只留历史口径只读标注，不参与金额计算 -->
-            <div v-if="row.historicClaimText" class="admin-dailyrec-paynote">{{ row.historicClaimText }}</div>
+            <template v-if="row.unpaidMarkEffective">
+              <el-tag type="danger" size="small" effect="light" style="font-size: 9.5px">🔴 配送员已标记未收款</el-tag>
+              <div class="admin-dailyrec-marktime">
+                标记 {{ fmtTime(row.unpaidMarkedAt) }}<template v-if="row.unpaidMarkRemark"> · {{ row.unpaidMarkRemark }}</template>
+              </div>
+            </template>
+            <template v-else>
+              <el-tag :type="payTagType(row.payStatus)" size="small" effect="light">{{ row.payStatusGroupText || row.payStatusText }}</el-tag>
+              <div v-if="row.payStatusSubText" class="admin-dailyrec-paynote">{{ row.payStatusSubText }}</div>
+              <!-- 卡S1：货到付款单也可能在**线上**付掉（送达后「微信直接支付」）→ 直接标出线上到账金额 -->
+              <div v-if="row.payMethod === 2 && row.wechatPaidAmount > 0" class="admin-dailyrec-paynote">线上到账 ¥{{ fmt(row.wechatPaidAmount) }}</div>
+              <!-- 卡S2：两条钱路并存 = 可能重复收款（防重复收款是本次收口的目的之一） -->
+              <div v-if="row.duplicateRisk" class="admin-dailyrec-paywarn">{{ row.duplicateWarnText }}</div>
+              <!-- 卡S2：老数据「客户称已付」只留历史口径只读标注，不参与金额计算 -->
+              <div v-if="row.historicClaimText" class="admin-dailyrec-paynote">{{ row.historicClaimText }}</div>
+            </template>
+            <!-- 卡AH：已被线上支付覆盖 → 标记自动失效，只留历史痕迹（不参与金额） -->
+            <div v-if="row.unpaidMarked && row.unpaidMarkOverridden" class="admin-dailyrec-paynote">
+              曾标记未收款 {{ fmtTime(row.unpaidMarkedAt) }}（已由线上支付覆盖，标记自动失效）
+            </div>
           </template>
         </el-table-column>
         <!-- 收款凭证（配送员 COD 收款拍照，只读查看）：弹窗实现复用 components/ProofDialog.vue -->
@@ -254,10 +280,27 @@ const fmt = (n) => (n == null ? '0.00' : Number(n).toFixed(2))
 
 // ── 卡T：当天订单清单（默认全部；勾选后只看未收款 = 应收 − 已收 > 0）──
 const onlyUnpaid = ref(false)
+// 卡AH（2026-09-30）：只看已标记未收款（标记仍生效、未被线上到账覆盖）
+const onlyMarked = ref(false)
 const shownList = computed(() => {
-  const rows = data.value?.orderList ?? []
-  return onlyUnpaid.value ? rows.filter((r) => Number(r.unpaid) > 0) : rows
+  let rows = data.value?.orderList ?? []
+  if (onlyUnpaid.value) rows = rows.filter((r) => Number(r.unpaid) > 0)
+  if (onlyMarked.value) rows = rows.filter((r) => r.unpaidMarkEffective)
+  return rows
 })
+
+// 卡AH：被标记未收款的行整行标红（与「收款标记 = 配送员说没收到钱」一致；不代表已销账）
+function rowClassName({ row }) {
+  return row?.unpaidMarkEffective ? 'marked-unpaid-row' : ''
+}
+
+// 卡AH：标记时间展示（后台统一 YYYY-MM-DD HH:mm）
+function fmtTime(iso) {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // 收款状态色（卡S2 三档）：两种「已付款」用绿（与汇总卡「实收」同色），未收/待收款用红
 function payTagType(status) {
@@ -403,6 +446,10 @@ onMounted(() => {
 /* 卡S2：收款状态列的子标注 / 警示 */
 .admin-dailyrec-paynote { font-size: 11px; color: #909399; margin-top: 2px; line-height: 1.5; }
 .admin-dailyrec-paywarn { font-size: 11px; color: #ff6b00; font-weight: 600; margin-top: 2px; line-height: 1.5; }
+/* 卡AH（2026-09-30）：配送员「客户未付款」标记 */
+.admin-dailyrec-sub-red { color: #f56c6c !important; font-weight: 700; }
+.admin-dailyrec-marktime { font-size: 11px; color: #f56c6c; margin-top: 2px; line-height: 1.5; }
+:deep(.marked-unpaid-row) td { background: #fef6f6 !important; }
 .admin-dailyrec-orderhead {
   display: flex;
   flex-wrap: wrap;

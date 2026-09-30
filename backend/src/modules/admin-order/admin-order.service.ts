@@ -4,7 +4,15 @@ import { BizException, ErrorCode, OrderStatus } from '../../common/constants/err
 import { AuditService } from '../audit/audit.service'
 import { SplitDto } from './dto/split.dto'
 import { allocateByPriority } from '../../common/utils/split.util'
-import { receivableAmount } from '../../common/utils/amount.util'
+import { receivableAmount, round2 } from '../../common/utils/amount.util'
+// 卡AH（2026-09-30）：收款凭证 / 线上到账 / 「客户未付款」标记 的判定与读取口径唯一实现
+import {
+  hasPayProof,
+  hasWechatPaidRecord,
+  readUnpaidMark,
+  unpaidMarkViewOf,
+  onlinePaidAtOf,
+} from '../../common/utils/pay-status.util'
 
 @Injectable()
 export class AdminOrderService {
@@ -72,39 +80,83 @@ export class AdminOrderService {
           .filter((id): id is number => id != null),
       ),
     ]
-    const couriers = courierIds.length
+    // 卡AH（2026-09-30）：标记人姓名（unpaidMark.by = 配送员 **userId**，与 payProof.courierId 不是一回事）
+    const markUserIds = [
+      ...new Set(
+        orders
+          .map((o) => readUnpaidMark(o.payProof)?.by)
+          .filter((id): id is number => id != null),
+      ),
+    ]
+    // 两组 id 都是 user.id → 合并成一次查询，分别建两张 map（少打一次库）
+    const allUserIds = [...new Set([...courierIds, ...markUserIds])]
+    const userRows = allUserIds.length
       ? await this.prisma.user.findMany({
-          where: { id: { in: courierIds.map((id) => BigInt(id)) } },
+          where: { id: { in: allUserIds.map((id) => BigInt(id)) } },
           select: { id: true, name: true, phone: true },
         })
       : []
+    const displayName = (u: { id: bigint; name: string | null; phone: string | null }, fallback: string) =>
+      u.name || u.phone || fallback
     const courierMap = new Map(
-      couriers.map((c) => [
-        Number(c.id),
-        c.name || c.phone || `配送员#${Number(c.id)}`,
-      ]),
+      userRows.map((u) => [Number(u.id), displayName(u, `配送员#${Number(u.id)}`)]),
+    )
+    const markUserMap = new Map(
+      userRows.map((u) => [Number(u.id), displayName(u, `用户#${Number(u.id)}`)]),
     )
 
-    return orders.map((o) => ({
-      orderId: Number(o.id),
-      shopName: o.purchaser.shopName,
-      deliveryDate: o.deliveryDate.toISOString().slice(0, 10),
-      status: o.status,
-      statusText: this.statusText(o.status),
-      amountOrdered: Number(o.amountOrdered),
-      // 卡T（2026-09-21）：同上，补运费与最终金额（与每日对账页 receivableAmount 同源）
-      deliveryFee: Number(o.deliveryFee),
-      amountFinal: o.amountFinal != null ? Number(o.amountFinal) : null,
-      receivable: receivableAmount(o),
-      payMethod: o.payMethod,
-      payProof: o.payProof ?? null,
-      // 卡M（2026-09-19 拍板）：采购方在 COD 单送达后点「我已付款」的时间——仅代表客户称已付，不代表钱已核销
-      buyerPaidClaimAt: o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null,
-      courierName:
-        (o.payProof as any)?.courierId != null
-          ? courierMap.get(Number((o.payProof as any).courierId)) ?? null
-          : null,
-    }))
+    // 卡AH：线上到账判定（标记是否**已被线上支付覆盖**）—— 走 hasWechatPaidRecord，不内联 status/channel 判定
+    const paidRecords = orders.length
+      ? await this.prisma.paymentRecord.findMany({
+          where: { orderId: { in: orders.map((o) => o.id) }, status: 1 },
+          select: { orderId: true, channel: true, status: true },
+        })
+      : []
+    const paidByOrder = new Map<number, { channel?: string | null; status: number }[]>()
+    for (const p of paidRecords) {
+      const k = Number(p.orderId)
+      if (!paidByOrder.has(k)) paidByOrder.set(k, [])
+      paidByOrder.get(k)!.push({ channel: p.channel, status: p.status })
+    }
+
+    return orders.map((o) => {
+      // 卡AH：标记的统一展示块（读取/覆盖判定唯一实现 = pay-status.util）
+      const onlinePaid = hasWechatPaidRecord(paidByOrder.get(Number(o.id)) ?? [])
+      const mark = { ...unpaidMarkViewOf(o.payProof, onlinePaid) }
+      mark.byName = mark.by != null ? markUserMap.get(mark.by) ?? null : null
+      return {
+        orderId: Number(o.id),
+        shopName: o.purchaser.shopName,
+        deliveryDate: o.deliveryDate.toISOString().slice(0, 10),
+        status: o.status,
+        statusText: this.statusText(o.status),
+        amountOrdered: Number(o.amountOrdered),
+        // 卡T（2026-09-21）：同上，补运费与最终金额（与每日对账页 receivableAmount 同源）
+        deliveryFee: Number(o.deliveryFee),
+        amountFinal: o.amountFinal != null ? Number(o.amountFinal) : null,
+        receivable: receivableAmount(o),
+        payMethod: o.payMethod,
+        payProof: o.payProof ?? null,
+        // 卡AH：「有凭证」由后端判定（非空 photos）—— 页面不再内联 `payProof?.photos?.length`
+        hasProof: hasPayProof(o.payProof),
+        // 卡M（2026-09-19 拍板）：采购方在 COD 单送达后点「我已付款」的时间——仅代表客户称已付，不代表钱已核销
+        buyerPaidClaimAt: o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null,
+        courierName:
+          (o.payProof as any)?.courierId != null
+            ? courierMap.get(Number((o.payProof as any).courierId)) ?? null
+            : null,
+        // 卡AH（2026-09-30）：配送员「客户未付款」标记（**不代表已销账**，只作提醒）
+        //   unpaidMarkEffective = 仍生效（未线上到账）→ 列表红标 / 「仅看已标记未收款」筛选看它
+        //   unpaidMarkOverridden = 已被线上支付覆盖（标记自动失效）→ 列表显示灰标作历史痕迹
+        unpaidMarked: mark.marked,
+        unpaidMarkedAt: mark.markedAt,
+        unpaidMarkRemark: mark.remark,
+        unpaidMarkBy: mark.by,
+        unpaidMarkByName: mark.byName,
+        unpaidMarkOverridden: mark.overridden,
+        unpaidMarkEffective: mark.effective,
+      }
+    })
   }
 
   // ────────────────────────────────────────
@@ -133,6 +185,33 @@ export class AdminOrderService {
       ? await this.prisma.user.findUnique({ where: { id: BigInt(courierId) }, select: { name: true, phone: true } })
       : null
 
+    // 卡AH（2026-09-30）：订单详情「收款记录」时间线要两行数据 ——
+    //   ① 橙行：unpaidMark（标记人 / 时间 / 备注）
+    //   ② 绿行（**仅当已线上支付**）：线上到账时间 / 金额 / 流水号，并标「已由线上支付覆盖（标记自动失效）」
+    // 线上到账判定与时间取法一律走 pay-status.util（hasWechatPaidRecord / onlinePaidAtOf，
+    // 与采购方列表·详情、后台对账同源，禁止这里内联 filter）。
+    const paymentRecords = await this.prisma.paymentRecord.findMany({
+      where: { orderId: o.id },
+      select: { id: true, payNo: true, channel: true, amount: true, status: true, paidAt: true, createdAt: true },
+      orderBy: { id: 'asc' },
+    })
+    const onlinePaid = hasWechatPaidRecord(paymentRecords)
+    const wechatPaidAmount = round2(
+      paymentRecords.filter((p) => p.status === 1).reduce((s, p) => s + Number(p.amount), 0),
+    )
+    const latestPaid = [...paymentRecords]
+      .filter((p) => p.status === 1 && (p.channel === 'wechat' || p.channel === 'mock'))
+      .sort((a, b) => Number(b.id) - Number(a.id))[0]
+
+    const mark = { ...unpaidMarkViewOf(o.payProof, onlinePaid) }
+    if (mark.by != null) {
+      const mu = await this.prisma.user.findUnique({
+        where: { id: BigInt(mark.by) },
+        select: { name: true, phone: true },
+      })
+      mark.byName = mu ? mu.name || mu.phone || `用户#${mark.by}` : null
+    }
+
     return {
       orderId: Number(o.id),
       shopName: o.purchaser.shopName,
@@ -146,8 +225,23 @@ export class AdminOrderService {
       receivable: receivableAmount(o),
       payMethod: o.payMethod,
       payProof: o.payProof ?? null,
+      hasProof: hasPayProof(o.payProof),
       buyerPaidClaimAt: o.buyerPaidClaimAt ? o.buyerPaidClaimAt.toISOString() : null,
       courierName: courier ? courier.name || courier.phone || null : null,
+      // 卡AH：收款记录时间线（前端**只渲染**，判定与覆盖推导都在后端完成）
+      unpaidMarked: mark.marked,
+      unpaidMarkedAt: mark.markedAt,
+      unpaidMarkRemark: mark.remark,
+      unpaidMarkBy: mark.by,
+      unpaidMarkByName: mark.byName,
+      unpaidMarkOverridden: mark.overridden,
+      unpaidMarkEffective: mark.effective,
+      onlinePaid,
+      onlinePaidAt: onlinePaidAtOf(paymentRecords as any),
+      wechatPaidAmount,
+      // 「流水号」= payment_record.pay_no（不可枚举随机支付单号，对外暴露的回调凭据）
+      onlinePayNo: latestPaid?.payNo ?? null,
+      onlinePayChannel: latestPaid?.channel ?? null,
       items: o.items.map((it) => ({
         orderItemId: Number(it.id),
         productName: it.product?.name,

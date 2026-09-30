@@ -23,6 +23,20 @@
       <view class="pbtn primary" :class="{ disabled: !taskId }" @tap="confirm">确认交付</view>
     </view>
 
+    <!-- 卡AH C1（2026-09-30）：有 COD 待收款单时，把原来的「交付完成，请收款」toast
+         换成**半屏两路选择** —— 客户付没付，由配送员在当下明确说出口。
+         两条路都进收款页（cod-pay.vue）：① 已付款走既有拍照留证；② 未付款带 askUnpaid=1 直接弹二次确认。
+         🟠 取消不设门槛：未选就退出按现状处理（订单已交付，不卡配送员）。 -->
+    <view v-if="codSheet" class="sheet-mask">
+      <view class="sheet">
+        <view class="sh-t">交付完成，本单需要收款</view>
+        <view class="sh-s">{{ sheetSub }}</view>
+        <view class="sbtn primary" @tap="choosePaid">📷 客户已付款 · 上传收款凭证</view>
+        <view class="sbtn outline" @tap="chooseUnpaid">⚠️ 客户未付款 · 标记并继续</view>
+        <view class="sbtn ghost" @tap="cancelSheet">取消</view>
+      </view>
+    </view>
+
     <CustomTabBar :tabs="courierTabs" active="/subpkg-courier/pages/deliver" />
   </view>
 </template>
@@ -86,25 +100,52 @@ const courierTabs = [
 onShow(() => {
 })
 
+// 卡AH（2026-09-30）：交付完成后的「半屏两路选择」——替代原来的「交付完成，请收款」toast
+const codSheet = ref(false)
+const sheetSub = ref('')
+// 本次交付产生的待收款单（首单进收款页，其余放 codQueue 接力）
+let pendingCod = []
+
 const confirm = async () => {
   if (!taskId.value) { uni.showToast({ title: '暂无进行中任务', icon: 'none' }); return }
   const res = await courierApi.deliverConfirm(Number(taskId.value), { photos: photos.value, remark: remark.value })
   // 货到付款自动进收款页（2026-09-19 拍板卡）：后端返回本任务内已送达、payMethod=2
-  // 且尚无收款凭证(payProof)的订单。多个 COD 单逐个收（队列存 storage，cod-pay 接力）；
+  // 且尚无收款凭证(non-empty photos)的订单。多个 COD 单逐个收（队列存 storage，cod-pay 接力）；
   // 微信支付订单照常回首页不受影响。
   const codOrders = res?.codOrders || []
   if (codOrders.length) {
     // 队列 = 除首单外的剩余待收款单（空数组也写入：向 cod-pay 标记「来自交付流程」）
     uni.setStorageSync('codQueue', codOrders.slice(1))
+    pendingCod = codOrders
     const first = codOrders[0]
-    uni.showToast({ title: codOrders.length > 1 ? `交付完成，还有 ${codOrders.length} 单待收款` : '交付完成，请收款', icon: 'none' })
-    setTimeout(() => uni.redirectTo({ url: `/subpkg-courier/pages/cod-pay?orderId=${first.orderId}&shopName=${encodeURIComponent(first.shopName || '')}` }), 600)
+    const amt = first.amount != null ? `本单 ¥${Number(first.amount).toFixed(2)}` : '本单'
+    const rest = codOrders.length - 1
+    sheetSub.value = `客户扫码付了吗？选完直接进下一步（${amt}${rest > 0 ? ` · 还有 ${rest} 单待收款` : ''}）`
+    codSheet.value = true
   } else {
     uni.removeStorageSync('codQueue')
     uni.showToast({ title: '交付完成', icon: 'success' })
     setTimeout(() => uni.reLaunch({ url: '/subpkg-courier/pages/home' }), 600)
   }
 }
+
+/** 进收款页：askUnpaid=1 → 收款页 onLoad 直接弹「客户未付款」二次确认（同页半屏，不新增页面） */
+const enterCodPay = (askUnpaid) => {
+  const first = pendingCod[0]
+  if (!first) { codSheet.value = false; return }
+  codSheet.value = false
+  const extra = askUnpaid ? '&askUnpaid=1' : ''
+  uni.redirectTo({
+    url: `/subpkg-courier/pages/cod-pay?orderId=${first.orderId}&shopName=${encodeURIComponent(first.shopName || '')}${extra}`,
+  })
+}
+
+// ① 客户已付款 → 既有拍照留证流程一行不改
+const choosePaid = () => enterCodPay(false)
+// ② 客户未付款 → 进二次确认（备注选填）→ 确认后回收款队列继续下一单
+const chooseUnpaid = () => enterCodPay(true)
+// 取消 → 不设门槛：订单已交付，配送员可稍后从任务列表的「货到付款」再进收款页
+const cancelSheet = () => { codSheet.value = false }
 
 onLoad(async (opts) => {
   if (opts.taskId) {
@@ -132,4 +173,14 @@ onLoad(async (opts) => {
 .photo-item { position: relative; width: 72px; height: 72px; }
 .photo-img { width: 72px; height: 72px; border-radius: 8px; }
 .photo-del { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; background: #fa5151; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+
+/* 卡AH C1：交付完成后的半屏两路选择（原型：拍照留痕 → 客户付没付二选一） */
+.sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.34); display: flex; align-items: flex-end; z-index: 99; }
+.sheet { width: 100%; background: #fff; border-radius: 16px 16px 0 0; padding: 14px 14px 16px; box-sizing: border-box; }
+.sh-t { font-size: 15px; font-weight: 800; color: $text-title; }
+.sh-s { font-size: 12px; color: $text-second; margin-top: 4px; line-height: 1.6; }
+.sbtn { border-radius: 22px; padding: 12px 0; text-align: center; font-size: 15px; font-weight: 700; margin-top: 9px; }
+.sbtn.primary { background: $color-primary; color: #fff; }
+.sbtn.outline { border: 1px solid #d5dae0; color: #c87000; background: #fff; font-weight: 600; }
+.sbtn.ghost { color: $text-placeholder; font-weight: 400; font-size: 14px; margin-top: 7px; }
 </style>

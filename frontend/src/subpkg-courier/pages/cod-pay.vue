@@ -32,18 +32,48 @@
       </view>
     </view>
 
+    <!-- 卡AH（2026-09-30）：标记「客户未付款」的后果说明（橙 = 提醒，不是核销、不动钱） -->
+    <view v-if="!onlinePaid" class="unpaid-tip">
+      ⚠️ 客户没给钱？点下方「<text class="b">客户未付款</text>」标记 —— 标记后<text class="b">客户侧显示为「未支付」</text>；客户之后用<text class="b">微信</text>付了，会自动变「已付款」，<text class="b">标记自动失效</text>，不用你回来改。
+    </view>
+
     <!-- 底部操作
          卡S2（2026-09-29）：「跳过此单，继续处理」已删除 —— 现金单的唯一出口 = 提交凭证完成收款
          （收不到钱走「异常上报」，不再有"稍后再收"的口子）。
-         「继续下一单」是**导航**不是跳过收款：已线上收款的单不需要收现金，必须给它离开动作。 -->
+         「继续下一单」是**导航**不是跳过收款：已线上收款的单不需要收现金，必须给它离开动作。
+         卡AH（2026-09-30）：新增**次要样式**「客户未付款」—— 橙描边，不与「付款拍照」抢主色。 -->
     <view class="row-btns">
       <view v-if="codFlow && remaining > 0" class="queue-tip">📋 本单收完后还有 {{ remaining }} 单待收款</view>
-      <!-- 已线上收款 → 两个现金动作整块不渲染（只留"继续下一单"） -->
+      <!-- 已线上收款 → 现金动作整块不渲染（只留"继续下一单"）；「客户未付款」也一并消失（钱已到账，标记毫无意义） -->
       <template v-if="!onlinePaid">
         <view class="pbtn primary" :class="{ disabled: submitting }" @tap="takePayProof">📷 付款拍照</view>
         <view v-if="proofPhotos.length" class="pbtn success" :class="{ disabled: submitting }" @tap="submitProof">提交凭证，完成收款</view>
+        <view class="pbtn outline" :class="{ disabled: submitting }" @tap="openUnpaidSheet">⚠️ 客户未付款</view>
+        <view class="pbtn-hint">「客户未付款」是次要动作，不与「付款拍照」抢主色</view>
       </template>
       <view v-if="onlinePaid && codFlow" class="pbtn plain" :class="{ disabled: submitting }" @tap="goNext">继续下一单</view>
+    </view>
+
+    <!-- 卡AH C3 · 「客户未付款」二次确认（半屏，同页实现，**不新增页面文件**）
+         出口：确认后回收款队列继续下一单；客户后来又给了钱 → 回本页走「提交凭证」那条路，标记自动撤销。 -->
+    <view v-if="unpaidSheet" class="sheet-mask" @tap="closeUnpaidSheet">
+      <view class="sheet" @tap.stop>
+        <view class="sh-t">确认这单没收到钱？</view>
+        <view class="sh-s">标记只是<text class="b">提醒运营注意</text>这一单：不改订单金额、不进结算、不进账单。</view>
+        <view class="fld-lb">备注 <text class="fld-hint">（选填，如「客户说下午转」）</text></view>
+        <textarea
+          v-model="markRemark"
+          class="ta"
+          maxlength="255"
+          placeholder="客户说下午转"
+          placeholder-class="ta-ph"
+        />
+        <view class="sh-green">🔄 客户后来又给了钱？回收款页走「上传凭证」那条路，标记自动撤销 / 改口（或客户线上付款 → 自动失效）</view>
+        <view class="sheet-btns">
+          <view class="sbtn outline" @tap="closeUnpaidSheet">取消</view>
+          <view class="sbtn warn" :class="{ disabled: submitting }" @tap="confirmUnpaid">确认标记</view>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -93,6 +123,37 @@ const advance = (toastMsg) => {
 const goNext = () => {
   if (submitting.value) return
   advance('')
+}
+
+// ── 卡AH（2026-09-30）：标记「客户未付款」──
+// 只在**未线上到账**时可用（钱已到账的单按钮都不渲染；后端也会拒绝，双保险）
+const unpaidSheet = ref(false)
+const markRemark = ref('')
+
+const openUnpaidSheet = () => {
+  if (submitting.value || onlinePaid.value) return
+  markRemark.value = ''
+  unpaidSheet.value = true
+}
+
+const closeUnpaidSheet = () => {
+  if (submitting.value) return
+  unpaidSheet.value = false
+}
+
+/** 确认标记 → 写 pay_proof.unpaidMark（后端不动金额、不推进状态）→ 回收款队列继续下一单 */
+const confirmUnpaid = async () => {
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await courierApi.markUnpaid(Number(orderId.value), markRemark.value)
+    unpaidSheet.value = false
+    advance('已标记客户未付款')
+  } catch (e) {
+    // 错误已由 request.js 统一提示（如「该单已通过线上支付到账，无需标记未付款」）
+  } finally {
+    submitting.value = false
+  }
 }
 
 // 拍照 → 本地压缩到 300KB 内 → base64 上传
@@ -153,6 +214,8 @@ onLoad(async (opts) => {
       onlinePaid.value = !!hit.onlinePaidAt // 卡S1
     }
   } catch (e) { /* 忽略 */ }
+  // 卡AH：交付完成页选「客户未付款」跳过来（askUnpaid=1）→ 直接弹二次确认（同页半屏，不新增页面）
+  if (opts.askUnpaid === '1' && !onlinePaid.value) openUnpaidSheet()
 })
 </script>
 
@@ -183,4 +246,26 @@ onLoad(async (opts) => {
 .disabled { opacity: 0.6; }
 .queue-tip { font-size: 12px; color: $text-second; text-align: center; padding: 2px 0; }
 .pbtn.plain { background: #f2f3f5; color: $text-second; }
+/* 卡AH：「客户未付款」的**次要样式**（橙描边）—— 明确不与「付款拍照」抢主色（原型 C2） */
+.pbtn.outline { background: #fff; border: 1px solid #d5dae0; color: #c87000; font-weight: 600; }
+.pbtn-hint { text-align: center; font-size: 12px; color: $text-placeholder; margin-top: -4px; }
+/* 卡AH：标记后果说明（橙 = 提醒/展示，**不是核销、不动钱**） */
+.unpaid-tip { background: #fff3e6; color: #c87000; font-size: 12px; line-height: 1.7; padding: 10px 12px; border-radius: 8px; margin: 6px 12px; }
+.unpaid-tip .b { font-weight: 700; color: #c87000; }
+
+/* 卡AH C3：二次确认半屏（同页实现，不新增页面文件） */
+.sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.34); display: flex; align-items: flex-end; z-index: 99; }
+.sheet { width: 100%; background: #fff; border-radius: 16px 16px 0 0; padding: 14px 14px 16px; box-sizing: border-box; }
+.sh-t { font-size: 15px; font-weight: 800; color: $text-title; }
+.sh-s { font-size: 12px; color: $text-second; margin-top: 4px; line-height: 1.6; }
+.sh-s .b { color: $text-title; font-weight: 600; }
+.fld-lb { font-size: 13px; font-weight: 700; color: $text-title; margin: 10px 0 4px; }
+.fld-hint { font-weight: 400; color: $text-second; font-size: 12px; }
+.ta { width: 100%; background: #f5f6f8; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: $text-body; line-height: 1.6; min-height: 60px; box-sizing: border-box; }
+.ta-ph { color: $text-placeholder; }
+.sh-green { background: #e8f8f0; color: #00995a; border: 1px solid #c9f0dd; font-size: 12px; line-height: 1.65; font-weight: 600; border-radius: 8px; padding: 8px 10px; margin: 10px 0 0; }
+.sheet-btns { display: flex; gap: 9px; margin-top: 10px; }
+.sbtn { flex: 1; text-align: center; padding: 12px; border-radius: 22px; font-size: 15px; font-weight: 700; }
+.sbtn.outline { border: 1px solid #d5dae0; color: #4b5563; background: #fff; }
+.sbtn.warn { flex: 1.4; background: #ff8f1f; color: #fff; }
 </style>

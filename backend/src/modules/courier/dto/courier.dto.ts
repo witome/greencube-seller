@@ -41,3 +41,13 @@ export class PayProofDto {
   @IsArray()
   photos: string[]
 }
+
+/// 卡AH（2026-09-30）：配送员标记「客户未付款」
+/// ⚠️ 只标「没收到钱」，**不带金额**、不做催收动作（大辉拍板 2e：第一版不做）
+export class UnpaidMarkDto {
+  /// 备注（选填，如「客户说下午转」）；≤255 字
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  remark?: string
+}

@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
-import { DeliverDto, ReportDto, PayProofDto } from './dto/courier.dto'
+import { DeliverDto, ReportDto, PayProofDto, UnpaidMarkDto } from './dto/courier.dto'
 import { AuditService } from '../audit/audit.service'
 import { OrderShippingService } from '../wx/order-shipping.service'
 // 卡AG（2026-09-30）：配送员提交收款凭证 = 钱到账 → 订单「已送达(60)」转「已完成(70)」
 import { OrderService } from '../order/order.service'
+// 卡AH（2026-09-30）：「客户未付款」标记的读取/展示口径唯一实现 +
+// 线上到账判定（标记是否已被线上支付覆盖，判据与四档状态同源，不内联 filter）
+import { hasPayProof, hasWechatPaidRecord, readUnpaidMark, unpaidMarkViewOf, UnpaidMarkView } from '../../common/utils/pay-status.util'
 
 /// 配送任务状态：0 待取货 / 1 已取货待出发 / 2 已出发配送中 / 3 已完成 / 4 异常
 const TaskStatus = { PENDING_PICKUP: 0, DELIVERING: 1, DEPARTED: 2, DONE: 3, EXCEPTION: 4 } as const
@@ -134,10 +137,11 @@ export class CourierService {
     // 查订单支付方式：货到付款(2)订单在今日任务里显示「货到付款」按钮
     // 2026-09-19 卡L：同时带出采购方「我已付款」声明时间，供配送员端显示「客户称已付」标记
     // ⚠️ 只是标记，**不参与核销**（核销仍以 order.payProof 为准），也不影响本函数其它逻辑
+    // 卡AH（2026-09-30）：顺带带出 payProof —— 「客户未付款」标记写在其中（unpaidMark 子对象）
     const orderPayments = orderIds.length
       ? await this.prisma.order.findMany({
           where: { id: { in: orderIds.map((id) => BigInt(id)) } },
-          select: { id: true, payMethod: true, buyerPaidClaimAt: true },
+          select: { id: true, payMethod: true, buyerPaidClaimAt: true, payProof: true },
         })
       : []
     const payMap = new Map(orderPayments.map((o) => [Number(o.id), o.payMethod]))
@@ -157,13 +161,24 @@ export class CourierService {
       onlinePayments.map((p) => [Number(p.orderId), (p.paidAt ?? p.createdAt).toISOString()]),
     )
 
+    // 卡AH（2026-09-30）：配送员「客户未付款」标记（配送员自己列表里显示橙色小标「未收款」）。
+    // 读取口径走 pay-status.util.unpaidMarkViewOf（唯一实现）；已线上到账的单 `overridden=true`
+    // → 前端**不再显示**「未收款」（标记自动失效，展示为「已线上收款」），但标记本身保留作历史痕迹。
+    const unpaidMarkViewMap = new Map<number, UnpaidMarkView>(
+      orderPayments.map((o) => [
+        Number(o.id),
+        unpaidMarkViewOf(o.payProof, onlinePaidMap.has(Number(o.id))),
+      ]),
+    )
+
     return tasks.map((t) => ({
       taskId: Number(t.id),
       routeNo: t.routeNo,
       status: t.status,
       stationList: (Array.isArray(t.stationList) ? t.stationList : []).map((s: any) => {
         if (s.type === 'deliver' && s.orderId) {
-          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)), payMethod: payMap.get(Number(s.orderId)) ?? null, buyerPaidClaimAt: paidClaimMap.get(Number(s.orderId)) ?? null, onlinePaidAt: onlinePaidMap.get(Number(s.orderId)) ?? null }
+          const mark = unpaidMarkViewMap.get(Number(s.orderId))
+          return { ...s, items: itemMap.get(Number(s.orderId)) ?? [], abnormal: abnormalSet.has(Number(s.orderId)), payMethod: payMap.get(Number(s.orderId)) ?? null, buyerPaidClaimAt: paidClaimMap.get(Number(s.orderId)) ?? null, onlinePaidAt: onlinePaidMap.get(Number(s.orderId)) ?? null, unpaidMarkedAt: mark?.markedAt ?? null, unpaidMarkRemark: mark?.remark ?? null, unpaidMarkOverridden: mark?.overridden ?? false }
         }
         return s
       }),
@@ -286,7 +301,12 @@ export class CourierService {
         (o) =>
           o &&
           o.payMethod === 2 &&
-          o.payProof == null &&
+          // 卡AH（2026-09-30）：原写法是 `o.payProof == null` —— 加了「客户未付款」标记后，
+          // payProof 里会只有 unpaidMark（没 photos），`== null` 不成立会把"其实还没收到钱"的单
+          // 错误地排除出待收款队列。判定改为「**没有收款凭证**」（非空 photos），与四档口径同源：
+          // 只标了未付款 = 还没收到钱 → 仍要进队列；有凭证 = 已收到钱 → 不再进队列。
+          // 对老数据（所有 payProof 都带非空 photos）行为与改动前逐行一致。
+          !hasPayProof(o.payProof) &&
           o.status === OrderStatus.DELIVERED &&
           !onlinePaidSet.has(String(o.id)),
       )
@@ -421,7 +441,13 @@ export class CourierService {
   // ⚠️ 卡AG（2026-09-30 大辉拍板 3a②）：**凭证落库 = 钱到账 = 收货完成** ——
   //    本方法在同一事务里 ①写 payProof ②写审计 ③调 completeOrderOnPayment 推进 60→70。
   //    订单不是 60（已 70 / 已取消 / 其它）时只落凭证、状态不动（方法内部自行判定并原样返回）。
-  //    「客户未付款」标记（写进 payProof 的那个标记）属卡AH，本卡不做，也不影响这里的状态口径。
+  //
+  // ⚠️ 卡AH（2026-09-30 改口）：**提交凭证 = 标记失效**。本方法把 payProof **整体重写**为
+  //    { photos, courierId, paidAt } —— 原来若写过 `unpaidMark`（客户未付款标记），
+  //    整体重写后**自然被清掉**，不需要额外写一条"撤销"逻辑。这就是「改口」的唯一入口：
+  //    客户后来又给了钱 → 配送员回收款页走「上传凭证」这条路 → 标记消失、判「已付款·扫码付款」。
+  //    ⚠️ 反过来说：**不要**在这里改成"保留旧 unpaidMark 合并写"，那会把已收到钱的单
+  //       继续标成「未收款」。
   // ────────────────────────────────────────
   async payProof(userId: bigint, orderId: number, dto: PayProofDto) {
     const courier = await this.getCourier(userId)
@@ -429,11 +455,15 @@ export class CourierService {
     if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
     if (order.payMethod !== 2) throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '非货到付款订单')
 
+    // 卡AH：提交凭证会清掉「客户未付款」标记 —— 先把清除前的标记读出来留进审计（before）
+    const readUnpaidMarkBefore = readUnpaidMark(order.payProof)
+
     // 凭证 / 审计 / 状态推进 同一事务（2026-09-15 涉钱收口：避免"凭证记上了、订单没推进"的中间态）
     await this.prisma.$transaction(async (tx) => {
       await tx.order.update({
         where: { id: order.id },
         data: {
+          // ⚠️ 卡AH：整体重写 = 顺带清掉旧的 unpaidMark（「改口」出口，见方法头注释）
           payProof: { photos: dto.photos, courierId: Number(courier.id), paidAt: new Date().toISOString() },
         },
       })
@@ -444,7 +474,8 @@ export class CourierService {
           action: 'COD_PAY_PROOF',
           entity: 'order',
           entityId: orderId,
-          after: { photos: dto.photos },
+          after: { photos: dto.photos, clearedUnpaidMark: !!readUnpaidMarkBefore },
+          before: readUnpaidMarkBefore ? { unpaidMark: readUnpaidMarkBefore } : undefined,
         },
         tx,
       )
@@ -456,6 +487,81 @@ export class CourierService {
     })
 
     return { orderId, recorded: true }
+  }
+
+  // ────────────────────────────────────────
+  // 卡AH（2026-09-30 大辉拍板 2b~2e）：配送员标记「客户未付款」
+  //
+  // 一句话：配送员发现客户没给钱 → 一键显式标记，运营后台立刻看得到；
+  //        客户后来微信付了钱 → 标记**自动失效**（线上到账永远优先）。
+  //
+  // 🔴 红线（一条都不许越）：
+  //   1. **不动钱**：不改订单金额、不改 Settlement 基数、不改账单、不做任何扣款/抵扣；
+  //   2. **不新增表、不新增字段**：标记写进**已有**的 `order.pay_proof`（Json）加 `unpaidMark` 子对象；
+  //   3. **不推进订单状态**：订单仍停在 60（已送达）—— 未付款的 COD 单停在 60 是有意为之；
+  //   4. 标记**不参与付款状态判定**（四档口径不变，不新增第五档），只用于提醒/展示。
+  //
+  // 校验：订单存在 / 货到付款(payMethod=2) / 状态 ∈ {60 已送达} / **已线上到账的单拒绝**。
+  // 落库：`unpaidMark = { by: 配送员 userId, at: ISO, remark: 备注或 null }`，
+  //       与现有 photos / courierId / paidAt **共存**（浅合并，绝不覆盖已有 photos）。
+  // 审计：action = `COURIER_UNPAID_MARK`（本卡自拟，见交接页）。
+  // ────────────────────────────────────────
+  async unpaidMark(userId: bigint, orderId: number, dto: UnpaidMarkDto) {
+    const courier = await this.getCourier(userId)
+    const order = await this.prisma.order.findUnique({ where: { id: BigInt(orderId) } })
+    if (!order) throw new BizException(ErrorCode.NOT_FOUND, '订单不存在')
+    if (order.payMethod !== 2) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '非货到付款订单，不能标记未付款')
+    }
+    // 只有「已送达(60)」才可能出现"送了货没收到钱"；状态不符时按口径拒绝，不静默吞掉
+    if (order.status !== OrderStatus.DELIVERED) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '仅「已送达」的货到付款订单可标记未付款')
+    }
+
+    // 已线上到账的单：钱已经进了商户号线上账户 → 标记毫无意义（验收判据 1/4）
+    const paymentRecords = await this.prisma.paymentRecord.findMany({
+      where: { orderId: order.id },
+      select: { channel: true, status: true },
+    })
+    if (hasWechatPaidRecord(paymentRecords)) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '该单已通过线上支付到账，无需标记未付款')
+    }
+
+    const remark = dto?.remark && String(dto.remark).trim() ? String(dto.remark).trim().slice(0, 255) : null
+    const at = new Date().toISOString()
+    // 浅合并：保住已有 photos / courierId / paidAt（红线 2：与现有结构共存，不许覆盖）
+    const prevProof = order.payProof && typeof order.payProof === 'object' ? (order.payProof as any) : {}
+    const nextProof = { ...prevProof, unpaidMark: { by: Number(userId), at, remark } }
+
+    // 订单写入 + 审计同一事务（与 payProof 同款：避免"标记记上了、审计没落"的中间态）
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({ where: { id: order.id }, data: { payProof: nextProof } })
+      await this.audit.log(
+        {
+          operatorId: userId,
+          action: 'COURIER_UNPAID_MARK',
+          entity: 'order',
+          entityId: orderId,
+          before: { payProof: order.payProof ?? null, status: order.status },
+          after: {
+            unpaidMark: nextProof.unpaidMark,
+            status: order.status, // 状态不变（红线 3）
+            note: '配送员标记「客户未付款」：只作提醒/展示，不参与付款状态判定、不动任何金额',
+          },
+        },
+        tx,
+      )
+    })
+
+    return {
+      orderId,
+      unpaidMarked: true,
+      unpaidMarkAt: at,
+      unpaidMarkRemark: remark,
+      // 状态原样回传，证明未推进（验收判据 2）
+      status: order.status,
+      note: '已标记「客户未付款」；客户之后线上付款会自动失效，配送员补交收款凭证也会清除本标记',
+    }
   }
 
   // ────────────────────────────────────────

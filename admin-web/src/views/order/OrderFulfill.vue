@@ -27,24 +27,38 @@
         <div class="admin-fulfill-stat-num admin-fulfill-num-orange">{{ claimedCount }}</div>
         <div class="admin-fulfill-stat-lbl">客户称已付</div>
       </div>
+      <!-- 卡AH（2026-09-30）：配送员显式标记「客户未付款」——**不代表已销账**（2e：运营端不做销账按钮），
+           只作提醒与筛选；被线上支付覆盖后不再计入这一格（标记自动失效） -->
+      <div class="admin-fulfill-stat admin-fulfill-stat-hot" :class="{ on: activeFilter === 'unpaidMarked' }" @click="filterBy('unpaidMarked')">
+        <div class="admin-fulfill-stat-num admin-fulfill-num-red">{{ markedCount }}</div>
+        <div class="admin-fulfill-stat-lbl">已标记未收款</div>
+      </div>
     </div>
 
-    <!-- 已送达/客户称已付视图下的筛选：送达日 + 只看未核销（默认关闭=看全部，有凭证的也能看到） -->
-    <div v-if="activeFilter === 'delivered' || activeFilter === 'claimed'" class="admin-fulfill-toolbar">
+    <!-- 已送达/客户称已付/已标记未收款 视图下的筛选：收款标记 + 送达日 + 只看未核销 -->
+    <div v-if="showToolbar" class="admin-fulfill-toolbar">
+      <!-- 卡AH：全部 / 仅看已标记未收款（与顶部统计的「已标记未收款」同一状态，点哪边都同步） -->
+      <el-radio-group v-model="markOnly" size="small">
+        <el-radio-button :value="false">全部</el-radio-button>
+        <el-radio-button :value="true">仅看已标记未收款</el-radio-button>
+      </el-radio-group>
       <el-date-picker
         v-model="claimDate"
         type="date"
         value-format="YYYY-MM-DD"
         placeholder="按送达日筛"
         clearable
-        style="width: 150px"
+        style="width: 150px; margin-left: 12px"
       />
       <el-checkbox v-model="onlyUncleared" style="margin-left: 16px">只看未核销（无配送员凭证）</el-checkbox>
       <!-- 卡T（2026-09-21）：带上当前送达日跳到每日对账，省得两边各选一次日期 -->
       <el-button type="primary" plain size="small" style="margin-left: 16px" @click="goReconcile">
         去对账（{{ claimDate || todayStr() }} 这一天）
       </el-button>
-      <span class="admin-fulfill-toolbar-tip">「客户称已付」仅代表采购方自称已付款，核销以配送员收款凭证为准</span>
+      <span class="admin-fulfill-toolbar-tip">
+        「收款标记」= 配送员显式标记「<b>客户未付款</b>」，<b>不代表已销账</b>（核销仍以配送员收款凭证为准）；
+        「客户称已付」仅代表采购方自称已付款
+      </span>
     </div>
 
     <el-card shadow="never">
@@ -53,7 +67,7 @@
           <span>待处理订单</span>
         </div>
       </template>
-      <el-table :data="filteredList" v-loading="loading" stripe>
+      <el-table :data="filteredList" v-loading="loading" stripe :row-class-name="rowClassName">
         <el-table-column prop="orderId" label="订单号" width="90">
           <template #default="{ row }">#{{ row.orderId }}</template>
         </el-table-column>
@@ -94,6 +108,35 @@
               <div class="claim-time">{{ fmtTime(row.buyerPaidClaimAt) }}</div>
             </template>
             <span v-else style="color:#c0c4cc;">-</span>
+          </template>
+        </el-table-column>
+        <!-- 卡AH（2026-09-30）：收款标记 = 配送员显式标记「客户未付款」（红标 + 标记时间，悬浮看备注与标记人）。
+             ⚠️ 命中只代表「配送员说没收到钱」，**不代表已销账**；线上到账后标记自动失效（显示灰标作历史痕迹）。 -->
+        <el-table-column label="收款标记" width="156">
+          <template #default="{ row }">
+            <template v-if="row.unpaidMarkEffective">
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  <div>标记人：{{ row.unpaidMarkByName || '配送员' }}</div>
+                  <div>备注：{{ row.unpaidMarkRemark || '（无）' }}</div>
+                  <div>标记时间：{{ fmtTime(row.unpaidMarkedAt) }}</div>
+                  <div>仅作提醒，不代表已销账</div>
+                </template>
+                <el-tag type="danger" size="small">🔴 配送员已标记未收款</el-tag>
+              </el-tooltip>
+              <div class="mark-time">{{ fmtTime(row.unpaidMarkedAt) }}</div>
+            </template>
+            <template v-else-if="row.unpaidMarked && row.unpaidMarkOverridden">
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  <div>曾被标记：{{ fmtTime(row.unpaidMarkedAt) }}（{{ row.unpaidMarkByName || '配送员' }}）</div>
+                  <div>备注：{{ row.unpaidMarkRemark || '（无）' }}</div>
+                  <div>该单已由线上支付到账 → 标记自动失效（只留历史痕迹）</div>
+                </template>
+                <el-tag type="info" size="small">已由线上支付覆盖</el-tag>
+              </el-tooltip>
+            </template>
+            <span v-else style="color:#c0c4cc;">—</span>
           </template>
         </el-table-column>
         <!-- 收款凭证（配送员 COD 收款拍照，只读查看；2026-09-19 拍板卡） -->
@@ -157,6 +200,47 @@
           <span class="detail-amount-note">
             {{ currentOrder.amountFinal != null ? '（已核单：取 amountFinal，已含运费）' : '（未核单：回退 商品金额＋运费）' }}
           </span>
+        </div>
+        <!-- 卡AH（2026-09-30）：收款记录时间线 ——
+             橙行 = 配送员标记「客户未付款」；绿行 = **仅当已线上支付**时出现（标记自动失效的可视证据）；
+             未发生线上支付时只显示橙色那条。判定与覆盖推导全部来自后端，页面只渲染。 -->
+        <div v-if="currentOrder?.unpaidMarked" class="pay-timeline">
+          <div class="sub-t">💰 收款记录</div>
+          <div class="pay-timeline-box">
+            <div class="time-row">
+              <span class="d orange"></span>
+              <span class="c">
+                <b>配送员标记「客户未付款」</b>
+                <em>
+                  {{ fmtTime(currentOrder.unpaidMarkedAt) }} · {{ currentOrder.unpaidMarkByName || '配送员' }} · 备注：{{ currentOrder.unpaidMarkRemark || '（无）' }}
+                  <template v-if="currentOrder.unpaidMarkOverridden">（标记已失效）</template>
+                </em>
+              </span>
+            </div>
+            <div v-if="currentOrder.onlinePaid" class="time-row time-row-sep">
+              <span class="d green"></span>
+              <span class="c">
+                <b class="green-text">已由线上支付覆盖（标记自动失效）</b>
+                <em>
+                  {{ fmtTime(currentOrder.onlinePaidAt) }} · 微信直接支付 ¥{{ money(currentOrder.wechatPaidAmount) }}<template v-if="currentOrder.onlinePayNo"> · 流水号 {{ currentOrder.onlinePayNo }}</template>
+                </em>
+              </span>
+            </div>
+          </div>
+          <el-alert
+            v-if="currentOrder.onlinePaid"
+            type="success"
+            :closable="false"
+            class="pay-timeline-tip"
+            title="线上到账优先：标记不需要人工清理，客户一付款就自动失效；本条只作历史痕迹保留。"
+          />
+          <el-alert
+            v-else
+            type="warning"
+            :closable="false"
+            class="pay-timeline-tip"
+            title="收款标记只表示「配送员说没收到钱」，不代表已销账；运营端第一版不做销账 / 催收动作。"
+          />
         </div>
         <el-table :data="detailItems" size="small" empty-text="暂无明细">
           <el-table-column prop="productName" label="商品" min-width="110">
@@ -247,6 +331,8 @@ const stats = computed(() => {
 const filteredList = computed(() => {
   if (activeFilter.value === 'delivered') return deliveredFiltered.value
   if (activeFilter.value === 'claimed') return deliveredFiltered.value.filter((o) => o.buyerPaidClaimAt)
+  // 卡AH：仅看已标记未收款（标记仍生效、未被线上支付覆盖）
+  if (activeFilter.value === 'unpaidMarked') return deliveredFiltered.value
   if (activeFilter.value === 'all') return list.value
   if (activeFilter.value === 'shortage') return list.value.filter((o) => hasShortage(o))
   return list.value.filter((o) => o.status === Number(activeFilter.value))
@@ -256,12 +342,33 @@ const filteredList = computed(() => {
 const claimDate = ref(null)
 const onlyUncleared = ref(false)
 const claimedCount = computed(() => deliveredList.value.filter((o) => o.buyerPaidClaimAt).length)
+// ── 卡AH（2026-09-30）：配送员「客户未付款」标记 ──
+// 计数/筛选一律看 unpaidMarkEffective（仍生效）—— 已被线上支付覆盖的不算「未收款」（标记自动失效）
+const markedCount = computed(() => deliveredList.value.filter((o) => o.unpaidMarkEffective).length)
+// 顶部统计与工具栏单选是**同一个状态**，点哪边都同步
+const showToolbar = computed(() =>
+  ['delivered', 'claimed', 'unpaidMarked'].includes(activeFilter.value),
+)
+const markOnly = computed({
+  get: () => activeFilter.value === 'unpaidMarked',
+  set: (v) => {
+    activeFilter.value = v ? 'unpaidMarked' : 'delivered'
+  },
+})
 const deliveredFiltered = computed(() => {
   let rows = deliveredList.value
+  // 卡AH：仅看已标记未收款（其它视图下不过滤，保持既有行为）
+  if (activeFilter.value === 'unpaidMarked') rows = rows.filter((o) => o.unpaidMarkEffective)
   if (claimDate.value) rows = rows.filter((o) => o.deliveryDate === claimDate.value)
-  if (onlyUncleared.value) rows = rows.filter((o) => !(o.payProof?.photos?.length))
+  // 卡AH：「有凭证」由后端判定（hasProof，非空 photos）—— 页面不再内联判 photos
+  if (onlyUncleared.value) rows = rows.filter((o) => !o.hasProof)
   return rows
 })
+
+// 卡AH：被标记未收款的行整行淡红底（与每日对账页口径一致，一眼看出哪些要盯）
+function rowClassName({ row }) {
+  return row?.unpaidMarkEffective ? 'marked-unpaid-row' : ''
+}
 
 function filterBy(f) {
   activeFilter.value = f
@@ -375,7 +482,7 @@ async function openDetail(row) {
 // 卡T：支持从每日对账页带 ?filter=&date=&orderId= 跳进来，直接落到「已送达」视图并打开该单明细
 async function applyRouteQuery() {
   const f = route.query.filter
-  if (f === 'delivered' || f === 'claimed') activeFilter.value = f
+  if (f === 'delivered' || f === 'claimed' || f === 'unpaidMarked') activeFilter.value = f
   if (typeof route.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date)) {
     claimDate.value = route.query.date
   }
@@ -469,6 +576,80 @@ onMounted(async () => {
   font-size: 11px;
   color: #ff8f1f;
   margin-top: 2px;
+}
+/* 卡AH：收款标记列（红标 + 标记时间，仿「客户称已付」的时间小字） */
+.mark-time {
+  font-size: 11px;
+  color: #f56c6c;
+  margin-top: 2px;
+}
+/* 卡AH：被标记未收款的行整行淡红底（与每日对账页一致） */
+:deep(.marked-unpaid-row) td {
+  background: #fef6f6 !important;
+}
+/* 卡AH：高于「已标记未收款」统计格的提示（与页内其它统计格区分，一眼看出来要盯） */
+.admin-fulfill-stat-hot {
+  border-color: #fbc4c4;
+}
+/* 卡AH：订单详情「收款记录」时间线 */
+.pay-timeline {
+  margin-bottom: 12px;
+}
+.pay-timeline-box {
+  border: 1px solid #ebeef5;
+  border-radius: 5px;
+  padding: 6px 10px;
+}
+.pay-timeline .sub-t {
+  font-size: 12px;
+  font-weight: 700;
+  color: #303133;
+  margin: 0 0 5px;
+}
+.pay-timeline .time-row {
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+}
+.pay-timeline .time-row-sep {
+  border-top: 1px dashed #ebeef5;
+  padding-top: 6px;
+}
+.pay-timeline .d {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex: 0 0 auto;
+}
+.pay-timeline .d.orange {
+  background: #e6a23c;
+  box-shadow: 0 0 0 3px #fdf6ec;
+}
+.pay-timeline .d.green {
+  background: #67c23a;
+  box-shadow: 0 0 0 3px #f0f9eb;
+}
+.pay-timeline .c {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #606266;
+}
+.pay-timeline .c b {
+  display: block;
+  font-size: 12.5px;
+  color: #303133;
+}
+.pay-timeline .c b.green-text {
+  color: #529b2e;
+}
+.pay-timeline .c em {
+  font-style: normal;
+  color: #909399;
+  font-size: 11px;
+}
+.pay-timeline-tip {
+  margin-top: 7px;
 }
 .admin-fulfill-stat-lbl {
   font-size: 12px;

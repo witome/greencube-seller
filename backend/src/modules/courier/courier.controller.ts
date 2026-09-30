@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common'
 import { CourierService } from './courier.service'
-import { DeliverDto, ReportDto, PayProofDto } from './dto/courier.dto'
+import { DeliverDto, ReportDto, PayProofDto, UnpaidMarkDto } from './dto/courier.dto'
 import { SetOnlineDto, SetAutoAcceptDto } from './dto/courier-setting.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
@@ -80,6 +80,19 @@ export class CourierController {
   @Roles(Role.COURIER)
   async payProof(@CurrentUser('userId') userId: bigint, @Param('orderId') orderId: string, @Body() dto: PayProofDto) {
     return this.service.payProof(userId, Number(orderId), dto)
+  }
+
+  /// 卡AH（2026-09-30）：标记「客户未付款」（配送员显式声明这单没收到钱）
+  /// ⚠️ 不动钱：不改金额 / 不进结算 / 不进账单；**不推进订单状态**（仍停在 60 已送达）。
+  ///    客户之后线上付款 → 标记自动失效（线上到账永远优先）；配送员补交收款凭证 → 标记被清除。
+  @Post('order/:orderId/unpaid-mark')
+  @Roles(Role.COURIER)
+  async unpaidMark(
+    @CurrentUser('userId') userId: bigint,
+    @Param('orderId') orderId: string,
+    @Body() dto: UnpaidMarkDto,
+  ) {
+    return this.service.unpaidMark(userId, Number(orderId), dto)
   }
 
   /// 接单状态查询（上下线 / 接单模式 / 配送中 / 任务数）

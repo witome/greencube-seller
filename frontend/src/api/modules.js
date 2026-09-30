@@ -142,6 +142,9 @@ export const courierApi = {
   markPaid: (orderId) => post(`/courier/order/${orderId}/mark-paid`), // 仅标记不作核销
   getPayQr: () => get('/courier/pay-qr'), // 收款二维码（货到付款）
   submitPayProof: (orderId, photos) => post(`/courier/order/${orderId}/pay-proof`, { photos }), // 上传付款凭证
+  // 卡AH（2026-09-30）：标记「客户未付款」（配送员显式声明这单没收到钱）。
+  // ⚠️ 只作提醒/展示：不改金额、不进结算、不推进订单状态；客户线上付款后自动失效。
+  markUnpaid: (orderId, remark) => post(`/courier/order/${orderId}/unpaid-mark`, { remark: remark || undefined }),
   uploadImage: (base64) => post('/upload/image', { base64 }), // 通用图片上传（交付照片/付款凭证）
   // 接单状态
   getStatus: () => get('/courier/status'),

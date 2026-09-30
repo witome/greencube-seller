@@ -41,7 +41,7 @@
       <!-- 货物（订单）列表：取货 + 异常上报 + 已取状态 -->
       <view v-for="s in deliverStations(t)" :key="s.orderId" :class="['cargo-item', { abnormal: s.abnormal }]">
         <view class="cargo-main">
-          <view class="cargo-name">{{ s.shopName }}<text v-if="s.abnormal" class="cargo-abnormal-tag">异常</text><text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text><text v-if="s.onlinePaidAt" class="cargo-online-tag">已线上收款</text></view>
+          <view class="cargo-name">{{ s.shopName }}<text v-if="s.abnormal" class="cargo-abnormal-tag">异常</text><text v-if="s.unpaidMarkedAt && !s.unpaidMarkOverridden" class="cargo-unpaid-tag">未收款</text><text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text><text v-if="s.onlinePaidAt" class="cargo-online-tag">已线上收款</text></view>
           <view class="cargo-addr">{{ s.address }}</view>
           <view v-if="s.items && s.items.length" class="cargo-items">{{ s.items.map(i => `${i.name}×${i.qty}${i.unit}`).join('、') }}</view>
         </view>
@@ -75,7 +75,7 @@
         </view>
         <view v-for="s in deliverStations(t)" :key="s.orderId" class="cargo-item">
           <view class="cargo-main">
-            <view class="cargo-name">{{ s.shopName }}<text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text><text v-if="s.onlinePaidAt" class="cargo-online-tag">已线上收款</text></view>
+            <view class="cargo-name">{{ s.shopName }}<text v-if="s.unpaidMarkedAt && !s.unpaidMarkOverridden" class="cargo-unpaid-tag">未收款</text><text v-if="s.buyerPaidClaimAt" class="cargo-claim-tag">客户称已付</text><text v-if="s.onlinePaidAt" class="cargo-online-tag">已线上收款</text></view>
             <view class="cargo-addr">{{ s.address }}</view>
           </view>
           <text class="cargo-picked">✓ 已交付</text>
@@ -268,6 +268,10 @@ onShow(() => {
 .cargo-claim-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #fff3e6; color: #ff6b00; font-size: 10px; border-radius: 8px; font-weight: 400; }
 /* 「已线上收款」标记（卡S1 2026-09-29）：钱**真的到账了**（有微信支付流水），故用绿色 —— 与"客户称已付"的橙色严格区分 */
 .cargo-online-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #e8f8f0; color: #00b96b; font-size: 10px; border-radius: 8px; font-weight: 600; }
+/* 「未收款」标记（卡AH 2026-09-30）：配送员自己标的「客户没给钱」，用橙色（提醒，不是核销）——
+   与「客户称已付」（客户自称）同色系但更深，与「已线上收款」（钱真到账）的绿色严格区分。
+   ⚠️ 只在**配送员自己的列表**可见（客户侧不显示"谁标记的"）；已被线上支付覆盖时不显示（标记自动失效）。 */
+.cargo-unpaid-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; background: #fff3e6; color: #c87000; font-size: 10px; border-radius: 8px; font-weight: 600; }
 .cargo-online { padding: 5px 10px; font-size: 12px; color: #00b96b; font-weight: 600; }
 .cargo-item.abnormal { opacity: 0.7; }
 .cargo-btn { padding: 5px 14px; border-radius: 14px; font-size: 12px; }

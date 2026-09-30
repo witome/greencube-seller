@@ -13,6 +13,8 @@ import {
   payStatusGroup,
   hasPayProof,
   hasWechatPaidRecord,
+  readUnpaidMark,
+  unpaidMarkViewOf,
   HISTORIC_CLAIM_TEXT,
   DUPLICATE_PROOF_TEXT,
   PayStatusCode,
@@ -469,7 +471,25 @@ export class AdminFinanceService {
     let codPaidCount = 0
     let itemsMissingSupplyPrice = 0
     let itemsMissingQtyAccepted = 0
+    // 卡AH（2026-09-30）：配送员「客户未付款」标记的当天统计（**只做注解，不进任何金额口径**）
+    //   计入口径 = 标记**仍生效**（`effective`，即未被线上到账覆盖）的单：
+    //   真正的"这笔钱还没收到，而且配送员当面确认过"。
+    //   ⚠️ 已线上到账的单（marked 但 overridden）不进这里 —— 那笔钱已经到账了。
+    let unpaidMarkedCount = 0
+    let unpaidMarkedAmount = 0
     const unpaidList: any[] = []
+
+    // 卡AH：标记人姓名（unpaidMark.by = 配送员 userId）—— 批量查，一次搞定
+    const markUserIds = [
+      ...new Set(orders.map((o) => readUnpaidMark(o.payProof)?.by).filter((id): id is number => id != null)),
+    ]
+    const markUsers = markUserIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: markUserIds.map((id) => BigInt(id)) } },
+          select: { id: true, name: true, phone: true },
+        })
+      : []
+    const markUserMap = new Map(markUsers.map((u) => [Number(u.id), u.name || u.phone || `用户#${Number(u.id)}`]))
     // 卡T（2026-09-21）：当天订单清单（默认全量），供对账页就地看每单收款状态与凭证
     const orderList: any[] = []
     const courierAgg = new Map<string, any>()
@@ -484,10 +504,11 @@ export class AdminFinanceService {
       // 卡S2（2026-09-29）：收款状态判定走唯一实现 pay-status.util（与采购方列表/详情同源）。
       // 优先级：线上到账 → 现金凭证 → COD 已送达未收（待收款）→ 未支付；
       // 「客户称已付」不再是状态档（老数据点过「我已付款」的按本口径重判，只留只读历史标注）。
+      const onlinePaid = hasWechatPaidRecord(o.payments)
       const pay = payStatusOf({
         payMethod: o.payMethod,
         status: o.status,
-        onlinePaid: hasWechatPaidRecord(o.payments),
+        onlinePaid,
         hasProof: hasPayProof(o.payProof),
       })
       // 金额口径（红线，不变）：线上实收 = 支付流水 status=1 合计（不分 payMethod）；
@@ -560,7 +581,18 @@ export class AdminFinanceService {
       //   historicClaimText         = 老数据「客户称已付」的只读历史标注（不参与金额计算）
       //   duplicateRisk/WarnText    = 线上到账与现金凭证并存（可能重复收款）的行内警示
       const group = payStatusGroup(pay.code)
-      const duplicateRisk = hasWechatPaidRecord(o.payments) && hasPayProof(o.payProof)
+      const duplicateRisk = onlinePaid && hasPayProof(o.payProof)
+      // 卡AH（2026-09-30）：配送员「客户未付款」标记（唯一读取口径 pay-status.util）
+      //   effective  = 仍生效（未线上到账）→ 行标红 / 「只看已标记未收款」勾选看它 / 计入汇总
+      //   overridden = 已被线上支付覆盖（标记自动失效）→ 只作历史痕迹
+      const mark = { ...unpaidMarkViewOf(o.payProof, onlinePaid) }
+      mark.byName = mark.by != null ? markUserMap.get(mark.by) ?? null : null
+      // 🔴 钱一分不动：标记**不参与**应收/实收/未收金额计算 —— 只是多一层"为什么没收"的注解。
+      //    这两个数只用于「未收」卡片下的子标注，不进 summary.unpaid。
+      if (mark.effective) {
+        unpaidMarkedCount++
+        unpaidMarkedAmount += unpaid
+      }
       orderList.push({
         orderId: Number(o.id),
         shopName: o.purchaser?.shopName ?? '未知餐馆',
@@ -587,6 +619,14 @@ export class AdminFinanceService {
         wechatPaidAmount: wechatReceived,
         duplicateRisk,
         duplicateWarnText: duplicateRisk ? DUPLICATE_PROOF_TEXT : null,
+        // 卡AH：配送员「客户未付款」标记（**不代表已销账**，只作提醒）
+        unpaidMarked: mark.marked,
+        unpaidMarkedAt: mark.markedAt,
+        unpaidMarkRemark: mark.remark,
+        unpaidMarkBy: mark.by,
+        unpaidMarkByName: mark.byName,
+        unpaidMarkOverridden: mark.overridden,
+        unpaidMarkEffective: mark.effective,
       })
     }
 
@@ -615,6 +655,10 @@ export class AdminFinanceService {
         codPaidCount,
         codUnpaidCount,
         wechatPaidCount,
+        // 卡AH（2026-09-30）：「未收」卡片下的子标注 —— 其中配送员**已标记未收款**的单
+        // （标记仍生效、未被线上到账覆盖）。**只作注解，不进 summary.unpaid**（钱一分不动）。
+        unpaidMarkedCount,
+        unpaidMarkedAmount: r2(unpaidMarkedAmount),
       },
       unpaidList,
       // 卡T（2026-09-21 新增）：当天订单清单（默认全量；前端「只看未收款」在本地过滤 unpaid > 0）
