@@ -53,6 +53,8 @@
 
     <!-- 明细（待确认未支付：直接加减/删除，改动自动保存） -->
     <view class="card">
+      <!-- 卡BC（2026-10-01）：「继续添加商品」只在待确认(10)未支付时出现（canEdit）。
+           已支付 / 备货中(30)及以后不显示 —— 后端也会拒，前端不给入口。 -->
       <view class="card-title">商品明细</view>
       <view v-for="it in order.items" :key="it.orderItemId" class="oi">
         <view class="oi-top">
@@ -87,6 +89,8 @@
         </view>
         <view v-else-if="it.remark" class="oi-remark-text">备注：{{ it.remark }}</view>
       </view>
+      <!-- 卡BC（2026-10-01 改版）：入口从标题行右侧移到「明细列表下方、下单金额上方」，整栏宽度 -->
+      <view v-if="canEdit" class="dish-add" @tap="openPicker">继续添加商品</view>
       <view class="row" style="margin-top:10px;">
         <text class="k">下单金额</text><text class="v">¥{{ canEdit ? editTotal : order.amountOrdered }}</text>
       </view>
@@ -177,6 +181,18 @@
     </view>
 
     <CustomTabBar :tabs="buyerTabs" active="/pages/buyer/order-list" />
+
+    <!-- 卡BC（2026-10-01）：「＋ 加菜」选品弹层 —— 复用草稿页同一份 GoodsPicker，
+         不许在订单详情写第二份选品逻辑。弹层内加减先改本地明细，关闭时才统一提交一次。 -->
+    <GoodsPicker
+      :open="pickerOpen"
+      title="加菜"
+      :qty-map="pkQtyMap"
+      :foot-text="pkFootText"
+      @close="closePicker"
+      @add="onPickAdd"
+      @dec="onPickDec"
+    />
   </view>
 </template>
 
@@ -185,6 +201,7 @@ import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 import CustomTabBar from '@/components/CustomTabBar.vue'
+import GoodsPicker from '@/components/GoodsPicker.vue'
 
 // 采购方底部导航（订单详情为二级页，原生 tabBar 不显示，用自定义栏补齐）
 const buyerTabs = [
@@ -353,6 +370,86 @@ const removeItem = (it) => {
   scheduleSave()
 }
 
+// ══ 卡BC（2026-10-01）：订单详情「＋ 加菜」══════════════════════════════════
+// 口径：只在 canEdit（待确认 10 且未支付 0）时给入口；选品弹层复用草稿页那份 GoodsPicker。
+//   · 已有该 productId → 数量累加，不新增第二行；
+//   · 没有 → push 新行（qtyOrdered = 选中数量，remark = null）；
+//   · 弹层内加减**只改本地明细**，关闭时统一 POST /order/:id/update（覆盖式清单）一次，
+//     后端重建明细 + 重新自动拆单 + 重算运费 + 写审计 ORDER_UPDATE；
+//   · 一个都没动 → 关闭不产生任何请求；同一时刻只允许一个弹层。
+// ⚠️ 金额一律渲染服务端返回，本卡不参与算价。
+const pickerOpen = ref(false)
+const pickerDirty = ref(false)
+
+/** 传给 GoodsPicker 的已选数量映射 { [productId]: qty }（小程序端只能传普通对象） */
+const pkQtyMap = computed(() => {
+  const m = {}
+  ;(order.value?.items || []).forEach((it) => { m[it.productId] = Number(it.qtyOrdered) || 0 })
+  return m
+})
+const pkFootText = computed(() => '订单共 ' + (order.value?.items || []).length + ' 项')
+
+const openPicker = () => {
+  if (pickerOpen.value) return // 同一时刻只允许一个弹层
+  pickerDirty.value = false
+  pickerOpen.value = true
+}
+
+const findItem = (productId) =>
+  (order.value?.items || []).find((it) => Number(it.productId) === Number(productId))
+
+const onPickAdd = (g) => {
+  const pid = Number(g.id)
+  const hit = findItem(pid)
+  if (hit) {
+    hit.qtyOrdered = (Number(hit.qtyOrdered) || 0) + 1
+  } else {
+    // 新行只补展示需要的字段（名称/单位/单价来自选品列表），提交时 buildItems 只取 productId/qty/remark
+    order.value.items.push({
+      orderItemId: `new-${pid}`,
+      productId: pid,
+      name: g.name,
+      unit: g.unit,
+      salePrice: g.salePrice,
+      qtyOrdered: 1,
+      remark: null,
+    })
+  }
+  pickerDirty.value = true
+}
+
+const onPickDec = (g) => {
+  const pid = Number(g.id)
+  const hit = findItem(pid)
+  if (!hit) return
+  const qty = (Number(hit.qtyOrdered) || 0) - 1
+  if (qty >= 1) {
+    hit.qtyOrdered = qty
+  } else if (order.value.items.length > 1) {
+    order.value.items = order.value.items.filter((x) => Number(x.productId) !== pid)
+  } else {
+    uni.showToast({ title: '订单至少保留一件商品', icon: 'none' })
+    return
+  }
+  pickerDirty.value = true
+}
+
+const closePicker = async () => {
+  pickerOpen.value = false
+  if (!pickerDirty.value) return // 没选就不提交：关闭弹层不产生任何请求
+  pickerDirty.value = false
+  const items = buildItems()
+  if (!items.length) return
+  try {
+    await buyerApi.updateOrder(orderId.value, { items })
+    uni.showToast({ title: '已加菜', icon: 'none' })
+  } catch (e) {
+    /* 错误已由 request.js 统一提示；后端拒绝新增行（下架 / 状态不允许）时不绕过、不重试 */
+  }
+  // 无论成功与否都回服务端真值：金额/运费/明细一律以服务端为准
+  await load()
+}
+
 // ── 加急 / 取消加急 ──
 const toggleUrgent = async () => {
   const target = order.value.urgent === 1 ? 0 : 1
@@ -493,6 +590,14 @@ onLoad(async (opts) => {
 .receive-hint-text { font-size: 12px; color: $text-second; text-align: center; line-height: 1.6; }
 .pay-card { background: #fff; border-radius: 8px; padding: 12px; margin: 0 12px 10px; }
 .card-title { font-size: 14px; font-weight: 700; color: $text-title; margin-bottom: 8px; }
+/* 卡BC：明细卡入口按钮 = 「明细列表下方、下单金额上方」的整栏按钮（只在 canEdit 时渲染）。
+   不动 .card-title 本体，避免影响支付卡 / 货到付款卡的标题。 */
+.dish-add {
+  margin-top: 12px; width: 100%; box-sizing: border-box; text-align: center;
+  font-size: 13px; font-weight: 600; color: $color-primary;
+  background: rgba(0, 185, 107, .06); border: 1px dashed $color-primary;
+  border-radius: 8px; padding: 9px 0;
+}
 .pay-row { display: flex; gap: 10px; margin-top: 4px; }
 .pay-btn { flex: 1; text-align: center; padding: 12px; border-radius: 22px; font-size: 15px; font-weight: 600; }
 .pay-btn.wechat { background: #00b96b; color: #fff; }

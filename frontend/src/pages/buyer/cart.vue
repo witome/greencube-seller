@@ -194,50 +194,17 @@
     <AiOrderFab :offset="136" />
 
     <!-- ⑫ 「＋ 添加商品」页内选品弹层（原在 ai-confirm.vue：切页会丢草稿，必须保持页内弹层形态）
-         弹层内加减全部走服务端草稿（POST /cart、PUT /cart/:id、DELETE /cart/:id），不加本地临时态 -->
-    <view v-if="pickerOpen" class="pk-mask" @tap="closePicker">
-      <view class="pk-sheet" @tap.stop>
-        <view class="pk-head">
-          <text class="pk-title">添加商品</text>
-          <view class="pk-close" @tap="closePicker">✕</view>
-        </view>
-
-        <view class="pk-search">
-          <input class="pk-input" v-model="pkKeyword" placeholder="搜索商品" confirm-type="search" @confirm="loadPkGoods" />
-          <view class="pk-search-btn" @tap="loadPkGoods">搜索</view>
-        </view>
-
-        <view class="pk-body">
-          <scroll-view scroll-y class="pk-cate">
-            <view :class="['pk-cate-item', { on: pkCate === 0 }]" @tap="switchPkCate(0)">全部</view>
-            <view v-for="c in categories" :key="c.id" :class="['pk-cate-item', { on: pkCate === c.id }]" @tap="switchPkCate(c.id)">{{ c.name }}</view>
-          </scroll-view>
-
-          <scroll-view scroll-y class="pk-list">
-            <view v-for="g in pickerGoods" :key="g.id" class="pk-row">
-              <view class="pk-info">
-                <view class="pk-name">{{ g.name }}</view>
-                <view class="pk-spec">{{ g.specText || (g.weighType === 1 ? '称重' : '固定规格') }}</view>
-                <view class="pk-price">¥{{ money(g.salePrice) }}/{{ g.unit }}</view>
-              </view>
-              <view v-if="qtyOf(g.id)" class="pk-stepper">
-                <view class="st-btn" @tap="decProduct(g)">−</view>
-                <text class="pk-qty">{{ qtyOf(g.id) }}</text>
-                <view class="st-btn" @tap="addProduct(g)">＋</view>
-              </view>
-              <view v-else class="pk-add" @tap="addProduct(g)">＋</view>
-            </view>
-            <view v-if="pkLoading" class="empty-tip">加载中…</view>
-            <view v-else-if="!pickerGoods.length" class="empty-tip">暂无商品</view>
-          </scroll-view>
-        </view>
-
-        <view class="pk-foot">
-          <text class="pk-foot-txt">已选 {{ cart.length }} 项 · 预估 ¥{{ totalAmount }}</text>
-          <view class="pbtn primary" @tap="closePicker">完成</view>
-        </view>
-      </view>
-    </view>
+         卡BC（2026-10-01）：选品弹层抽出为共享组件 GoodsPicker（与订单详情「＋ 加菜」同一份实现），
+         本页只留开关与回调；弹层内加减仍全部走服务端草稿（POST /cart、PUT /cart/:id、DELETE /cart/:id），
+         不加本地临时态。 -->
+    <GoodsPicker
+      :open="pickerOpen"
+      :qty-map="pkQtyMap"
+      :foot-text="pkFootText"
+      @close="closePicker"
+      @add="addProduct"
+      @dec="decProduct"
+    />
   </view>
 </template>
 
@@ -261,6 +228,7 @@ import {
 } from '@/utils/ai-draft'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 import AiOrderFab from '@/components/AiOrderFab.vue'
+import GoodsPicker from '@/components/GoodsPicker.vue'
 
 const cart = ref([])
 
@@ -639,18 +607,18 @@ const goShop = () => {
   uni.switchTab({ url: '/pages/buyer/goods' })
 }
 
-// ── 添加商品弹层（从 ai-confirm.vue 原样搬来；改动落服务端草稿，不加本地临时态）──
+// ── 添加商品弹层（卡BC 2026-10-01：选品逻辑抽出为共享组件 GoodsPicker，
+//     本页只保留开关、已选数量映射与「写服务端草稿」的回调）──
 const pickerOpen = ref(false)
-const categories = ref([])
-const pickerGoods = ref([])
-const pkCate = ref(0)
-const pkKeyword = ref('')
-const pkLoading = ref(false)
 
-const qtyOf = (id) => {
-  const hit = cart.value.find((it) => it.productId === id)
-  return hit ? Number(hit.qty) : 0
-}
+/** 传给 GoodsPicker 的已选数量映射 { [productId]: qty }（小程序端 props 走序列化，只能传普通对象） */
+const pkQtyMap = computed(() => {
+  const m = {}
+  cart.value.forEach((it) => { m[it.productId] = Number(it.qty) || 0 })
+  return m
+})
+/** 弹层底部文案：与抽出前完全一致（金额用服务端返回的 totalAmount，前端不算价） */
+const pkFootText = computed(() => '已选 ' + cart.value.length + ' 项 · 预估 ¥' + totalAmount.value)
 
 const addProduct = async (g) => {
   try {
@@ -673,31 +641,8 @@ const decProduct = async (g) => {
   }
 }
 
-const loadPkGoods = async () => {
-  pkLoading.value = true
-  // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成字符串 "undefined"，导致后端误当搜索词
-  const params = { page: 1, pageSize: 50 }
-  if (pkCate.value) params.categoryId = pkCate.value
-  if (pkKeyword.value) params.keyword = pkKeyword.value
-  try {
-    const data = await buyerApi.getGoods(params)
-    pickerGoods.value = data.list || []
-  } catch (e) {
-    pickerGoods.value = []
-  }
-  pkLoading.value = false
-}
-
-const switchPkCate = (id) => { pkCate.value = id; loadPkGoods() }
-
-const openPicker = async () => {
-  pickerOpen.value = true
-  if (!categories.value.length) {
-    try { categories.value = await buyerApi.getCategories() } catch (e) { categories.value = [] }
-  }
-  if (!pickerGoods.value.length) loadPkGoods()
-}
-
+// 分类 / 商品列表 / 搜索 / 切分类的加载逻辑已搬进 GoodsPicker 内部（打开时按需拉一次）
+const openPicker = () => { pickerOpen.value = true }
 const closePicker = () => { pickerOpen.value = false }
 
 // ── 转发分享（公告里那句「也可把本页转发给同事或采购群」要在合并后的本页成立）──
@@ -867,45 +812,6 @@ onShareAppMessage(() => ({
 }
 .send.disabled { opacity: .5; }
 
-/* ── 「＋ 添加商品」页内弹层（原 ai-confirm.vue 那一版）
-      z-index 必须高于自定义 tabBar（999），否则底部「完成」条会被压住 ── */
-.pk-mask {
-  position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0, 0, 0, .45);
-  z-index: 1000; display: flex; align-items: flex-end;
-}
-.pk-sheet {
-  width: 100%; height: 76vh; background: #fff; border-radius: 14px 14px 0 0;
-  display: flex; flex-direction: column; overflow: hidden;
-}
-.pk-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid #F5F6F8; flex: 0 0 auto; }
-.pk-title { font-size: 15px; font-weight: 700; color: $text-title; }
-.pk-close { display: inline; color: $text-placeholder; font-size: 16px; padding: 0 4px; }
-.pk-search { display: flex; align-items: center; gap: 8px; padding: 8px 14px; flex: 0 0 auto; }
-.pk-input { flex: 1; background: $bg-page; border-radius: 16px; padding: 7px 13px; font-size: 12.5px; }
-.pk-search-btn { display: inline; font-size: 13px; color: $brand; font-weight: 600; flex-shrink: 0; }
-.pk-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
-.pk-cate { width: 82px; background: #F7F8FA; height: 100%; flex-shrink: 0; }
-.pk-cate-item { padding: 12px 6px; font-size: 12px; color: $text-second; text-align: center; }
-.pk-cate-item.on { background: #fff; color: $brand; font-weight: 700; }
-.pk-list { flex: 1; min-width: 0; height: 100%; padding: 4px 12px; box-sizing: border-box; }
-.pk-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #F5F6F8; }
-.pk-info { flex: 1; min-width: 0; }
-.pk-name { font-size: 13px; font-weight: 600; color: $text-title; }
-.pk-spec { font-size: 10px; color: $text-second; margin-top: 2px; overflow: hidden; white-space: nowrap; }
-.pk-price { font-size: 12px; color: $danger; font-weight: 700; margin-top: 2px; }
-.pk-stepper { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
-.st-btn {
-  width: 24px; height: 24px; border-radius: 50%; border: 1px solid $border-strong; background: #fff;
-  font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center; color: $text-body;
-}
-.pk-qty { min-width: 20px; text-align: center; font-size: 12.5px; font-weight: 700; color: $text-title; }
-.pk-add {
-  width: 26px; height: 26px; border-radius: 50%; background: $brand; color: #fff;
-  display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0;
-}
-.pk-foot { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid $border; flex: 0 0 auto; }
-.pk-foot-txt { flex: 1; font-size: 12px; color: $text-second; }
-.pbtn { flex: none; border-radius: 10px; padding: 9px 20px; text-align: center; font-size: 13.5px; font-weight: 700; }
-.pbtn.primary { background: $brand; color: #fff; }
-.empty-tip { text-align: center; color: $text-placeholder; padding: 24px 0; font-size: 13px; }
+/* 卡BC（2026-10-01）：「＋ 添加商品」弹层的 .pk-* 样式已随组件搬进
+   components/GoodsPicker.vue（scoped 只作用于组件内部，父级样式管不到子元素），此处不再保留。 */
 </style>
