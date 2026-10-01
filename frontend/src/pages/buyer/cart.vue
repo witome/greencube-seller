@@ -137,17 +137,25 @@
             </view>
 
             <!-- ⑨ 共 N 项 · 预估合计 + 确认下单（下单动作就在本页，不再跳「确认订单」页）
-                 卡AW（2026-10-01）：结算条改「居中式两段」—— 上面一段是居中的合计块（两行：
-                 `共 N 项 · 预估合计` / `¥xx.xx`），下面一段是「确认下单」按钮单独成行、按文案自适应宽度居中。
-                 ⚠️ **故意偏离原型 S1**：原型里「确认下单」是靠右的小胶囊（合计块在左、两行）。
-                 依据是**大辉 2026-10-01 当面指示**「订单草稿栏的确认下单按钮改成居中，
-                 这样 fab 按钮就不用特别上移了」。改居中正是为了让按钮的 x 范围彻底离开
-                 悬浮球那一列（x∈[318,374]），悬浮球才能从 210 降回贴着吸底输入栏的低位。
-                 按钮宽度按文案自适应（左右内边距 40px，**不占满整行**），几何结论见文末 FAB 注释。 -->
+                 卡AX（2026-10-01 · 修正卡）：结算条**恢复成一行** —— 合计块在**左**、「确认下单」按钮
+                 在**同一行里水平居中**（按钮中心 ≈ 屏幕中线 x=195），**不是靠右**、**也不单独成行**。
+                 （卡AW 做成了「居中式两段」＝合计块居中 + 按钮单独成行居中，大辉 2026-10-01 当面更正为本形态。）
+
+                 ⚠️ **硬冲突与解法**：左对齐的合计文字与居中按钮会撞在一起（原一行式「共 N 项 · 预估合计」
+                 左起 x=23、宽约 115 → 右边界 ≈138；居中按钮 x∈[128,262] → 重叠约 10px）。
+                 解法：把合计块**压窄成两行短行**（文案一字未改，只是拆行）——
+                   第一行 `共 N 项` ／ 第二行 `预估 ¥xx.xx`（金额保持主色 + 加粗）
+                 使其**最右边界 ≤ 130**，从而与按钮左边界（128）之间留出 ≥8px 间隙。
+                 两行仍是原来那四个信息（`共 N 项` / `预估合计` / 金额 / 按钮），一个没少。
+
+                 ⚠️ **故意偏离原型 S1**：原型是「合计两行在左 + 按钮**靠右**」的小胶囊；
+                 本卡按**大辉 2026-10-01 当面指示**改成「合计在左 + 按钮**居中**」。
+                 按钮宽度沿用卡AW（按文案自适应，左右内边距 40px，**不占满整行**），
+                 实测几何数字与悬浮球 x∈[318,374] 的避让结论见文末 FAB 注释。 -->
             <view class="dc-foot">
               <view class="dc-tt">
-                <text class="dc-tt-a">共 {{ cart.length }} 项 · 预估合计</text>
-                <text class="dc-tt-b">¥{{ totalAmount }}</text>
+                <text class="dc-tt-a">共 {{ cart.length }} 项</text>
+                <text class="dc-tt-b">预估 ¥{{ totalAmount }}</text>
               </view>
               <view class="dc-go" :class="{ dis: !cart.length || submitting }" @tap="submitOrder">确认下单</view>
             </view>
@@ -185,7 +193,9 @@
          为什么现在能降：卡AU 抬到 210，是因为当时「确认下单」是**靠右**的小胶囊（x∈[273,367]），
          与悬浮球 x∈[318,374] 横向重叠 49px（≈按钮一半），只能靠把球往上顶来避让。
          本卡按大辉当面指示把按钮改成**居中 + 按文案自适应宽度**（左右内边距 40px、不占满整行）后，
-         按钮 x 范围 ≈ [128, 262]（390 宽屏居中；实测数见自测报告），右边界离屏幕右边 128px（≥90px 硬指标）
+         ⚠️ 卡AX（2026-10-01 · 修正卡）复核：结算条改回**一行式**（合计在左两行短行 + 按钮同一行居中），
+         **按钮宽度 / 位置一个字节没动**，仍是 x∈[128, 262]、134×33.5 → 本注释全部结论继续成立，
+         offset 保持 136（四种草稿数据实测：合计块右边界最大 118.81 ≤ 130，与按钮左边界 128 留 ≥9.19px）。
          → **FAB x∈[318,374] 与按钮 x 范围不重叠**（两者中间还空 56px），
          于是「不能压住按钮」这条约束在 x 方向就自动成立了，球可以降回贴着吸底输入栏的低位。
          量法（模拟器 390×844，env(safe-area-inset-bottom)=34；页面视口 = 100vh 实测 753px；
@@ -781,19 +791,31 @@ onShareAppMessage(() => ({
   border: 1.5px solid $brand; color: $brand; font-size: 12.5px; font-weight: 700; background: #fff;
 }
 
-/* 卡内结算条（卡AW 2026-10-01：由「合计块靠左 + 按钮靠右」改为**居中式两段**）
-   flex-direction: column + align-items: center → 合计块两行居中、按钮单独成行且**按文案自适应宽度**
-   （不占满整行，左右内边距 40px），按钮右边界因此远离悬浮球那一列 x∈[318,374]。 */
+/* 卡内结算条（卡AX 2026-10-01 · 修正卡：**一行式** —— 合计块在左、按钮在同一行里居中）
+   形态：`display:flex; align-items:center`（一行，不再 column）；
+     · 合计块 `.dc-tt` 在**左**（flex 起始位），压成两行短行 → 右边界 ≤ 130；
+     · 按钮 `.dc-go` 用 `position:absolute; left:50%; transform:translate(-50%,-50%)`
+       **绝对居中于本行**：本行 x∈[23,367]（`.col-inner` 左右内边距各 12、`.dcard-bd` 各 11，
+       左右对称）→ 行中心 = 195 = 390 宽屏的屏幕中线，与按钮文案宽度无关。
+     · 按钮**按文案自适应宽度**（左右内边距 40px，**不占满整行**，实测 134×33.5），
+       右边界 262 → 与悬浮球那一列 x∈[318,374] 中间还空 56px，不重叠。 */
 .dc-foot {
   margin-top: 8px; border-top: 1px solid #F0F1F3; padding-top: 8px;
-  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  position: relative; display: flex; align-items: center; min-height: 36px;
 }
-.dc-tt { text-align: center; }
-.dc-tt-a { display: block; font-size: 11.5px; color: $text-second; line-height: 1.5; }
-.dc-tt-b { display: block; color: $danger; font-size: 16px; font-weight: 800; line-height: 1.35; margin-top: 2px; }
+.dc-tt { flex: 0 0 auto; text-align: left; }
+.dc-tt-a { display: block; font-size: 12px; color: $text-second; line-height: 1.45; white-space: nowrap; }
+/* ⚠️ 卡AX 实测调过字号：金额行 16px → **14px**。
+   为什么必须缩：两行短行方案在**最长情况**（`预估 ¥110.24`）下 16px 实测宽度 99.75px
+   → 右边界 122.75，而居中按钮左边界恒为 128 → **只余 5.25px 间隙，达不到本卡「≥8px」硬指标**。
+   本卡口径允许「字号按需缩（不低于 12px）」（见卡AX 第一节），故取 14px：
+   右边界降到 ≈110.3 → 间隙 ≈17.7px；且 4 位数金额（`预估 ¥1138.64`）仍余 ≈9px，
+   对生鲜配送的真实订单总额区间留足余量。**文案一个字未改**，金额仍是主色 + 加粗。 */
+.dc-tt-b { display: block; color: $danger; font-size: 14px; font-weight: 800; line-height: 1.3; margin-top: 2px; white-space: nowrap; }
 .dc-go {
-  flex: 0 0 auto; align-self: center; background: $brand; color: #fff; border-radius: 22px;
-  padding: 10px 40px; font-size: 13.5px; font-weight: 700; line-height: 1;
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: $brand; color: #fff; border-radius: 22px;
+  padding: 10px 40px; font-size: 13.5px; font-weight: 700; line-height: 1; white-space: nowrap;
 }
 .dc-go.dis { background: $bg-soft; color: $text-placeholder; }
 
