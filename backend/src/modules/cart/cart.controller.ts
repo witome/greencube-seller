@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common'
 import { CartService } from './cart.service'
 import { AddCartDto } from './dto/add-cart.dto'
 import { UpdateCartDto } from './dto/update-cart.dto'
+import { SyncCartDto } from './dto/sync-cart.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -22,6 +23,14 @@ export class CartController {
   @Roles(Role.PURCHASER)
   async add(@CurrentUser('userId') userId: bigint, @Body() dto: AddCartDto) {
     return this.service.add(userId, dto)
+  }
+
+  /// 整体替换草稿（卡AQ：AI 说话 / 前端合并后的完整 items 落库；/ai/parse 只读，写只走这里）
+  /// ⚠️ 必须声明在 `@Put(':id')` **之前**：Nest 按声明顺序匹配，':id' 会把 'sync' 当 id 吃掉
+  @Put('sync')
+  @Roles(Role.PURCHASER)
+  async sync(@CurrentUser('userId') userId: bigint, @Body() dto: SyncCartDto) {
+    return this.service.sync(userId, dto)
   }
 
   /// 改数量（qty=0 即删除）

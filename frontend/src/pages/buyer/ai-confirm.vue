@@ -113,6 +113,9 @@ import { onLoad } from '@dcloudio/uni-app'
 import { buyerApi, authApi } from '@/api/modules'
 import { dateStr, availableTimeWindows } from '@/utils/time-window'
 import { clearDraft } from '@/utils/ai-draft'
+import { clearMeta, deliveryMeta, syncCartDraft } from '@/utils/ai-draft'
+// 卡AQ：确认页也补上「运营停用」拦截（红线 8 列了这项；本页此前没有，纯新增不删任何旧逻辑）
+import { guardBuyerSuspended } from '@/utils/account-guard'
 
 const draft = ref(null)
 const items = ref([])
@@ -132,6 +135,49 @@ const specText = (it) => {
   const spec = it.specText ? ` · ${it.specText}` : ''
   return `${weigh} · ¥${it.price}/${it.unit}${spec}`
 }
+
+// ══════════════════════════════════════════════════════════════════
+// 卡AQ（2026-10-01）：草稿真身搬到服务端 cart_item —— 确认页以 `GET /cart` 为准
+//
+// ⚠️ 下面那段老的 onLoad（读 storage `aiDraft`）**一行没删**，理由有二：
+//   ① `kefu.vue` 已上生产、本卡零改动，它的「去结算」仍是把草稿写进那份 storage 递过来的；
+//   ② 老 onLoad 的判空分支（`!draft.value` → toast + navigateBack）依赖那份 storage 非空。
+//   所以这里**在它之前**再注册一个 onLoad：先起服务端请求，回来后整体覆盖 items 与三字段。
+//   两个 onLoad 都会跑，后完成的（服务端）覆盖先完成的（storage 镜像）——服务端是最终口径。
+// ══════════════════════════════════════════════════════════════════
+onLoad(async () => {
+  // 卡AQ：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
+  if (await guardBuyerSuspended()) return
+  try {
+    const data = await buyerApi.getCart()
+    const list = data.list || []
+    // 服务端草稿是空的 → 什么都不覆盖，交给老那段判空逻辑（它会 toast 并返回）
+    if (!list.length) return
+
+    // 与 cart.vue 同一份换算：cart 出参的 salePrice 就是草稿行的 price
+    items.value = list.map((it) => ({
+      productId: it.productId,
+      name: it.name,
+      unit: it.unit,
+      specText: it.specText || '',
+      weighType: it.weighType,
+      qty: Number(it.qty),
+      price: Number(it.salePrice),
+    }))
+    draft.value = { ...(draft.value || {}), items: items.value.map((it) => ({ ...it })) }
+
+    // 三字段（配送日期 / 送达时段 / 备注）＝ 草稿页那份前端 ref，不落服务端表
+    const meta = deliveryMeta.value || {}
+    deliveryDate.value = meta.deliveryDate || draft.value.deliveryDate || dateStr(new Date(Date.now() + 86400000))
+    remark.value = meta.remark || draft.value.remark || ''
+    const win = availableTimeWindows(deliveryDate.value)
+    timeWindow.value = meta.timeWindow && win.some((w) => w.value === meta.timeWindow)
+      ? meta.timeWindow
+      : (win.length ? win[0].value : 2)
+  } catch (e) {
+    /* 拿不到服务端草稿就退回老路径（storage 镜像），错误已由 request.js 统一提示 */
+  }
+})
 
 const dateOptions = [
   { value: dateStr(), label: `今天 ${dateStr().slice(5)}` },
@@ -225,6 +271,15 @@ const submit = async () => {
     // 卡AN（2026-09-30）：共享草稿一并清空 —— 否则下单后退回去，右下角 FAB 角标还挂着数字，
     // 客户会以为草稿还在（这份 storage 与共享草稿是两条线，必须都清）
     clearDraft()
+    // 卡AQ（2026-10-01）：草稿真身在服务端 cart_item —— 下单成功后也要整体清空，
+    // 否则回到草稿页会看到刚下完单的菜还在（走 /cart/sync 空数组，与 AI 说话同一个写口）。
+    // ⚠️ 清空失败**不拦跳转**：订单已经成立了，别让客户卡在确认页。
+    try {
+      await syncCartDraft([])
+      clearMeta()
+    } catch (e) {
+      /* 忽略：订单已成立，回草稿页会再拉一次服务端真值 */
+    }
     uni.redirectTo({ url: `/pages/buyer/order-detail?id=${order.orderId}` })
   } catch (e) {
     // 错误已由 request.js 统一提示

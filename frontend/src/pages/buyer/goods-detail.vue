@@ -31,7 +31,7 @@
         <text class="st-num">{{ qty }}</text>
         <view class="st-btn" @tap="qty++">＋</view>
       </view>
-      <view class="gd-btn" @tap="addCart">加入购物车</view>
+      <view class="gd-btn" @tap="addCart">加入草稿</view>
       <view class="gd-btn primary" @tap="buyNow">立即下单</view>
     </view>
     <AiOrderFab :offset="80" />
@@ -55,7 +55,7 @@ const goRegister = () => uni.navigateTo({ url: '/pages/buyer/register' })
 
 const addCart = async () => {
   await buyerApi.addToCart({ productId: Number(id.value), qty: qty.value })
-  uni.showToast({ title: '已加入购物车', icon: 'success' })
+  uni.showToast({ title: '已加入草稿', icon: 'success' })
   uni.$emit('cart-badge-refresh')
 }
 

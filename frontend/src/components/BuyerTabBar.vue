@@ -21,7 +21,8 @@ const props = defineProps({
 const tabs = [
   { path: '/pages/buyer/home', icon: '🏠', label: '首页' },
   { path: '/pages/buyer/goods', icon: '🥕', label: '商品' },
-  { path: '/pages/buyer/cart', icon: '🛒', label: '购物车' },
+  // 卡AQ（2026-10-01）：第 3 坑位＝「订单草稿」页（原购物车与 AI 草稿合并），文案改「AI下单」；坑位与 🛒 图标不动
+  { path: '/pages/buyer/cart', icon: '🛒', label: 'AI下单' },
   { path: '/pages/buyer/order-list', icon: '📦', label: '订单' },
   { path: '/pages/buyer/mine', icon: '👤', label: '我的' },
 ]

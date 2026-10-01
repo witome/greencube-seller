@@ -66,7 +66,7 @@
         <view class="cb-total">合计 <text class="cb-price">¥{{ totalAmount }}</text></view>
       </view>
       <view class="cb-btns">
-        <view class="cb-btn ghost" @tap="addAllToCart">加入购物车</view>
+        <view class="cb-btn ghost" @tap="addAllToCart">加入草稿</view>
         <view class="cb-btn primary" @tap="buyAll">立即下单</view>
       </view>
     </view>
@@ -128,7 +128,7 @@ const addAllToCart = async () => {
   for (const [productId, qty] of Object.entries(cartMap)) {
     await buyerApi.addToCart({ productId: Number(productId), qty })
   }
-  uni.showToast({ title: '已加入购物车', icon: 'success' })
+  uni.showToast({ title: '已加入草稿', icon: 'success' })
   Object.keys(cartMap).forEach((k) => delete cartMap[k])
   uni.$emit('cart-badge-refresh')
 }
