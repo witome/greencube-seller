@@ -94,8 +94,10 @@
             <view class="ai-item ai-item-date">📅 {{ draft.deliveryDateLabel }}（{{ draft.deliveryDate }}）送达 · 预估合计 ¥{{ draft.total.toFixed(2) }}</view>
             <view v-if="hasWeigh(draft)" class="ai-item ai-item-tip">💡 称重商品以实际称重为准，多退少补</view>
           </view>
-          <!-- 卡AR：卡内三字段（配送日期 / 送达时段 / 备注）—— 只写在前端共享 ref 上，
-               不落库、不新增后端字段、不新增接口；换「配送日期」会重算「送达时段」 -->
+          <!-- 卡AR：卡内两字段（配送日期 / 送达时段）—— 只写在前端共享 ref 上，
+               不落库、不新增后端字段、不新增接口；换「配送日期」会重算「送达时段」
+               （2026-10-01 收口：**备注那一行已按大辉拍板去掉** —— 备注统一去确认页填；
+                 共享 ref 里 remark 字段仍保留，AI 说话解析出的备注照旧随下单提交） -->
           <view class="dmeta">
             <view class="dm-row">
               <text class="dm-k">配送日期</text>
@@ -108,10 +110,6 @@
               <view class="chip-group">
                 <view v-for="(w, wi) in winOptions" :key="w.value" :class="['chip', 'dr-win-' + wi, { on: meta.timeWindow === w.value }]" @tap="pickWindow(w.value)">{{ w.label }}</view>
               </view>
-            </view>
-            <view class="dm-row">
-              <text class="dm-k">备注</text>
-              <input class="dm-ipt" v-model="meta.remark" placeholder="选填" @blur="syncDraftMeta" />
             </view>
           </view>
           <view class="draft-link" @tap="goConfirm">🔗 查看并确认订单 ›</view>
@@ -669,7 +667,6 @@ onShareAppMessage(() => ({
 .dmeta { padding: 6px 12px 10px; border-top: 1px dashed $bg-soft; }
 .dm-row { display: flex; align-items: center; padding: 6px 0; }
 .dm-k { flex: 0 0 auto; width: 56px; font-size: 11.5px; color: $text-second; }
-.dm-ipt { flex: 1; min-width: 0; font-size: 12px; color: $text-body; }
 .chip-group { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   padding: 5px 9px; border-radius: 14px; border: 1.5px solid $border-strong;
