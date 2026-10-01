@@ -136,9 +136,19 @@
               <view class="add-btn" @tap="openPicker">＋ 添加商品</view>
             </view>
 
-            <!-- ⑨ 共 N 项 · 预估合计 + 确认下单（下单动作就在本页，不再跳「确认订单」页） -->
+            <!-- ⑨ 共 N 项 · 预估合计 + 确认下单（下单动作就在本页，不再跳「确认订单」页）
+                 卡AW（2026-10-01）：结算条改「居中式两段」—— 上面一段是居中的合计块（两行：
+                 `共 N 项 · 预估合计` / `¥xx.xx`），下面一段是「确认下单」按钮单独成行、按文案自适应宽度居中。
+                 ⚠️ **故意偏离原型 S1**：原型里「确认下单」是靠右的小胶囊（合计块在左、两行）。
+                 依据是**大辉 2026-10-01 当面指示**「订单草稿栏的确认下单按钮改成居中，
+                 这样 fab 按钮就不用特别上移了」。改居中正是为了让按钮的 x 范围彻底离开
+                 悬浮球那一列（x∈[318,374]），悬浮球才能从 210 降回贴着吸底输入栏的低位。
+                 按钮宽度按文案自适应（左右内边距 40px，**不占满整行**），几何结论见文末 FAB 注释。 -->
             <view class="dc-foot">
-              <view class="dc-tt">共 {{ cart.length }} 项 · 预估合计<text class="dc-tt-b">¥{{ totalAmount }}</text></view>
+              <view class="dc-tt">
+                <text class="dc-tt-a">共 {{ cart.length }} 项 · 预估合计</text>
+                <text class="dc-tt-b">¥{{ totalAmount }}</text>
+              </view>
               <view class="dc-go" :class="{ dis: !cart.length || submitting }" @tap="submitOrder">确认下单</view>
             </view>
           </view>
@@ -171,24 +181,27 @@
     </view>
 
     <BuyerTabBar active="/pages/buyer/cart" />
-    <!-- 卡AU（2026-10-01）：FAB 抬到「结算条」之上 —— 卡AT 只算了吸底输入栏（≈118px），
-         漏算了它自己新加的「共 N 项 · 预估合计 + 确认下单」结算条，浮球压住了「确认下单」右半边。
-         量法（模拟器 390×844，env(safe-area-inset-bottom)=34；页面视口 = 100vh 实测 753px，
-               `automation_element_action --action offset/size` + wx.createSelectorQuery 双测）：
+    <!-- 卡AW（2026-10-01）：offset **210 → 136**（降回贴着吸底输入栏的低位）。
+         为什么现在能降：卡AU 抬到 210，是因为当时「确认下单」是**靠右**的小胶囊（x∈[273,367]），
+         与悬浮球 x∈[318,374] 横向重叠 49px（≈按钮一半），只能靠把球往上顶来避让。
+         本卡按大辉当面指示把按钮改成**居中 + 按文案自适应宽度**（左右内边距 40px、不占满整行）后，
+         按钮 x 范围 ≈ [128, 262]（390 宽屏居中；实测数见自测报告），右边界离屏幕右边 128px（≥90px 硬指标）
+         → **FAB x∈[318,374] 与按钮 x 范围不重叠**（两者中间还空 56px），
+         于是「不能压住按钮」这条约束在 x 方向就自动成立了，球可以降回贴着吸底输入栏的低位。
+         量法（模拟器 390×844，env(safe-area-inset-bottom)=34；页面视口 = 100vh 实测 753px；
+              `automation_element_action --action offset/size` 实测）：
            · FAB：right:16 / 56×56 → **x ∈ [318, 374]**；bottom = offset + 安全区
-             → **y ∈ [663-offset, 719-offset]**（offset=130 时 = [533, 589]）；
-           · 卡内结算条 `.dc-foot`：**y ∈ [521.59, 571.84]**（top=521.59，实测于草稿仅 1 项、
-             对话流未追加消息的那一屏 —— 这是结算条位置**最高**的一屏）；
-             其中「确认下单」`.dc-go`：x ∈ [273, 367]、y ∈ [534.47, 567.97]
-             → x 与 FAB 重叠 49px（≈按钮一半），y 也重叠 → 手指点到的是 FAB。
-           · 取 offset 使 FAB 底边 ≤ 结算条顶边 − 12：719 − offset ≤ 521.59 − 12 → offset ≥ 209.41
-             → **取 210**（余量 12.6px；离「确认下单」上沿 25.5px）。
-         为什么用「仅 1 项、无追加消息」那一屏：草稿项数越多、对话越长，结算条只会越靠下
-         （内容超屏后吸底到 ≈[587, 621]），余量只会更大，所以那一屏是唯一需要满足的边界。
-         已知副作用（量过的，非缺陷）：FAB 落在「＋ 添加商品」按钮右侧空白处
-         （该按钮整行可点、文案居中在 x≈195，被压的是 x∈[318,367] 的空白边），不影响点击。
+             → **y ∈ [663-offset, 719-offset]**（offset=136 时 = [527, 583]）；
+           · 吸底输入栏 `.dinput`：bottom = calc(64px + 安全区) → 底边 y = 753 − 98 = 655，
+             **实测 y ∈ [595.61, 655]**（卡AU 实测；本卡复核值见自测报告）→ 顶边 y = 595.61；
+           · 取 offset 使 FAB **底边 ≤ 输入栏顶边 − 12**：719 − offset ≤ 595.61 − 12 → offset ≥ 135.4
+             → **取 136**（落在 130~140 区间、且是「不遮住吸底输入栏」的最小档；
+               实测与输入栏顶边留 ≈12.6px；再低就会压住输入框 / 发送）。
+         已知边界（量过的，非缺陷）：球浮在滚动区之上，y 带上若正好压着某条草稿行的 ✕ / ＋，
+         那一行会被压住 —— 这是悬浮球压滚动内容的固有行为（offset 越大球越高、越容易压到行，
+         与卡AU 记的「球落在『＋ 添加商品』右侧空白」同类），滚一下即可，本卡不处理。
          ⚠️ 只改本页传入的 offset —— 悬浮球的单击 / 按住说话 / 角标 / 其它页面用法一行未动。 -->
-    <AiOrderFab :offset="210" />
+    <AiOrderFab :offset="136" />
 
     <!-- ⑫ 「＋ 添加商品」页内选品弹层（原在 ai-confirm.vue：切页会丢草稿，必须保持页内弹层形态）
          弹层内加减全部走服务端草稿（POST /cart、PUT /cart/:id、DELETE /cart/:id），不加本地临时态 -->
@@ -768,16 +781,19 @@ onShareAppMessage(() => ({
   border: 1.5px solid $brand; color: $brand; font-size: 12.5px; font-weight: 700; background: #fff;
 }
 
-/* 卡内结算条 */
+/* 卡内结算条（卡AW 2026-10-01：由「合计块靠左 + 按钮靠右」改为**居中式两段**）
+   flex-direction: column + align-items: center → 合计块两行居中、按钮单独成行且**按文案自适应宽度**
+   （不占满整行，左右内边距 40px），按钮右边界因此远离悬浮球那一列 x∈[318,374]。 */
 .dc-foot {
   margin-top: 8px; border-top: 1px solid #F0F1F3; padding-top: 8px;
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
 }
-.dc-tt { font-size: 11.5px; color: $text-second; line-height: 1.5; }
-.dc-tt-b { display: block; color: $danger; font-size: 16px; font-weight: 800; }
+.dc-tt { text-align: center; }
+.dc-tt-a { display: block; font-size: 11.5px; color: $text-second; line-height: 1.5; }
+.dc-tt-b { display: block; color: $danger; font-size: 16px; font-weight: 800; line-height: 1.35; margin-top: 2px; }
 .dc-go {
-  flex: 0 0 auto; background: $brand; color: #fff; border-radius: 22px;
-  padding: 10px 20px; font-size: 13.5px; font-weight: 700; line-height: 1;
+  flex: 0 0 auto; align-self: center; background: $brand; color: #fff; border-radius: 22px;
+  padding: 10px 40px; font-size: 13.5px; font-weight: 700; line-height: 1;
 }
 .dc-go.dis { background: $bg-soft; color: $text-placeholder; }
 
