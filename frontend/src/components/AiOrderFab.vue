@@ -133,8 +133,17 @@ const voice = createVoiceHold({
     const res = await sendUtterance(text)
     if (res.error) {
       // 接口失败：草稿保持不变（错误 toast 由 request.js 统一弹，这里不重复弹）
+      // ⚠️ 卡AU：这条路**不发** ai-draft-synced —— 草稿没变，没必要让页面白拉一次
       return
     }
+    // 卡AU（2026-10-01）：草稿已写进服务端 → 广播「AI 草稿同步完成」。
+    //   · 合并页 cart.vue 监听它 → 重拉服务端草稿 → 草稿卡 / 合计 / 角标一起刷新；
+    //   · 本组件**不直接碰页面**（悬浮球是跨页组件，够不到页面实例），事件是唯一通道；
+    //   · 必须在 sendUtterance **之后**发（先落库再通知，页面拉到的才是新值）；
+    //   · 四种情况的①②③（含「混合」「全没上架」）都在这里发；④「真没听清」也发，
+    //     此时服务端清单没变，页面重拉一次是幂等的、无副作用；
+    //   · 没注册监听的页面收到它零影响。
+    uni.$emit('ai-draft-synced')
     const items = (res.draft && res.draft.items) || []
     const unmatched = res.unmatched || []
     // 最多列 3 个，超出加 …

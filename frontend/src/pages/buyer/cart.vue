@@ -171,9 +171,24 @@
     </view>
 
     <BuyerTabBar active="/pages/buyer/cart" />
-    <!-- 卡AT：单栏后页面底部只有「吸底输入栏 + tab 栏」，FAB 抬到输入栏之上
-         （输入栏顶边 ≈ 118px，FAB 56px 高 → 取 130 留 12px 余量） -->
-    <AiOrderFab :offset="130" />
+    <!-- 卡AU（2026-10-01）：FAB 抬到「结算条」之上 —— 卡AT 只算了吸底输入栏（≈118px），
+         漏算了它自己新加的「共 N 项 · 预估合计 + 确认下单」结算条，浮球压住了「确认下单」右半边。
+         量法（模拟器 390×844，env(safe-area-inset-bottom)=34；页面视口 = 100vh 实测 753px，
+               `automation_element_action --action offset/size` + wx.createSelectorQuery 双测）：
+           · FAB：right:16 / 56×56 → **x ∈ [318, 374]**；bottom = offset + 安全区
+             → **y ∈ [663-offset, 719-offset]**（offset=130 时 = [533, 589]）；
+           · 卡内结算条 `.dc-foot`：**y ∈ [521.59, 571.84]**（top=521.59，实测于草稿仅 1 项、
+             对话流未追加消息的那一屏 —— 这是结算条位置**最高**的一屏）；
+             其中「确认下单」`.dc-go`：x ∈ [273, 367]、y ∈ [534.47, 567.97]
+             → x 与 FAB 重叠 49px（≈按钮一半），y 也重叠 → 手指点到的是 FAB。
+           · 取 offset 使 FAB 底边 ≤ 结算条顶边 − 12：719 − offset ≤ 521.59 − 12 → offset ≥ 209.41
+             → **取 210**（余量 12.6px；离「确认下单」上沿 25.5px）。
+         为什么用「仅 1 项、无追加消息」那一屏：草稿项数越多、对话越长，结算条只会越靠下
+         （内容超屏后吸底到 ≈[587, 621]），余量只会更大，所以那一屏是唯一需要满足的边界。
+         已知副作用（量过的，非缺陷）：FAB 落在「＋ 添加商品」按钮右侧空白处
+         （该按钮整行可点、文案居中在 x≈195，被压的是 x∈[318,367] 的空白边），不影响点击。
+         ⚠️ 只改本页传入的 offset —— 悬浮球的单击 / 按住说话 / 角标 / 其它页面用法一行未动。 -->
+    <AiOrderFab :offset="210" />
 
     <!-- ⑫ 「＋ 添加商品」页内选品弹层（原在 ai-confirm.vue：切页会丢草稿，必须保持页内弹层形态）
          弹层内加减全部走服务端草稿（POST /cart、PUT /cart/:id、DELETE /cart/:id），不加本地临时态 -->
@@ -376,6 +391,52 @@ const pushMsg = (m) => {
 const changeIcon = (c) => (c.type === 'remove' ? '➖' : c.type === 'clear' ? '🗑️' : c.type === 'set' ? '✏️' : '➕')
 
 /**
+ * 卡AU（2026-10-01）：消费「在外面（FAB 按住说）说了**没上架的菜**」留下的跨页状态 ——
+ * 补一条与页内说话**完全同构**的 AI 气泡（「🤔 我还没上架，已帮你记下，到货通知你 📩」+「到货通知我」按钮）。
+ * ⚠️ 取走就清（内存态），避免重复冒同一条。
+ * ⚠️ onShow 与「FAB 说完话」的回调**共用这一份**（不许写两份）—— 人已经在本页时 onShow 不触发，
+ *    之前只挂在 onShow 上，气泡就会等到下次切页才冒出来。
+ * @returns {boolean} 是否真的补了一条气泡（调用方可据此决定要不要滚到底）
+ */
+const flushPendingUnmatched = () => {
+  const pu = pendingUnmatched.value
+  if (!pu || !(pu.texts || []).length) return false
+  pushMsg({
+    role: 'ai',
+    error: false,
+    changes: [],
+    needClarify: '',
+    unmatched: pu.texts,
+    demandRecorded: !!pu.recorded,
+    notifySubscribed: false,
+  })
+  clearPendingUnmatched()
+  scrollBottom()
+  return true
+}
+
+/**
+ * 卡AU（2026-10-01）：FAB 说完话 → 本页**重拉服务端草稿**。
+ *
+ * 为什么要这条通道：卡AT 把草稿卡改成渲染**本地 `cart`**（`v-for="it in cart"`）之后，
+ * `cart` 只能由 `load()`（GET /cart）更新；而 FAB 是跨页组件，它写完共享草稿后既调不到本页的
+ * `load()`、也没广播任何事件 → 卡片数字不动（改造前 kefu.vue 直接渲染共享 `draft`，所以能自己更新）。
+ *
+ * 口径：**服务端是唯一真源** —— 收到事件就重新拉一次，卡片 / 合计 / 角标一起刷新。
+ * ⚠️ **不许**改成「监听共享 draft 自动合并」：那会和现有的 `watch(cart) → setDraftFromCart` 形成双向环。
+ *
+ * ⚠️ `visible`：页面不在前台时不拉（onHide 之后的一次事件没必要白跑一个请求，回前台 onShow 会刷新）。
+ * ⚠️ 注册在 onLoad、**必须**在 onUnload 里 $off —— 否则页面反复进出会重复注册、重复拉接口。
+ */
+const visible = ref(false)
+const onDraftSynced = async () => {
+  if (!visible.value) return
+  await load()
+  // 说完「没上架的菜」当场就要出气泡（不用切走再切回来）
+  flushPendingUnmatched()
+}
+
+/**
  * 一句话 → 写进服务端草稿（cart_item）→ 刷新清单。
  * ⚠️ 解析结果全部用服务端给的字段，前端不自己拼文案；
  * ⚠️ 「没上架的菜」绝不能报成「没听清」—— 那是两条完全不同的路。
@@ -431,6 +492,7 @@ const address = ref('')
 
 // ⚠️ tabBar 页面切换回来只触发 onShow 不触发 onLoad，刷新必须放 onShow
 onShow(async () => {
+  visible.value = true // 卡AU：本页回到前台 → 允许「AI 草稿同步」事件触发重拉
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
   // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
   if (await guardBuyerSuspended()) return
@@ -438,23 +500,23 @@ onShow(async () => {
   load()
   // 卡AO（2026-09-30）：在外面（FAB 按住说）说了**我还没上架的菜**时，这里补一条与页内说话
   // **完全同构**的 AI 气泡 —— 「🤔 我还没上架，已帮你记下，到货通知你 📩」+「到货通知我」按钮。
-  // ⚠️ 取走就清（内存态），避免每次进本页都重复冒同一条。
-  const pu = pendingUnmatched.value
-  if (pu && (pu.texts || []).length) {
-    pushMsg({
-      role: 'ai',
-      error: false,
-      changes: [],
-      needClarify: '',
-      unmatched: pu.texts,
-      demandRecorded: !!pu.recorded,
-      notifySubscribed: false,
-    })
-    clearPendingUnmatched()
-  }
+  // 卡AU：抽成 flushPendingUnmatched()，与「FAB 说完话」的回调共用同一份（人已在本页时 onShow 不触发）。
+  flushPendingUnmatched()
+})
+
+onHide(() => {
+  // 卡AU：离开本页后别再响应 ai-draft-synced（回前台时 onShow 会整体刷新一次，不会漏）
+  visible.value = false
+})
+onUnload(() => {
+  visible.value = false
+  // ⚠️ 必须 off：页面反复进出会重复注册同一个监听 → 一次事件触发 N 遍 load()
+  uni.$off('ai-draft-synced', onDraftSynced)
 })
 
 onLoad(async () => {
+  // 卡AU：注册「FAB 说完话」的刷新监听（onUnload 里配对 $off，见上）
+  uni.$on('ai-draft-synced', onDraftSynced)
   try {
     const cfg = await demandApi.subscribeConfig()
     demandTmplId.value = cfg && cfg.configured ? cfg.templateId || '' : ''
