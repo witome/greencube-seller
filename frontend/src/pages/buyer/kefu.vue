@@ -79,10 +79,40 @@
             <view v-for="(it, i) in draft.items" :key="i" class="ai-item">
               <text class="ai-item-emoji">{{ emojiOf(it.name) }}</text>
               <text class="ai-item-name">{{ it.name }}</text>
+              <!-- 卡AR（2026-10-01）：草稿行由「只读」改成「可编辑」——
+                   单价 / 小计一律用草稿行上**已有**的 price / amount（ai-draft.js 换算过的那一次），前端不二次算价 -->
+              <text class="dr-price">¥{{ money(it.price) }}/{{ it.unit }}</text>
+              <view class="dr-step">
+                <view class="dr-btn dr-minus" @tap="changeQty(it, -1)">−</view>
+                <text class="dr-num">{{ it.qty }}</text>
+                <view class="dr-btn dr-plus" @tap="changeQty(it, 1)">＋</view>
+              </view>
+              <text class="dr-amt">¥{{ money(it.amount) }}</text>
+              <view class="dr-del" @tap="removeItem(it)">✕</view>
               <text class="ai-item-qty">{{ it.qtyText }}</text>
             </view>
             <view class="ai-item ai-item-date">📅 {{ draft.deliveryDateLabel }}（{{ draft.deliveryDate }}）送达 · 预估合计 ¥{{ draft.total.toFixed(2) }}</view>
             <view v-if="hasWeigh(draft)" class="ai-item ai-item-tip">💡 称重商品以实际称重为准，多退少补</view>
+          </view>
+          <!-- 卡AR：卡内三字段（配送日期 / 送达时段 / 备注）—— 只写在前端共享 ref 上，
+               不落库、不新增后端字段、不新增接口；换「配送日期」会重算「送达时段」 -->
+          <view class="dmeta">
+            <view class="dm-row">
+              <text class="dm-k">配送日期</text>
+              <view class="chip-group">
+                <view v-for="(d, di) in dateOptions" :key="d.value" :class="['chip', 'dr-date-' + di, { on: meta.deliveryDate === d.value }]" @tap="pickDate(d.value)">{{ d.label }}</view>
+              </view>
+            </view>
+            <view class="dm-row">
+              <text class="dm-k">送达时段</text>
+              <view class="chip-group">
+                <view v-for="(w, wi) in winOptions" :key="w.value" :class="['chip', 'dr-win-' + wi, { on: meta.timeWindow === w.value }]" @tap="pickWindow(w.value)">{{ w.label }}</view>
+              </view>
+            </view>
+            <view class="dm-row">
+              <text class="dm-k">备注</text>
+              <input class="dm-ipt" v-model="meta.remark" placeholder="选填" @blur="syncDraftMeta" />
+            </view>
           </view>
           <view class="draft-link" @tap="goConfirm">🔗 查看并确认订单 ›</view>
         </view>
@@ -124,6 +154,121 @@ import { onLoad, onShareAppMessage, onHide, onUnload } from '@dcloudio/uni-app'
 import { demandApi } from '@/api/modules'
 import { draft, clearDraft as clearSharedDraft, pendingUnmatched, clearPendingUnmatched } from '@/utils/ai-draft'
 import { sendUtterance } from '@/utils/ai-order'
+
+// ══════════════════════════════════════════════════════════════
+// 卡AR（2026-10-01）：草稿卡「可编辑」—— 以下全部为**新增**
+// 对话区 / 「到货通知我」+ 订阅授权 / 分享 / 语音 / goConfirm / clearDraft
+// 一行未删、未改；本卡不新增任何后端接口、不新增任何字段。
+// ══════════════════════════════════════════════════════════════
+// ⚠️ 下面这几条 import 单独成行（不并进上面那几条），是为了满足「本文件删除数 = 0」：
+//    同一模块写两条 import 语句是合法 ESM，绑定名不重复即可。
+import { computed } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { buyerApi } from '@/api/modules'
+import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
+import { deliveryMeta, setMeta, setDraft, setDraftFromCart } from '@/utils/ai-draft'
+
+/** 三字段（配送日期 / 送达时段 / 备注）：读的就是 `ai-draft.js` 的共享 ref ——
+ *  与草稿页 cart.vue、确认页 ai-confirm.vue **同一份**，下单时才随 placeOrder 传给后端。 */
+const meta = deliveryMeta
+
+/** 金额一律渲染**后端给的数**（price / amount），前端不算价、不传价；拿不到按 0 显示 */
+const money = (v) => (Number(v) || 0).toFixed(2)
+
+/**
+ * 任何改动之后统一刷新三处：重拉 GET /cart → 重建共享草稿 → 刷新 tab 角标。
+ * ⚠️ 三步必须一起做 —— 只改本地会让「草稿卡 / 底部 tab 角标 / 确认页」出现三个不同的数。
+ */
+const refreshDraft = async () => {
+  const data = await buyerApi.getCart()
+  setDraftFromCart(data.list || [])
+  syncDraftMeta()
+  uni.$emit('cart-badge-refresh')
+}
+
+/**
+ * 加减数量 —— 口径与已跑通的 `cart.vue` changeQty 一致：**qty ≤ 0 即删除**。
+ * 行上的 cartItemId 来自服务端 cart_item（ai-draft.js 的 draftFromCart 带过来）。
+ */
+const changeQty = async (it, delta) => {
+  if (!it || it.cartItemId == null) return
+  const qty = Number(it.qty) + delta
+  if (qty <= 0) { await removeItem(it); return }
+  await buyerApi.updateCart(it.cartItemId, qty)
+  await refreshDraft()
+}
+
+/** 删行 —— 口径与 `cart.vue` 的 remove 一致 */
+const removeItem = async (it) => {
+  if (!it || it.cartItemId == null) return
+  await buyerApi.removeCart(it.cartItemId)
+  await refreshDraft()
+}
+
+// ── 配送日期：今天 / 明天 / 后天（与 cart.vue 同一口径：dateStr / tomorrowStr）──
+const dateOptions = [
+  { value: dateStr(), label: `今天 ${dateStr().slice(5)}` },
+  { value: tomorrowStr(), label: `明天 ${tomorrowStr().slice(5)}` },
+  { value: dateStr(new Date(Date.now() + 2 * 86400000)), label: `后天 ${dateStr(new Date(Date.now() + 2 * 86400000)).slice(5)}` },
+]
+
+/** 送达时段随所选日期重算（今天过了 08 点就没有「早」这一档）—— 复用 `utils/time-window.js` */
+const winOptions = computed(() => availableTimeWindows(meta.value.deliveryDate))
+
+/** 首次进来给三字段默认值（当天有可选时段用当天，否则次日；时段取最早可用）——与 cart.vue 的 ensureMeta 同口径 */
+const ensureMeta = () => {
+  if (!meta.value.deliveryDate) {
+    let d = dateStr()
+    if (!availableTimeWindows(d).length) d = tomorrowStr()
+    setMeta({ deliveryDate: d })
+  }
+  const wins = winOptions.value
+  if (!wins.some((w) => w.value === meta.value.timeWindow)) {
+    setMeta({ timeWindow: wins.length ? wins[0].value : 2 })
+  }
+}
+
+/**
+ * 把三字段同步到共享草稿上（只动**展示字段**，不碰 items、不碰金额、不碰服务端）。
+ * 必须要这一步：`draftFromCart` 里 `deliveryDateLabel` 的优先级是「旧草稿的 label > 按日期算」，
+ * 换了日期若不同步，卡头那行「📅 …送达」会继续显示旧日期的 label。
+ */
+const syncDraftMeta = () => {
+  const d = draft.value
+  if (!d) return
+  const date = meta.value.deliveryDate
+  setDraft({
+    ...d,
+    deliveryDate: date,
+    deliveryDateLabel: date ? date.slice(5) : '尽快',
+    remark: meta.value.remark,
+    timeWindow: meta.value.timeWindow,
+  })
+}
+
+/** 换配送日期 → 时段重算；原来选的时段在新日期不可用 → 自动改到该日期**最早可用**的一档 */
+const pickDate = (v) => {
+  setMeta({ deliveryDate: v })
+  const wins = availableTimeWindows(v)
+  if (!wins.some((w) => w.value === meta.value.timeWindow)) setMeta({ timeWindow: wins.length ? wins[0].value : 2 })
+  syncDraftMeta()
+}
+const pickWindow = (v) => { setMeta({ timeWindow: v }); syncDraftMeta() }
+
+/**
+ * 进页面先把服务端草稿拉回来 —— 「有货就看得见清单」，
+ * 也让商品页手动「加入草稿」与草稿页改过的数量在助手页同步。
+ * ⚠️ 拉不到就沿用本地镜像，不弹错打断对话（请求错误已由 request.js 统一提示）。
+ * ⚠️ 先 ensureMeta 再拉：拉取时要用三字段重建草稿，否则卡上的配送日期会是空的。
+ */
+onShow(async () => {
+  ensureMeta()
+  try {
+    await refreshDraft()
+  } catch (e) {
+    /* 静默：不影响打字/语音下单 */
+  }
+})
 
 const input = ref('')
 const messages = ref([])
@@ -496,4 +641,39 @@ onShareAppMessage(() => ({
 .rec-mic { font-size: 40px; line-height: 1; }
 .rec-title { margin-top: 12px; font-size: 14px; color: $text-body; font-weight: 600; min-height: 20px; }
 .rec-tip { margin-top: 8px; font-size: 11px; color: $text-second; }
+
+/* ══════════════════════════════════════════════════════════
+   卡AR（2026-10-01）新增样式 —— 全部追加在后面，老规则一行没删
+   ══════════════════════════════════════════════════════════ */
+
+/* 卡里要放「单价 + 步进器 + 小计 + 删除」和三字段，74% 太窄 → 加宽（卡头 / 卡尾一行没动） */
+.bubble.draft-bubble { width: 86%; max-width: 86%; }
+
+/* 草稿行：emoji + 菜名 + 单价 +「− 数量 ＋」+ 小计 +「✕」。
+   原来那列数量文字（.ai-item-qty）由步进器取代 → 隐藏（删除数＝0 的代价，与 cart.vue 同手法） */
+.draft-list .ai-item { gap: 6px; padding: 5px 0; }
+.draft-list .ai-item-name { flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.draft-list .ai-item-qty { display: none; }
+.dr-price { flex: 0 0 auto; font-size: 10.5px; color: $text-second; }
+.dr-step { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
+.dr-btn {
+  width: 22px; height: 22px; border-radius: 50%; background: $bg-soft;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: $text-body;
+}
+.dr-num { min-width: 20px; text-align: center; font-size: 13px; font-weight: 700; color: $text-title; }
+.dr-amt { flex: 0 0 auto; width: 50px; text-align: right; font-size: 12px; font-weight: 700; color: $danger; }
+.dr-del { flex: 0 0 auto; padding: 0 2px; font-size: 13px; color: $text-placeholder; }
+
+/* 卡内三字段：配送日期 / 送达时段 / 备注 */
+.dmeta { padding: 6px 12px 10px; border-top: 1px dashed $bg-soft; }
+.dm-row { display: flex; align-items: center; padding: 6px 0; }
+.dm-k { flex: 0 0 auto; width: 56px; font-size: 11.5px; color: $text-second; }
+.dm-ipt { flex: 1; min-width: 0; font-size: 12px; color: $text-body; }
+.chip-group { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 5px 9px; border-radius: 14px; border: 1.5px solid $border-strong;
+  font-size: 11px; color: $text-body; background: #fff;
+}
+.chip.on { background: $brand-soft; border-color: $brand; color: $brand; font-weight: 700; }
 </style>
