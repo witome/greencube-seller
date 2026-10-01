@@ -6,7 +6,6 @@ import {
   deliveryMeta,
   syncCartDraft,
   fetchCartDraft,
-  setPendingUnmatched,
 } from '@/utils/ai-draft'
 
 /**
@@ -27,6 +26,29 @@ import {
  *
  * 卡AQ 流程：读 cart_item → /ai/parse（只读，带上当前草稿）→ PUT /cart/sync 整体落库 → 更新本地镜像。
  */
+
+/**
+ * 跨页「待补对话」内存队列：只保留本次运行期内尚未被草稿页消费的说话结果，不落 storage。
+ * 对话气泡仍由 cart.vue 的页面本地 messages 持有；这里只传递一次性渲染素材。
+ */
+const pendingDialogQueue = []
+
+function enqueuePendingDialog(userText, result) {
+  pendingDialogQueue.push({
+    userText,
+    changes: (result.changes || []).map((c) => ({ ...c })),
+    needClarify: result.needClarify || '',
+    unmatched: [...(result.unmatched || [])],
+    demandRecorded: !!result.demandRecorded,
+    error: !!result.error,
+  })
+  return result
+}
+
+/** 取走即清；唯一消费者是草稿页的 drainPendingDialog()。 */
+export function takePendingDialogs() {
+  return pendingDialogQueue.splice(0, pendingDialogQueue.length)
+}
 
 /** 当前草稿 → /ai/parse 的 ctx（**只带草稿行，不带历史原话**） */
 function draftPayload(items) {
@@ -107,15 +129,13 @@ export async function sendUtterance(text) {
 
     // ⚠️ 需要反问 → 草稿**一定不动**：不写库、本地镜像也不换（口径：不确定就反问，不许猜）
     if (parse.needClarify) {
-      const unmatched = parse.unmatched || []
-      if (!unmatched.length) setPendingUnmatched(null)
-      return {
+      return enqueuePendingDialog(t, {
         draft: draft.value,
         changes: [],
         needClarify: parse.needClarify,
-        unmatched,
+        unmatched: parse.unmatched || [],
         demandRecorded: false,
-      }
+      })
     }
 
     // 写库：**唯一**一处 —— 整体替换 cart_item（qty 已是「斤」，不二次换算）
@@ -128,26 +148,23 @@ export async function sendUtterance(text) {
       demandRecorded = await reportDemand(parse.unmatched)
     }
 
-    // 卡AO（2026-09-30）：把「有菜没上架」这件事记进**跨页状态** —— 页外（FAB 按住说）说完话后，
-    // 助手页 onLoad 会把它补成一条与页内说话同构的「已帮你记下」气泡（订阅按钮仍只有助手页那一份）。
-    //   · 非空 → 留下（recorded 如实反映登记结果，失败就是 false，不做假装记下）
-    //   · 空 → 清掉上一次的
     const unmatched = parse.unmatched || []
-    if (unmatched.length) {
-      setPendingUnmatched({ texts: unmatched, recorded: demandRecorded })
-    } else {
-      setPendingUnmatched(null)
-    }
-
-    return {
+    return enqueuePendingDialog(t, {
       draft: draft.value,
       changes: parse.changes || [],
       needClarify: '',
       unmatched,
       demandRecorded,
-    }
+    })
   } catch (e) {
-    // 错误已由 request.js 统一提示；草稿保持不变
-    return { draft: draft.value, changes: [], needClarify: '', unmatched: [], demandRecorded: false, error: true }
+    // 错误已由 request.js 统一提示；草稿保持不变，但仍保留这一轮对话供草稿页同构渲染
+    return enqueuePendingDialog(t, {
+      draft: draft.value,
+      changes: [],
+      needClarify: '',
+      unmatched: [],
+      demandRecorded: false,
+      error: true,
+    })
   }
 }

@@ -104,7 +104,20 @@
               </view>
               <view class="stp">
                 <view class="stp-btn stp-minus" @tap="changeQty(it, -1)">−</view>
-                <text class="stp-n">{{ it.qty }}</text>
+                <input
+                  v-if="editingCartItemId === it.cartItemId"
+                  class="stp-n stp-input"
+                  type="number"
+                  :value="qtyInput"
+                  :focus="true"
+                  :selection-start="0"
+                  :selection-end="qtySelectionEnd"
+                  confirm-type="done"
+                  @input="onQtyInput"
+                  @confirm="commitQtyEdit(it)"
+                  @blur="commitQtyEdit(it)"
+                />
+                <text v-else class="stp-n" @tap="startQtyEdit(it)">{{ it.qty }}</text>
                 <view class="stp-btn stp-plus" @tap="changeQty(it, 1)">＋</view>
               </view>
               <text class="dr-sub">¥{{ money(it.subtotal) }}</text>
@@ -137,21 +150,8 @@
             </view>
 
             <!-- ⑨ 共 N 项 · 预估合计 + 确认下单（下单动作就在本页，不再跳「确认订单」页）
-                 卡AX（2026-10-01 · 修正卡）：结算条**恢复成一行** —— 合计块在**左**、「确认下单」按钮
-                 在**同一行里水平居中**（按钮中心 ≈ 屏幕中线 x=195），**不是靠右**、**也不单独成行**。
-                 （卡AW 做成了「居中式两段」＝合计块居中 + 按钮单独成行居中，大辉 2026-10-01 当面更正为本形态。）
-
-                 ⚠️ **硬冲突与解法**：左对齐的合计文字与居中按钮会撞在一起（原一行式「共 N 项 · 预估合计」
-                 左起 x=23、宽约 115 → 右边界 ≈138；居中按钮 x∈[128,262] → 重叠约 10px）。
-                 解法：把合计块**压窄成两行短行**（文案一字未改，只是拆行）——
-                   第一行 `共 N 项` ／ 第二行 `预估 ¥xx.xx`（金额保持主色 + 加粗）
-                 使其**最右边界 ≤ 130**，从而与按钮左边界（128）之间留出 ≥8px 间隙。
-                 两行仍是原来那四个信息（`共 N 项` / `预估合计` / 金额 / 按钮），一个没少。
-
-                 ⚠️ **故意偏离原型 S1**：原型是「合计两行在左 + 按钮**靠右**」的小胶囊；
-                 本卡按**大辉 2026-10-01 当面指示**改成「合计在左 + 按钮**居中**」。
-                 按钮宽度沿用卡AW（按文案自适应，左右内边距 40px，**不占满整行**），
-                 实测几何数字与悬浮球 x∈[318,374] 的避让结论见文末 FAB 注释。 -->
+                 卡BB（2026-10-01）：结算条保持一行，合计块在左维持两行短行；
+                 按钮改为 flex 行内靠右，屏幕右距固定 80px，避开右侧 16~72px 的悬浮球带。 -->
             <view class="dc-foot">
               <view class="dc-tt">
                 <text class="dc-tt-a">共 {{ cart.length }} 项</text>
@@ -189,28 +189,8 @@
     </view>
 
     <BuyerTabBar active="/pages/buyer/cart" />
-    <!-- 卡AW（2026-10-01）：offset **210 → 136**（降回贴着吸底输入栏的低位）。
-         为什么现在能降：卡AU 抬到 210，是因为当时「确认下单」是**靠右**的小胶囊（x∈[273,367]），
-         与悬浮球 x∈[318,374] 横向重叠 49px（≈按钮一半），只能靠把球往上顶来避让。
-         本卡按大辉当面指示把按钮改成**居中 + 按文案自适应宽度**（左右内边距 40px、不占满整行）后，
-         ⚠️ 卡AX（2026-10-01 · 修正卡）复核：结算条改回**一行式**（合计在左两行短行 + 按钮同一行居中），
-         **按钮宽度 / 位置一个字节没动**，仍是 x∈[128, 262]、134×33.5 → 本注释全部结论继续成立，
-         offset 保持 136（四种草稿数据实测：合计块右边界最大 118.81 ≤ 130，与按钮左边界 128 留 ≥9.19px）。
-         → **FAB x∈[318,374] 与按钮 x 范围不重叠**（两者中间还空 56px），
-         于是「不能压住按钮」这条约束在 x 方向就自动成立了，球可以降回贴着吸底输入栏的低位。
-         量法（模拟器 390×844，env(safe-area-inset-bottom)=34；页面视口 = 100vh 实测 753px；
-              `automation_element_action --action offset/size` 实测）：
-           · FAB：right:16 / 56×56 → **x ∈ [318, 374]**；bottom = offset + 安全区
-             → **y ∈ [663-offset, 719-offset]**（offset=136 时 = [527, 583]）；
-           · 吸底输入栏 `.dinput`：bottom = calc(64px + 安全区) → 底边 y = 753 − 98 = 655，
-             **实测 y ∈ [595.61, 655]**（卡AU 实测；本卡复核值见自测报告）→ 顶边 y = 595.61；
-           · 取 offset 使 FAB **底边 ≤ 输入栏顶边 − 12**：719 − offset ≤ 595.61 − 12 → offset ≥ 135.4
-             → **取 136**（落在 130~140 区间、且是「不遮住吸底输入栏」的最小档；
-               实测与输入栏顶边留 ≈12.6px；再低就会压住输入框 / 发送）。
-         已知边界（量过的，非缺陷）：球浮在滚动区之上，y 带上若正好压着某条草稿行的 ✕ / ＋，
-         那一行会被压住 —— 这是悬浮球压滚动内容的固有行为（offset 越大球越高、越容易压到行，
-         与卡AU 记的「球落在『＋ 添加商品』右侧空白」同类），滚一下即可，本卡不处理。
-         ⚠️ 只改本页传入的 offset —— 悬浮球的单击 / 按住说话 / 角标 / 其它页面用法一行未动。 -->
+    <!-- FAB offset 沿用 136；卡BB 只调整结算按钮横向位置。
+         390px 屏上按钮右边界为 310px（距屏右 80px），FAB 横向带为 x∈[318,374]，两者间隔 8px、不重叠。 -->
     <AiOrderFab :offset="136" />
 
     <!-- ⑫ 「＋ 添加商品」页内选品弹层（原在 ai-confirm.vue：切页会丢草稿，必须保持页内弹层形态）
@@ -269,7 +249,7 @@ import { buyerApi, authApi, demandApi } from '@/api/modules'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
 import { guardBuyerSuspended } from '@/utils/account-guard'
 import { createVoiceHold } from '@/utils/voice-record'
-import { sendUtterance } from '@/utils/ai-order'
+import { sendUtterance, takePendingDialogs } from '@/utils/ai-order'
 import {
   setDraftFromCart,
   deliveryMeta,
@@ -278,8 +258,6 @@ import {
   emojiOf,
   syncCartDraft,
   clearDraft,
-  pendingUnmatched,
-  clearPendingUnmatched,
 } from '@/utils/ai-draft'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 import AiOrderFab from '@/components/AiOrderFab.vue'
@@ -289,15 +267,67 @@ const cart = ref([])
 /** 金额一律渲染服务端给的数（salePrice / subtotal），前端不算价 */
 const money = (v) => (Number(v) || 0).toFixed(2)
 
-const totalAmount = computed(() => cart.value.reduce((s, i) => s + Number(i.subtotal || 0), 0).toFixed(2))
+const totalAmount = ref('0.00')
 const hasWeigh = computed(() => cart.value.some((it) => it.weighType === 1))
 
 const load = async () => {
   const data = await buyerApi.getCart()
   cart.value = data.list || []
+  // 合计只认 GET /cart 的后端返回值，不在前端重算
+  totalAmount.value = money(data.totalAmount)
+}
+
+const editingCartItemId = ref(null)
+const qtyInput = ref('')
+const qtySelectionEnd = ref(0)
+const qtyCommitting = ref(false)
+
+const finishQtyEdit = () => {
+  editingCartItemId.value = null
+  qtyInput.value = ''
+  qtySelectionEnd.value = 0
+}
+
+const startQtyEdit = (it) => {
+  if (qtyCommitting.value) return
+  const current = String(it.qty)
+  qtyInput.value = current
+  qtySelectionEnd.value = current.length
+  // 单一 id 控制编辑态，同一时刻只会渲染一个输入框
+  editingCartItemId.value = it.cartItemId
+}
+
+const onQtyInput = (e) => {
+  qtyInput.value = e.detail.value
+  qtySelectionEnd.value = String(e.detail.value).length
+}
+
+const commitQtyEdit = async (it) => {
+  if (editingCartItemId.value !== it.cartItemId || qtyCommitting.value) return
+  const raw = String(qtyInput.value == null ? '' : qtyInput.value).trim()
+  const qty = Number(raw)
+  qtyCommitting.value = true
+  // confirm 后输入框立即退出，随后到达的 blur 不会重复提交
+  finishQtyEdit()
+  try {
+    if (!raw || !Number.isFinite(qty) || qty < 0) return
+    if (qty === 0) {
+      await remove(it)
+      uni.showToast({ title: '商品已删除', icon: 'none' })
+      return
+    }
+    if (qty === Number(it.qty)) return
+    // PUT /cart/:id 是覆盖语义；禁止用 POST 导致数量累加
+    await buyerApi.updateCart(it.cartItemId, qty)
+    await load()
+    uni.$emit('cart-badge-refresh')
+  } finally {
+    qtyCommitting.value = false
+  }
 }
 
 const changeQty = async (it, delta) => {
+  finishQtyEdit()
   const qty = Number(it.qty) + delta
   if (qty <= 0) { await remove(it); return }
   await buyerApi.updateCart(it.cartItemId, qty)
@@ -306,8 +336,9 @@ const changeQty = async (it, delta) => {
 }
 
 const remove = async (it) => {
+  finishQtyEdit()
   await buyerApi.removeCart(it.cartItemId)
-  cart.value = cart.value.filter((i) => i.cartItemId !== it.cartItemId)
+  await load()
   uni.$emit('cart-badge-refresh')
 }
 
@@ -414,28 +445,27 @@ const pushMsg = (m) => {
 const changeIcon = (c) => (c.type === 'remove' ? '➖' : c.type === 'clear' ? '🗑️' : c.type === 'set' ? '✏️' : '➕')
 
 /**
- * 卡AU（2026-10-01）：消费「在外面（FAB 按住说）说了**没上架的菜**」留下的跨页状态 ——
- * 补一条与页内说话**完全同构**的 AI 气泡（「🤔 我还没上架，已帮你记下，到货通知你 📩」+「到货通知我」按钮）。
- * ⚠️ 取走就清（内存态），避免重复冒同一条。
- * ⚠️ onShow 与「FAB 说完话」的回调**共用这一份**（不许写两份）—— 人已经在本页时 onShow 不触发，
- *    之前只挂在 onShow 上，气泡就会等到下次切页才冒出来。
- * @returns {boolean} 是否真的补了一条气泡（调用方可据此决定要不要滚到底）
+ * 卡BB（2026-10-01）：对话气泡的唯一渲染入口。
+ * sendUtterance() 无论由页内输入/话筒还是跨页 FAB 调用，都会留下同一形状的一次性条目；
+ * 此处逐条补成「用户 + AI」两条气泡并取走即清，保证同一轮只出现一次。
+ * 「没上架」也只由这里产出，不再另走 pendingUnmatched / flushPendingUnmatched，避免重复 AI 气泡。
+ * @returns {number} 本次消费的对话轮数
  */
-const flushPendingUnmatched = () => {
-  const pu = pendingUnmatched.value
-  if (!pu || !(pu.texts || []).length) return false
-  pushMsg({
-    role: 'ai',
-    error: false,
-    changes: [],
-    needClarify: '',
-    unmatched: pu.texts,
-    demandRecorded: !!pu.recorded,
-    notifySubscribed: false,
+const drainPendingDialog = () => {
+  const entries = takePendingDialogs()
+  entries.forEach((entry) => {
+    pushMsg({ role: 'me', text: entry.userText })
+    pushMsg({
+      role: 'ai',
+      error: !!entry.error,
+      changes: entry.changes || [],
+      needClarify: entry.needClarify || '',
+      unmatched: entry.unmatched || [],
+      demandRecorded: !!entry.demandRecorded,
+      notifySubscribed: false,
+    })
   })
-  clearPendingUnmatched()
-  scrollBottom()
-  return true
+  return entries.length
 }
 
 /**
@@ -455,8 +485,8 @@ const visible = ref(false)
 const onDraftSynced = async () => {
   if (!visible.value) return
   await load()
-  // 说完「没上架的菜」当场就要出气泡（不用切走再切回来）
-  flushPendingUnmatched()
+  // 人在本页用 FAB 说完时，事件回调当场补齐这一轮「用户 + AI」气泡
+  drainPendingDialog()
 }
 
 /**
@@ -468,17 +498,9 @@ const doSend = async (text) => {
   const t = String(text == null ? '' : text).trim()
   if (!t || sending.value) return
   sending.value = true
-  pushMsg({ role: 'me', text: t })
   const res = await sendUtterance(t)
-  pushMsg({
-    role: 'ai',
-    error: !!res.error,
-    changes: res.changes || [],
-    needClarify: res.needClarify || '',
-    unmatched: res.unmatched || [],
-    demandRecorded: !!res.demandRecorded,
-    notifySubscribed: false,
-  })
+  // 页内打字/话筒也只走 sendUtterance 队列；禁止再直接 push 第二套气泡
+  drainPendingDialog()
   if (!res.error && !res.needClarify) await load()
   sending.value = false
   scrollBottom()
@@ -512,8 +534,16 @@ const demandTmplId = ref('')
 
 /** 收货地址（只读一行）：authApi.getProfile() 的 purchaser.address，没有就显示「未设置收货地址」 */
 const address = ref('')
+const loadAddress = async () => {
+  try {
+    const profile = await buyerApi.getProfile()
+    address.value = (profile && profile.address) || ''
+  } catch (e) {
+    address.value = ''
+  }
+}
 
-// ⚠️ tabBar 页面切换回来只触发 onShow 不触发 onLoad，刷新必须放 onShow
+// ⚠️ tabBar 页面切换回来只触发 onShow 不触发 onLoad，草稿与地址刷新都必须放 onShow
 onShow(async () => {
   visible.value = true // 卡AU：本页回到前台 → 允许「AI 草稿同步」事件触发重拉
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
@@ -521,10 +551,9 @@ onShow(async () => {
   if (await guardBuyerSuspended()) return
   ensureMeta()
   load()
-  // 卡AO（2026-09-30）：在外面（FAB 按住说）说了**我还没上架的菜**时，这里补一条与页内说话
-  // **完全同构**的 AI 气泡 —— 「🤔 我还没上架，已帮你记下，到货通知你 📩」+「到货通知我」按钮。
-  // 卡AU：抽成 flushPendingUnmatched()，与「FAB 说完话」的回调共用同一份（人已在本页时 onShow 不触发）。
-  flushPendingUnmatched()
+  await loadAddress()
+  // 卡BB：回页时消费跨页 FAB 留下的完整对话；取走即清，第二次 onShow 不会重复。
+  drainPendingDialog()
 })
 
 onHide(() => {
@@ -545,12 +574,6 @@ onLoad(async () => {
     demandTmplId.value = cfg && cfg.configured ? cfg.templateId || '' : ''
   } catch (e) {
     demandTmplId.value = ''
-  }
-  try {
-    const profile = await authApi.getProfile()
-    address.value = (profile && profile.purchaser && profile.purchaser.address) || ''
-  } catch (e) {
-    address.value = ''
   }
 })
 
@@ -771,6 +794,10 @@ onShareAppMessage(() => ({
   font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center;
 }
 .stp-n { font-size: 12.5px; font-weight: 700; min-width: 22px; text-align: center; color: $text-title; }
+.stp-input {
+  width: 42px; min-width: 42px; height: 22px; padding: 0 3px; box-sizing: border-box;
+  border: 1px solid $brand; border-radius: 5px; background: #fff; line-height: 22px;
+}
 
 .dc-line { display: block; font-size: 11px; color: $text-title; font-weight: 600; line-height: 1.6; padding: 3px 0 0; }
 .dc-tip { display: block; font-size: 10.5px; color: $text-second; line-height: 1.5; padding: 1px 0 0; }
@@ -791,29 +818,18 @@ onShareAppMessage(() => ({
   border: 1.5px solid $brand; color: $brand; font-size: 12.5px; font-weight: 700; background: #fff;
 }
 
-/* 卡内结算条（卡AX 2026-10-01 · 修正卡：**一行式** —— 合计块在左、按钮在同一行里居中）
-   形态：`display:flex; align-items:center`（一行，不再 column）；
-     · 合计块 `.dc-tt` 在**左**（flex 起始位），压成两行短行 → 右边界 ≤ 130；
-     · 按钮 `.dc-go` 用 `position:absolute; left:50%; transform:translate(-50%,-50%)`
-       **绝对居中于本行**：本行 x∈[23,367]（`.col-inner` 左右内边距各 12、`.dcard-bd` 各 11，
-       左右对称）→ 行中心 = 195 = 390 宽屏的屏幕中线，与按钮文案宽度无关。
-     · 按钮**按文案自适应宽度**（左右内边距 40px，**不占满整行**，实测 134×33.5），
-       右边界 262 → 与悬浮球那一列 x∈[318,374] 中间还空 56px，不重叠。 */
+/* 卡内结算条（卡BB 2026-10-01）：一行式，合计块在左，按钮行内靠右。
+   `.col-inner` 与 `.dcard-bd` 右内边距合计 23px，按钮再留 57px 右外边距，
+   所以按钮右边界距屏幕右侧恒为 23 + 57 = 80px。 */
 .dc-foot {
   margin-top: 8px; border-top: 1px solid #F0F1F3; padding-top: 8px;
-  position: relative; display: flex; align-items: center; min-height: 36px;
+  display: flex; align-items: center; min-height: 36px;
 }
 .dc-tt { flex: 0 0 auto; text-align: left; }
 .dc-tt-a { display: block; font-size: 12px; color: $text-second; line-height: 1.45; white-space: nowrap; }
-/* ⚠️ 卡AX 实测调过字号：金额行 16px → **14px**。
-   为什么必须缩：两行短行方案在**最长情况**（`预估 ¥110.24`）下 16px 实测宽度 99.75px
-   → 右边界 122.75，而居中按钮左边界恒为 128 → **只余 5.25px 间隙，达不到本卡「≥8px」硬指标**。
-   本卡口径允许「字号按需缩（不低于 12px）」（见卡AX 第一节），故取 14px：
-   右边界降到 ≈110.3 → 间隙 ≈17.7px；且 4 位数金额（`预估 ¥1138.64`）仍余 ≈9px，
-   对生鲜配送的真实订单总额区间留足余量。**文案一个字未改**，金额仍是主色 + 加粗。 */
 .dc-tt-b { display: block; color: $danger; font-size: 14px; font-weight: 800; line-height: 1.3; margin-top: 2px; white-space: nowrap; }
 .dc-go {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  flex: 0 0 auto; margin-left: auto; margin-right: 57px;
   background: $brand; color: #fff; border-radius: 22px;
   padding: 10px 40px; font-size: 13.5px; font-weight: 700; line-height: 1; white-space: nowrap;
 }
