@@ -43,8 +43,16 @@
     <!-- 卡AN：首次「按住说话」提示（看过一次就不再显示；H5 不显示） -->
     <view v-if="tipVisible" class="ai-order-fab-tip" :style="{ bottom: tipBottom }">按住说话，松手就记下了</view>
 
-    <!-- 卡AN：录音浮层（复用助手页同款：全屏半透明遮罩 + 居中卡片 + 实时识别文字） -->
-    <view v-if="voiceRecording" class="aifab-rec-mask">
+    <!-- 卡AN：录音浮层（复用助手页同款：全屏半透明遮罩 + 居中卡片 + 实时识别文字）
+         卡AV（2026-10-01）：遮罩是「全屏 + z-index 1010 + 后出现」→ 它一出现就把悬浮球整个盖住，
+           真机抬手时松手事件落在遮罩上、悬浮球自己的 @touchend 收不到 ⇒ 不结束录音（没识别结果 + 浮层不消失）。
+           所以**遮罩必须自己接管 touchend / touchcancel / touchmove** —— 语义：松手落在屏幕任何位置都要结束录音。
+           注意是复用组件自己的 onTouchEnd / onTouchCancel / onTouchMove，不是直接喊 voice.handleStop()：
+           那会绕过 talking / suppressTap / clearPress / pressTimer 这套长按状态机。
+           附带修好：录音期间手指划动不再带着页面滚（原来只有手指压在 56×56 里才吞 touchmove）。
+           手指从悬浮球上滑出去再松手这条路径，同样由这里接管。 -->
+    <view v-if="voiceRecording" class="aifab-rec-mask"
+          @touchend="onTouchEnd" @touchcancel="onTouchCancel" @touchmove.prevent="onTouchMove">
       <view class="aifab-rec-box">
         <view class="aifab-rec-mic">🎤</view>
         <view class="aifab-rec-title">{{ recTitle }}</view>
