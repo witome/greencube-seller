@@ -46,10 +46,8 @@
         <view class="fr-l">收货地址</view>
         <view class="fr-r">{{ address || '未设置收货地址' }}</view>
       </view>
-      <view class="form-row">
-        <view class="fr-l">备注</view>
-        <input class="ipt" v-model="remark" placeholder="选填" />
-      </view>
+      <!-- 2026-10-01 收口：删除「订单备注」输入框（大辉拍板）—— 订单级备注全网只有采购方自己看得到，
+           备货/配送/后台都不读它，留着只是让客户白填。后端 order.remark 字段保留不删（历史单还在用）。 -->
     </view>
 
     <view class="notice">⚖️ 称重商品按验收实际重量结算，多退少补</view>
@@ -121,7 +119,7 @@ const draft = ref(null)
 const items = ref([])
 const deliveryDate = ref('')
 const timeWindow = ref(2)
-const remark = ref('')
+// 2026-10-01 收口：remark 这个 local ref 已随「备注」输入框一并删掉（订单备注不再由本页采集）
 const address = ref('')
 const submitting = ref(false)
 
@@ -166,10 +164,11 @@ onLoad(async () => {
     }))
     draft.value = { ...(draft.value || {}), items: items.value.map((it) => ({ ...it })) }
 
-    // 三字段（配送日期 / 送达时段 / 备注）＝ 草稿页那份前端 ref，不落服务端表
+    // 两字段（配送日期 / 送达时段）＝ 草稿页那份前端 ref，不落服务端表
+    // （备注已于 2026-10-01 收口从本页去掉）
     const meta = deliveryMeta.value || {}
     deliveryDate.value = meta.deliveryDate || draft.value.deliveryDate || dateStr(new Date(Date.now() + 86400000))
-    remark.value = meta.remark || draft.value.remark || ''
+    // 2026-10-01 收口：备注不再从共享 ref 抄过来（本页已无备注采集）
     const win = availableTimeWindows(deliveryDate.value)
     timeWindow.value = meta.timeWindow && win.some((w) => w.value === meta.timeWindow)
       ? meta.timeWindow
@@ -263,7 +262,7 @@ const submit = async () => {
     const order = await buyerApi.placeOrder({
       deliveryDate: deliveryDate.value,
       timeWindow: timeWindow.value,
-      remark: remark.value || undefined,
+      // 2026-10-01 收口：不再提交订单备注（order.remark 全网无人读，前端已无采集入口）
       items: items.value.map((it) => ({ productId: it.productId, qty: it.qty })),
       source: 2, // 2=AI 客服代下单（普通自选下单路径不传，后端默认 1）
     })
@@ -297,7 +296,7 @@ onLoad(async () => {
   }
   items.value = (draft.value.items || []).map((it) => ({ ...it }))
   deliveryDate.value = draft.value.deliveryDate || dateStr(new Date(Date.now() + 86400000))
-  remark.value = draft.value.remark || ''
+  // 2026-10-01 收口：这条旧 onLoad 里的备注回填也一并去掉（本页已无备注采集）
   const win = availableTimeWindows(deliveryDate.value)
   timeWindow.value = win.length ? win[0].value : 2
   try {
@@ -333,7 +332,7 @@ onLoad(async () => {
 .form-row:last-child { border-bottom: none; }
 .fr-l { width: 72px; font-size: 13px; color: $text-second; flex-shrink: 0; }
 .fr-r { flex: 1; font-size: 13px; color: $text-body; }
-.ipt { flex: 1; font-size: 13px; }
+/* 2026-10-01 收口：.ipt 随「备注」输入框一起删掉（本页已无用到它的控件） */
 .chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { padding: 6px 12px; border-radius: 16px; border: 1.5px solid $border-strong; font-size: 12px; color: $text-body; background: #fff; }
 .chip.on { background: $brand-soft; border-color: $brand; color: $brand; font-weight: 600; }
