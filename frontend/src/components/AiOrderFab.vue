@@ -1,6 +1,6 @@
 <template>
   <!-- 卡AL/AM/AN：采购方右下角常驻浮动入口（FAB）＝ AI 下单助手
-       · 点一下 → 进 /pages/buyer/kefu（卡AL 现状，未变）
+       · 点一下 → 切到「AI下单」tab 页 /pages/buyer/cart（卡AT：助手页已并入该页）
        · 按住 300ms → 当场说话（卡AN），松手识别，内容并进**共享草稿**，留在原页
        · 右上角角标 = 共享草稿的**商品种类数**
        ⚠️ 根节点是一层「零尺寸、不进流的定位壳」，唯一目的是**不产生层叠上下文**：
@@ -275,8 +275,11 @@ onUnmounted(() => {
   voice.stopForLeave()
 })
 
-// 入口唯一动作：跳到已经存在的智能下单助手页（不新建第二个助手页、不复刻对话逻辑）
-const openAssistant = () => uni.navigateTo({ url: '/pages/buyer/kefu' })
+// 入口唯一动作：切到合并后的「AI下单」tab 页（不新建第二个助手页、不复刻对话逻辑）
+// 卡AT（2026-10-01）：助手页 kefu（现为转发页）已并入 tab 页 `pages/buyer/cart`，
+// 单击从 navigateTo 改 switchTab —— 老路径那条转发页仍然保留（老分享卡片不白屏），
+// 但正常入口一律直接落 tab 页。
+const openAssistant = () => uni.switchTab({ url: '/pages/buyer/cart' })
 </script>
 
 <style lang="scss" scoped>

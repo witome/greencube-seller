@@ -76,7 +76,7 @@
           </view>
           <view class="buyer-mine-arrow">›</view>
         </view>
-        <view class="buyer-mine-menu-item" @tap="go('/pages/buyer/kefu')">
+        <view class="buyer-mine-menu-item" @tap="goTab('/pages/buyer/cart')">
           <view class="buyer-mine-menu-ico buyer-mine-ico-teal">💬</view>
           <view class="buyer-mine-menu-main">
             <view class="buyer-mine-menu-t">智能下单助手</view>

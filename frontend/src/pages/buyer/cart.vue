@@ -1,87 +1,162 @@
 <template>
   <view class="page cart-page">
-    <!-- 卡AQ：顶部标题条（原型 S1）—— 右上「清空」 -->
+    <!-- 卡AQ：顶部标题条（原型 S1）—— 页内标题「订单草稿」+ 右上「清空」 -->
     <view class="pg-head">
       <text class="pg-title">订单草稿</text>
       <view class="pg-clear" @tap="clearAll">清空</view>
     </view>
 
-    <!-- 卡AQ：上半 ≈45% 对话区（AI 下单助手） -->
-    <view class="chat-zone">
-      <view class="chat-hd"><view class="chat-dot"></view>AI 下单助手 · 说一句就写进草稿</view>
-      <scroll-view class="chat" scroll-y :scroll-into-view="chatScrollTo" scroll-with-animation>
-        <view v-for="(m, i) in messages" :key="i" :class="['brow', { me: m.role === 'me' }]">
-          <view :class="['bubble', m.role === 'me' ? 'me' : 'ai']">{{ m.text }}</view>
+    <!-- ══════════════════════════════════════════════════════════
+         卡AT（2026-10-01）：单栏滚动区 —— 公告 → 对话流 → 可编辑草稿卡 → 空态引导卡
+         （原「上 45% 对话 / 下 55% 清单」两个分区取消；下单入口搬进草稿卡，「确认订单」页退场）
+         ══════════════════════════════════════════════════════════ -->
+    <scroll-view class="col-zone" scroll-y :scroll-into-view="colScrollTo" scroll-with-animation>
+      <view class="col-inner">
+        <!-- ① 公告气泡（原助手页 kefu.vue 的 4 条，文案逐字照抄） -->
+        <view class="notice">
+          <view class="notice-line">🤖 智能下单助手在线，发送想买的菜和数量即可整理订单草稿</view>
+          <view class="notice-line">💬 可以一句一句来（「土豆5斤」→「再加5斤土豆」），草稿会一直累加；要改说「土豆改成20斤」</view>
+          <view class="notice-line">🎤 按住左下角话筒说话也行</view>
+          <view class="notice-line">💬 也可把本页转发给同事或采购群，对方点一下就能下单</view>
         </view>
-        <view id="cart-chat-bottom" style="height: 6px;"></view>
-      </scroll-view>
-    </view>
 
-    <!-- 卡AQ：下半 ≈55% 实时草稿清单（可滚动，结算条在本区末尾随清单滚动） -->
-    <scroll-view class="list-zone" scroll-y :scroll-into-view="listScrollTo" scroll-with-animation>
-    <view v-if="!cart.length" class="empty">购物车空空如也，去挑点菜吧 🥬</view>
-
-    <!-- 卡AQ：空态引导卡（原型 S2） -->
-    <view v-if="!cart.length" class="dempty">
-      <view class="de-ic">🧺</view>
-      <view class="de-t1">还没有商品</view>
-      <view class="de-t2">说一句「土豆50斤」，或点下面去商品页挑</view>
-      <view class="de-go" @tap="goShop">去逛商品</view>
-    </view>
-
-    <view v-for="it in cart" :key="it.cartItemId" class="cart-item">
-      <view class="ci-em">{{ emojiOf(it.name) }}</view>
-      <view class="ci-main">
-        <view class="ci-name">{{ it.name }}</view>
-        <view class="ci-price">¥{{ it.salePrice }}/{{ it.unit }}</view>
-      </view>
-      <view class="ci-right">
-        <view class="stepper">
-          <view class="st-btn" @tap="changeQty(it, -1)">−</view>
-          <text class="st-num">{{ it.qty }}</text>
-          <view class="st-btn" @tap="changeQty(it, 1)">＋</view>
+        <!-- ② 欢迎气泡 -->
+        <view class="brow">
+          <view class="bav">🤖</view>
+          <view class="bubble ai">
+            <view class="bb-line">您好，我是辉崧鲜配智能下单助手～</view>
+            <view class="bb-line">告诉我您要买什么，比如「土豆50斤，白菜两颗，明天早上送到」，我帮您整理成订单。</view>
+            <view class="bb-line">后面还想加菜，直接接着说就行。</view>
+          </view>
         </view>
-        <view class="ci-sub">¥{{ (it.subtotal || 0).toFixed(2) }}</view>
-        <view class="ci-del" @tap="remove(it)">✕</view>
-      </view>
-    </view>
 
-    <!-- 卡AQ：没上架的菜 —— 不进清单，单走采购需求登记（红线 3） -->
-    <view v-if="noticeText" class="dnotice">
-      <view class="dn-tx">🤔 {{ noticeText }}</view>
-    </view>
+        <!-- ③ 对话流：用户 / 系统 / AI 三种气泡（AI 气泡含 changes / needClarify / 到货通知） -->
+        <view v-for="(m, idx) in messages" :key="idx">
+          <view v-if="m.role === 'me'" class="brow me">
+            <view class="bubble me">{{ m.text }}</view>
+            <view class="bav me">👤</view>
+          </view>
 
-    <!-- 卡AQ：清单末尾三字段（配送日期 / 送达时段 / 备注）—— 前端持有，下单时才传给后端 -->
-    <view v-if="cart.length" class="dmeta">
-      <view class="dm-row">
-        <view class="dm-k">配送日期</view>
-        <view class="chip-group">
-          <view v-for="d in dateOptions" :key="d.value" :class="['chip', { on: meta.deliveryDate === d.value }]" @tap="pickDate(d.value)">{{ d.label }}</view>
+          <view v-else-if="m.role === 'sys'" class="sys-tip">{{ m.text }}</view>
+
+          <view v-else class="brow">
+            <view class="bav">🤖</view>
+            <view class="bubble ai">
+              <!-- 整句直接给（如「没听清，可以再说一遍或改用打字」） -->
+              <template v-if="m.text">
+                <view class="bb-line">{{ m.text }}</view>
+              </template>
+              <!-- 需要反问（口径：不确定就反问，草稿不动） -->
+              <template v-else-if="m.needClarify">
+                <view class="bb-line">❓ {{ m.needClarify }}</view>
+                <view class="ai-hint">草稿先没动，直接回我是哪个就行</view>
+              </template>
+              <!-- 请求异常 -->
+              <template v-else-if="m.error">
+                <view class="bb-line">抱歉，刚才没听清（网络或服务异常）。草稿没变，可以再说一遍～</view>
+              </template>
+              <!-- 本次有变化 -->
+              <template v-else-if="(m.changes || []).length">
+                <view class="bb-line">收到！本次改动：</view>
+                <view class="chg">
+                  <view v-for="(c, i) in m.changes" :key="i" class="chg-item">
+                    <text class="chg-ic">{{ changeIcon(c) }}</text>
+                    <text class="chg-tx">{{ c.text }}</text>
+                  </view>
+                  <view v-if="(m.unmatched || []).length" class="chg-tip">🤔 没认出来的：{{ m.unmatched.join('、') }}</view>
+                </view>
+              </template>
+              <!-- 没变化 -->
+              <template v-else>
+                <view v-if="(m.unmatched || []).length" class="bb-line">这几样我还没对上商品：{{ m.unmatched.join('、') }}，换个说法试试～</view>
+                <view v-else class="bb-line">好的，记下了（这一句清单没有变化）</view>
+              </template>
+
+              <!-- ④ 说了没上架的菜：采购需求登记 +「到货通知我」
+                   只在服务端**真的登记成功**（demandRecorded）时才出现（不做「假装记下」）；
+                   按钮显隐还取决于服务端有没有配到货通知模板（demandTmplId，模板 id 绝不写死）。 -->
+              <view v-if="m.demandRecorded" class="demand-note">
+                <view class="demand-note-t">🤔 我还没上架，已帮你记下，到货通知你 📩</view>
+                <view
+                  v-if="demandTmplId"
+                  class="demand-note-btn"
+                  :class="{ done: m.notifySubscribed }"
+                  @tap="onSubscribeDemand(m)"
+                >{{ m.notifySubscribed ? '✅ 已开启到货通知' : '到货通知我' }}</view>
+              </view>
+            </view>
+          </view>
         </view>
-      </view>
-      <view class="dm-row">
-        <view class="dm-k">送达时段</view>
-        <view class="chip-group">
-          <view v-for="w in winOptions" :key="w.value" :class="['chip', { on: meta.timeWindow === w.value }]" @tap="pickWindow(w.value)">{{ w.label }}</view>
-        </view>
-      </view>
-      <view class="dm-row">
-        <view class="dm-k">备注</view>
-        <input class="dm-ipt" v-model="meta.remark" placeholder="选填" />
-      </view>
-    </view>
 
-    <view v-if="cart.length" class="settle-bar">
-      <view class="sb-total">
-        合计 <text class="sb-price">¥{{ totalAmount }}</text>
+        <!-- ⑤ 可编辑草稿卡（卡AR 那一版搬过来；下单入口「确认下单」在本卡搬进这里） -->
+        <view v-if="cart.length" class="dcard">
+          <view class="dcard-hd">
+            <text class="dc-hd-t">📋 当前订单草稿（{{ cart.length }} 项）</text>
+            <text class="dc-clr" @tap="clearAll">清空重来</text>
+          </view>
+
+          <view class="dcard-bd">
+            <view v-for="it in cart" :key="it.cartItemId" class="drow">
+              <text class="dr-em">{{ emojiOf(it.name) }}</text>
+              <view class="dr-main">
+                <view class="dr-name">{{ it.name }}</view>
+                <view class="dr-price">¥{{ money(it.salePrice) }}/{{ it.unit }}</view>
+              </view>
+              <view class="stp">
+                <view class="stp-btn stp-minus" @tap="changeQty(it, -1)">−</view>
+                <text class="stp-n">{{ it.qty }}</text>
+                <view class="stp-btn stp-plus" @tap="changeQty(it, 1)">＋</view>
+              </view>
+              <text class="dr-sub">¥{{ money(it.subtotal) }}</text>
+              <view class="dr-del" @tap="remove(it)">✕</view>
+            </view>
+
+            <!-- ⑥ 送达 + 预估合计 ／ ⑦ 称重提示 -->
+            <view class="dc-line">📅 {{ dateLabel }}（{{ meta.deliveryDate }}）送达 · 预估合计 ¥{{ totalAmount }}</view>
+            <view v-if="hasWeigh" class="dc-tip">💡 称重商品以实际称重为准，多退少补</view>
+
+            <!-- ⑧ 配送日期 / 送达时段 / 收货地址 / ＋ 添加商品 -->
+            <view class="dc-fld">
+              <view class="fl-row">
+                <text class="fl-k">配送日期</text>
+                <view class="chips">
+                  <view v-for="d in dateOptions" :key="d.value" :class="['chip', { on: meta.deliveryDate === d.value }]" @tap="pickDate(d.value)">{{ d.label }}</view>
+                </view>
+              </view>
+              <view class="fl-row">
+                <text class="fl-k">送达时段</text>
+                <view class="chips">
+                  <view v-for="w in winOptions" :key="w.value" :class="['chip', { on: meta.timeWindow === w.value }]" @tap="pickWindow(w.value)">{{ w.label }}</view>
+                </view>
+              </view>
+              <view class="fl-row">
+                <text class="fl-k">收货地址</text>
+                <view class="fl-v">{{ address || '未设置收货地址' }}</view>
+              </view>
+              <view class="add-btn" @tap="openPicker">＋ 添加商品</view>
+            </view>
+
+            <!-- ⑨ 共 N 项 · 预估合计 + 确认下单（下单动作就在本页，不再跳「确认订单」页） -->
+            <view class="dc-foot">
+              <view class="dc-tt">共 {{ cart.length }} 项 · 预估合计<text class="dc-tt-b">¥{{ totalAmount }}</text></view>
+              <view class="dc-go" :class="{ dis: !cart.length || submitting }" @tap="submitOrder">确认下单</view>
+            </view>
+          </view>
+        </view>
+
+        <!-- ⑩ 空态引导卡（原型 S2）：位置在对话流下方 -->
+        <view v-else class="dempty">
+          <view class="de-ic">🧺</view>
+          <view class="de-t1">还没有商品</view>
+          <view class="de-t2">说一句「土豆50斤」，或点下面去商品页挑</view>
+          <view class="de-go" @tap="goShop">去逛商品</view>
+        </view>
+
+        <view id="cart-col-bottom" style="height: 8px;"></view>
       </view>
-      <view class="sb-btn" @tap="submitOrder">提交订单</view>
-      <view class="sb-go" @tap="goConfirm">去结算</view>
-    </view>
-      <view id="cart-list-bottom" style="height: 6px;"></view>
     </scroll-view>
 
-    <!-- 卡AQ：输入栏吸底（话筒 + 输入框 + 发送），固定在页面最底部（tab 栏上方） -->
+    <!-- ⑪ 吸底输入栏：🎤 按住说话 + 输入框 + 发送 -->
     <view class="dinput">
       <view
         v-if="voiceReady"
@@ -91,48 +166,104 @@
         @touchend="onMicStop"
         @touchcancel="onMicStop"
       >{{ voiceRecording ? '🎤 聆听中…' : '🎤 按住说话' }}</view>
-      <input class="dipt" v-model="inputText" placeholder="说一句：土豆50斤" confirm-type="send" @confirm="onSendTap" />
+      <input class="dipt" v-model="inputText" placeholder="输入想买的菜品和数量…" confirm-type="send" @confirm="onSendTap" />
       <view class="send" :class="{ disabled: !inputText.trim() || sending }" @tap="onSendTap">发送</view>
     </view>
 
     <BuyerTabBar active="/pages/buyer/cart" />
-    <!-- 卡AQ 复核（2026-10-01）：结算条从吸底挪到清单末尾后「去结算」会滚到列表底部停靠，
-         原 offset=144 时 FAB 正好压住它。实测（390×753）：结算条停靠区 y=516.9~572.9、
-         去结算按钮 y=528.9~560.9、吸底输入栏顶 y=593.6 —— FAB 56px 塞不进 560.9~593.6 的 32px 间隙，
-         故取「整体抬到结算条之上」：offset ≥ 244（=753−56−508.9），这里取 248 留约 12px 余量。 -->
-    <AiOrderFab :offset="248" />
+    <!-- 卡AT：单栏后页面底部只有「吸底输入栏 + tab 栏」，FAB 抬到输入栏之上
+         （输入栏顶边 ≈ 118px，FAB 56px 高 → 取 130 留 12px 余量） -->
+    <AiOrderFab :offset="130" />
+
+    <!-- ⑫ 「＋ 添加商品」页内选品弹层（原在 ai-confirm.vue：切页会丢草稿，必须保持页内弹层形态）
+         弹层内加减全部走服务端草稿（POST /cart、PUT /cart/:id、DELETE /cart/:id），不加本地临时态 -->
+    <view v-if="pickerOpen" class="pk-mask" @tap="closePicker">
+      <view class="pk-sheet" @tap.stop>
+        <view class="pk-head">
+          <text class="pk-title">添加商品</text>
+          <view class="pk-close" @tap="closePicker">✕</view>
+        </view>
+
+        <view class="pk-search">
+          <input class="pk-input" v-model="pkKeyword" placeholder="搜索商品" confirm-type="search" @confirm="loadPkGoods" />
+          <view class="pk-search-btn" @tap="loadPkGoods">搜索</view>
+        </view>
+
+        <view class="pk-body">
+          <scroll-view scroll-y class="pk-cate">
+            <view :class="['pk-cate-item', { on: pkCate === 0 }]" @tap="switchPkCate(0)">全部</view>
+            <view v-for="c in categories" :key="c.id" :class="['pk-cate-item', { on: pkCate === c.id }]" @tap="switchPkCate(c.id)">{{ c.name }}</view>
+          </scroll-view>
+
+          <scroll-view scroll-y class="pk-list">
+            <view v-for="g in pickerGoods" :key="g.id" class="pk-row">
+              <view class="pk-info">
+                <view class="pk-name">{{ g.name }}</view>
+                <view class="pk-spec">{{ g.specText || (g.weighType === 1 ? '称重' : '固定规格') }}</view>
+                <view class="pk-price">¥{{ money(g.salePrice) }}/{{ g.unit }}</view>
+              </view>
+              <view v-if="qtyOf(g.id)" class="pk-stepper">
+                <view class="st-btn" @tap="decProduct(g)">−</view>
+                <text class="pk-qty">{{ qtyOf(g.id) }}</text>
+                <view class="st-btn" @tap="addProduct(g)">＋</view>
+              </view>
+              <view v-else class="pk-add" @tap="addProduct(g)">＋</view>
+            </view>
+            <view v-if="pkLoading" class="empty-tip">加载中…</view>
+            <view v-else-if="!pickerGoods.length" class="empty-tip">暂无商品</view>
+          </scroll-view>
+        </view>
+
+        <view class="pk-foot">
+          <text class="pk-foot-txt">已选 {{ cart.length }} 项 · 预估 ¥{{ totalAmount }}</text>
+          <view class="pbtn primary" @tap="closePicker">完成</view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
-import { onHide, onUnload } from '@dcloudio/uni-app'
-import { buyerApi } from '@/api/modules'
+import { onLoad, onShow, onHide, onUnload, onShareAppMessage } from '@dcloudio/uni-app'
+import { buyerApi, authApi, demandApi } from '@/api/modules'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
 import { guardBuyerSuspended } from '@/utils/account-guard'
 import { createVoiceHold } from '@/utils/voice-record'
 import { sendUtterance } from '@/utils/ai-order'
-import { setDraftFromCart, deliveryMeta, setMeta, clearMeta, emojiOf, syncCartDraft, clearDraft } from '@/utils/ai-draft'
+import {
+  setDraftFromCart,
+  deliveryMeta,
+  setMeta,
+  clearMeta,
+  emojiOf,
+  syncCartDraft,
+  clearDraft,
+  pendingUnmatched,
+  clearPendingUnmatched,
+} from '@/utils/ai-draft'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 import AiOrderFab from '@/components/AiOrderFab.vue'
 
 const cart = ref([])
 
-const totalAmount = computed(() => cart.value.reduce((s, i) => s + i.subtotal, 0).toFixed(2))
+/** 金额一律渲染服务端给的数（salePrice / subtotal），前端不算价 */
+const money = (v) => (Number(v) || 0).toFixed(2)
+
+const totalAmount = computed(() => cart.value.reduce((s, i) => s + Number(i.subtotal || 0), 0).toFixed(2))
+const hasWeigh = computed(() => cart.value.some((it) => it.weighType === 1))
 
 const load = async () => {
   const data = await buyerApi.getCart()
-  cart.value = data.list
+  cart.value = data.list || []
 }
 
 const changeQty = async (it, delta) => {
-  const qty = it.qty + delta
+  const qty = Number(it.qty) + delta
   if (qty <= 0) { await remove(it); return }
   await buyerApi.updateCart(it.cartItemId, qty)
-  it.qty = qty
-  it.subtotal = Math.round(qty * it.salePrice * 100) / 100
+  await load()
   uni.$emit('cart-badge-refresh')
 }
 
@@ -142,41 +273,50 @@ const remove = async (it) => {
   uni.$emit('cart-badge-refresh')
 }
 
+/**
+ * 卡AT（2026-10-01）：下单入口就在草稿卡里 —— 「确认确认」页已取消，
+ * 点「确认下单」直接 placeOrder（source=2 = AI 代下单；**不再传 remark**，订单备注已拍板取消）
+ * → 清掉四份草稿状态 → 进订单详情。
+ * ⚠️ 服务端草稿清空失败**不拦跳转**（订单已成立，别让客户卡在草稿页）。
+ */
+const submitting = ref(false)
 const submitOrder = async () => {
-  // 配送日期：当天有可选时段用当天，否则顺延次日；自动选最早可用时段（不弹窗）
-  let deliveryDate = dateStr()
-  let winList = availableTimeWindows(deliveryDate)
-  if (!winList.length) {
-    deliveryDate = tomorrowStr()
-    winList = availableTimeWindows(deliveryDate)
+  if (!cart.value.length || submitting.value) return
+  ensureMeta()
+  submitting.value = true
+  try {
+    const order = await buyerApi.placeOrder({
+      deliveryDate: meta.value.deliveryDate,
+      timeWindow: meta.value.timeWindow,
+      items: cart.value.map((i) => ({ productId: i.productId, qty: i.qty })),
+      source: 2, // 2 = AI 客服代下单（普通自选下单路径不传，后端默认 1）
+    })
+    uni.removeStorageSync('aiDraft')
+    clearDraft()
+    clearMeta()
+    try {
+      await syncCartDraft([])
+    } catch (e) {
+      /* 忽略：订单已成立，回草稿页会再拉一次服务端真值 */
+    }
+    uni.showToast({ title: '下单成功', icon: 'success' })
+    uni.$emit('cart-badge-refresh')
+    uni.redirectTo({ url: `/pages/buyer/order-detail?id=${order.orderId}` })
+  } catch (e) {
+    /* 错误已由 request.js 统一提示 */
+  } finally {
+    submitting.value = false
   }
-  const w = winList[0]
-  const order = await buyerApi.placeOrder({
-    deliveryDate,
-    timeWindow: w.value,
-    items: cart.value.map((i) => ({ productId: i.productId, qty: i.qty })),
-  })
-  uni.showToast({ title: '下单成功', icon: 'success' })
-  uni.$emit('cart-badge-refresh')
-  setTimeout(() => uni.redirectTo({ url: `/pages/buyer/order-detail?id=${order.orderId}` }), 600)
 }
 
-// ⚠️ tabBar 页面切换回来只触发 onShow 不触发 onMounted，必须用 onShow 刷新，否则加购后切回购物车看不到新商品
-onShow(async () => {
-  try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
-  // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
-  if (await guardBuyerSuspended()) return
-  load()
-})
-
 // ══════════════════════════════════════════════════════════════
-// 卡AQ（2026-10-01）：购物车 = 订单草稿 —— 以下全部为**新增**
-// 老逻辑（load / changeQty / remove / submitOrder / onShow 停用检查 / 角标刷新）一行未删。
+// 卡AT（2026-10-01）：助手页（kefu.vue）并入本页 —— 对话流 / 到货通知 / 分享 / 草稿卡
+// 卡AQ 的三字段、清空、空态、角标刷新、停用检查等既有能力一条未丢。
 // ══════════════════════════════════════════════════════════════
 
 /** 草稿与服务端 cart_item 的镜像同步点：
  *  cart 一变（加载 / 手动 +/- / 删除 / AI 说话后重新加载）就把共享草稿换成服务端最新清单，
- *  这样右下角 FAB 角标、助手页 kefu.vue 的草稿卡、商品页「加入草稿」看到的都是同一份。
+ *  这样右下角 FAB 角标、商品页「加入草稿」看到的都是同一份。
  *  ⚠️ 用 deep watch 而不是在每个函数末尾补一行 —— 老函数一行都不用改，也不会漏掉哪条路径。
  *  ⚠️ 只负责「镜像」，**不做合并**（合并只有服务端 /ai/parse 一处）。 */
 watch(
@@ -188,8 +328,9 @@ watch(
   { deep: true },
 )
 
-// ── 三字段：配送日期 / 送达时段 / 备注（前端持有，不落服务端表；下单时才传给 placeOrder）──
+// ── 两字段：配送日期 / 送达时段（前端持有，不落服务端表；下单时才传给 placeOrder）──
 const meta = deliveryMeta
+const dateLabel = computed(() => (meta.value.deliveryDate ? meta.value.deliveryDate.slice(5) : '尽快'))
 const dateOptions = [
   { value: dateStr(), label: `今天 ${dateStr().slice(5)}` },
   { value: tomorrowStr(), label: `明天 ${tomorrowStr().slice(5)}` },
@@ -197,7 +338,7 @@ const dateOptions = [
 ]
 const winOptions = computed(() => availableTimeWindows(meta.value.deliveryDate))
 
-/** 首次进来给三字段一个默认值（当天有可选时段用当天，否则次日；时段取最早可用）——与老 submitOrder 同口径 */
+/** 首次进来给两字段一个默认值（当天有可选时段用当天，否则次日；时段取最早可用） */
 const ensureMeta = () => {
   if (!meta.value.deliveryDate) {
     let d = dateStr()
@@ -217,59 +358,46 @@ const pickDate = (v) => {
 }
 const pickWindow = (v) => setMeta({ timeWindow: v })
 
-// ── 对话区（页面本地，不共享、不落库 —— 口径：不带历史原话）──
-const messages = ref([
-  { role: 'ai', text: '你好，我是下单助手。说一句要买的菜，我直接写进草稿～' },
-])
+// ── 对话流（页面本地，不共享、不落库 —— 口径：不带历史原话）──
+const messages = ref([])
 const inputText = ref('')
 const sending = ref(false)
-const noticeText = ref('')
-const chatScrollTo = ref('')
-const listScrollTo = ref('')
+const colScrollTo = ref('')
 
-const pushMsg = (role, text) => {
-  messages.value.push({ role, text })
-  setTimeout(() => { chatScrollTo.value = 'cart-chat-bottom' }, 60)
+const scrollBottom = () => {
+  setTimeout(() => { colScrollTo.value = 'cart-col-bottom' }, 60)
 }
+
+const pushMsg = (m) => {
+  messages.value.push(m)
+  scrollBottom()
+}
+
+const changeIcon = (c) => (c.type === 'remove' ? '➖' : c.type === 'clear' ? '🗑️' : c.type === 'set' ? '✏️' : '➕')
 
 /**
- * AI 回什么：全部用服务端给的文案，前端不自己拼（与助手页 kefu.vue 口径一致）
- * ⚠️ 「没上架的菜」绝不能报成「没听清」—— 那是两条完全不同的路
+ * 一句话 → 写进服务端草稿（cart_item）→ 刷新清单。
+ * ⚠️ 解析结果全部用服务端给的字段，前端不自己拼文案；
+ * ⚠️ 「没上架的菜」绝不能报成「没听清」—— 那是两条完全不同的路。
  */
-const replyOf = (res) => {
-  if (res.error) return '抱歉，刚才没听清（网络或服务异常）。草稿没变，可以再说一遍～'
-  if (res.needClarify) return `❓ ${res.needClarify}（草稿先没动，直接回我是哪个就行）`
-  const parts = []
-  const changes = res.changes || []
-  if (changes.length) parts.push(`好的，已写进草稿：${changes.map((c) => c.text).join('、')}。`)
-  const unmatched = res.unmatched || []
-  if (unmatched.length) {
-    // 红线 3：没上架的菜不进清单，走「采购需求登记 + 到货通知」；
-    // 「已帮你记下」只在**真的登记成功**时才说（与助手页同口径，不做假装记下）
-    parts.push(`${unmatched.join('、')}我还没上架${res.demandRecorded ? '，已帮你记下' : ''}，到货通知你～`)
-  }
-  if (!parts.length) return '没听清菜名和数量，再说一次试试，比如「土豆50斤」。'
-  return parts.join('')
-}
-
-/** 一句话 → 写进服务端草稿（cart_item）→ 刷新清单。红线 1：只动清单，**从不回写对话历史** */
 const doSend = async (text) => {
   const t = String(text == null ? '' : text).trim()
   if (!t || sending.value) return
   sending.value = true
-  pushMsg('me', t)
+  pushMsg({ role: 'me', text: t })
   const res = await sendUtterance(t)
-  pushMsg('ai', replyOf(res))
-  if ((res.unmatched || []).length) {
-    noticeText.value = `${res.unmatched.join('、')}${res.demandRecorded ? ' 我还没上架，已帮你记下' : ' 我还没上架'}`
-  } else {
-    noticeText.value = ''
-  }
-  if (!res.error && !res.needClarify) {
-    await load()
-    setTimeout(() => { listScrollTo.value = 'cart-list-bottom' }, 60)
-  }
+  pushMsg({
+    role: 'ai',
+    error: !!res.error,
+    changes: res.changes || [],
+    needClarify: res.needClarify || '',
+    unmatched: res.unmatched || [],
+    demandRecorded: !!res.demandRecorded,
+    notifySubscribed: false,
+  })
+  if (!res.error && !res.needClarify) await load()
   sending.value = false
+  scrollBottom()
 }
 
 const onSendTap = () => {
@@ -278,27 +406,110 @@ const onSendTap = () => {
   doSend(t)
 }
 
-// ── 语音：必须复用 utils/voice-record.js（全仓不许有第二份插件调用）──
+// ── 语音：必须复用 utils/voice-record.js（全仓不许有第二份录音插件调用）──
 const voice = createVoiceHold({
   onDone: (text) => doSend(text),
   onFail: (msg, m) => {
-    if (m && m.kind === 'empty') pushMsg('ai', `${msg}，可以再说一遍或改用打字`)
+    if (m && m.kind === 'empty') pushMsg({ role: 'ai', error: false, changes: [], needClarify: '', unmatched: [], demandRecorded: false, text: `${msg}，可以再说一遍或改用打字` })
     else uni.showToast({ title: msg, icon: 'none' })
   },
 })
 const { ready: voiceReady, recording: voiceRecording } = voice
 const onMicStart = voice.handleStart
 const onMicStop = voice.handleStop
-// ⑤ 离页必须停录（否则后台还在录、回调回来页面已销毁）
+// 离页必须停录（否则后台还在录、回调回来页面已销毁）
 onHide(voice.stopForLeave)
 onUnload(voice.stopForLeave)
 
-// ── 清空（原型 S1 右上）／去逛商品（S2）／去结算（S1 结算条）──
+// ── 采购需求登记 + 到货通知授权（2026-09-25，从助手页原样搬来）──
+// 「到货通知我」按钮要不要显示，取决于**服务端有没有配到货通知模板**（口径 8：绝不写死模板 id）。
+// 拿不到配置就不显示按钮 —— 宁可不显示，也不给客户一个点了没用的按钮。
+const demandTmplId = ref('')
+
+/** 收货地址（只读一行）：authApi.getProfile() 的 purchaser.address，没有就显示「未设置收货地址」 */
+const address = ref('')
+
+// ⚠️ tabBar 页面切换回来只触发 onShow 不触发 onLoad，刷新必须放 onShow
+onShow(async () => {
+  try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
+  if (await guardBuyerSuspended()) return
+  ensureMeta()
+  load()
+  // 卡AO（2026-09-30）：在外面（FAB 按住说）说了**我还没上架的菜**时，这里补一条与页内说话
+  // **完全同构**的 AI 气泡 —— 「🤔 我还没上架，已帮你记下，到货通知你 📩」+「到货通知我」按钮。
+  // ⚠️ 取走就清（内存态），避免每次进本页都重复冒同一条。
+  const pu = pendingUnmatched.value
+  if (pu && (pu.texts || []).length) {
+    pushMsg({
+      role: 'ai',
+      error: false,
+      changes: [],
+      needClarify: '',
+      unmatched: pu.texts,
+      demandRecorded: !!pu.recorded,
+      notifySubscribed: false,
+    })
+    clearPendingUnmatched()
+  }
+})
+
+onLoad(async () => {
+  try {
+    const cfg = await demandApi.subscribeConfig()
+    demandTmplId.value = cfg && cfg.configured ? cfg.templateId || '' : ''
+  } catch (e) {
+    demandTmplId.value = ''
+  }
+  try {
+    const profile = await authApi.getProfile()
+    address.value = (profile && profile.purchaser && profile.purchaser.address) || ''
+  } catch (e) {
+    address.value = ''
+  }
+})
+
+/** 点「到货通知我」→ 拉起微信订阅授权 → 把结果报给服务端落额度 */
+const onSubscribeDemand = (msg) => {
+  const tmpl = demandTmplId.value
+  if (!tmpl) return
+  // H5 / 非微信环境没有这个 API → 给一句人话提示，别留「点了没反应」的假按钮
+  if (typeof uni.requestSubscribeMessage !== 'function') {
+    uni.showToast({ title: '请在微信小程序里开启到货通知', icon: 'none' })
+    return
+  }
+  uni.requestSubscribeMessage({
+    tmplIds: [tmpl],
+    success: async (res) => {
+      const accepted = []
+      const rejected = []
+      Object.keys(res || {}).forEach((k) => {
+        if (k === 'errMsg') return
+        if (res[k] === 'accept') accepted.push(k)
+        else rejected.push(k)
+      })
+      msg.notifySubscribed = accepted.includes(tmpl)
+      // ⚠️ 服务端**只能**靠这次上报知道能不能发（授权只发生在客户端）
+      try {
+        await demandApi.subscribe({ templateId: tmpl, accepted, rejected })
+      } catch (e) {
+        /* 上报失败不打断客户：下次补授权还能把额度加上 */
+      }
+      uni.showToast({
+        title: msg.notifySubscribed ? '已开启，到货就通知你' : '好的，需要时可在「我的需求」里再开',
+        icon: 'none',
+      })
+    },
+    fail: () => uni.showToast({ title: '开启失败，稍后可在「我的需求」里再试', icon: 'none' }),
+  })
+}
+
+// ── 清空（顶部「清空」与卡头「清空重来」同一个弹窗）：只清草稿，对话历史保留 ──
 const clearAll = async () => {
   if (!cart.value.length) return
   uni.showModal({
     title: '清空草稿',
-    content: '会把这份草稿里的商品全部清掉，对话历史保留。确定吗？',
+    content: '会把这份草稿里的商品全部清空，对话历史保留。确定吗？',
     confirmText: '清空',
     success: async (r) => {
       if (!r.confirm) return
@@ -307,7 +518,6 @@ const clearAll = async () => {
         await syncCartDraft([])
         clearMeta()
         clearDraft()
-        noticeText.value = ''
         await load()
         uni.showToast({ title: '草稿已清空', icon: 'none' })
       } catch (e) {
@@ -321,54 +531,84 @@ const goShop = () => {
   uni.switchTab({ url: '/pages/buyer/goods' })
 }
 
-/** 「去结算」→ 进确认页。三字段走共享 ref（ai-draft 的 deliveryMeta），确认页直接读，不靠 URL 传 */
-const goConfirm = () => {
-  if (!cart.value.length) return
-  ensureMeta()
-  uni.navigateTo({ url: '/pages/buyer/ai-confirm' })
+// ── 添加商品弹层（从 ai-confirm.vue 原样搬来；改动落服务端草稿，不加本地临时态）──
+const pickerOpen = ref(false)
+const categories = ref([])
+const pickerGoods = ref([])
+const pkCate = ref(0)
+const pkKeyword = ref('')
+const pkLoading = ref(false)
+
+const qtyOf = (id) => {
+  const hit = cart.value.find((it) => it.productId === id)
+  return hit ? Number(hit.qty) : 0
 }
 
-// 首次进页面给三字段默认值（onShow 之后，避免挡住停用检查）
-onShow(() => {
-  ensureMeta()
-})
+const addProduct = async (g) => {
+  try {
+    await buyerApi.addToCart({ productId: Number(g.id), qty: 1 })
+    await load()
+  } catch (e) {
+    /* 错误已由 request.js 统一提示 */
+  }
+}
+
+const decProduct = async (g) => {
+  const hit = cart.value.find((it) => it.productId === g.id)
+  if (!hit) return
+  try {
+    if (Number(hit.qty) <= 1) await buyerApi.removeCart(hit.cartItemId)
+    else await buyerApi.updateCart(hit.cartItemId, Number(hit.qty) - 1)
+    await load()
+  } catch (e) {
+    /* 错误已由 request.js 统一提示 */
+  }
+}
+
+const loadPkGoods = async () => {
+  pkLoading.value = true
+  // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成字符串 "undefined"，导致后端误当搜索词
+  const params = { page: 1, pageSize: 50 }
+  if (pkCate.value) params.categoryId = pkCate.value
+  if (pkKeyword.value) params.keyword = pkKeyword.value
+  try {
+    const data = await buyerApi.getGoods(params)
+    pickerGoods.value = data.list || []
+  } catch (e) {
+    pickerGoods.value = []
+  }
+  pkLoading.value = false
+}
+
+const switchPkCate = (id) => { pkCate.value = id; loadPkGoods() }
+
+const openPicker = async () => {
+  pickerOpen.value = true
+  if (!categories.value.length) {
+    try { categories.value = await buyerApi.getCategories() } catch (e) { categories.value = [] }
+  }
+  if (!pickerGoods.value.length) loadPkGoods()
+}
+
+const closePicker = () => { pickerOpen.value = false }
+
+// ── 转发分享（公告里那句「也可把本页转发给同事或采购群」要在合并后的本页成立）──
+onShareAppMessage(() => ({
+  title: '说一句话就能下单 · 辉崧鲜配',
+  path: '/pages/buyer/cart',
+}))
 </script>
 
 <style lang="scss" scoped>
-.cart-page { padding: 12px; padding-bottom: 140px; }
-.empty { text-align: center; color: $text-placeholder; padding: 60px 0; font-size: 14px; }
-.cart-item { display: flex; align-items: center; justify-content: space-between; background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-.ci-name { font-size: 15px; font-weight: 600; color: $text-title; }
-.ci-price { font-size: 12px; color: #fa5151; margin-top: 4px; }
-.ci-right { display: flex; align-items: center; gap: 10px; }
-.stepper { display: flex; align-items: center; gap: 10px; }
-.st-btn { width: 26px; height: 26px; border-radius: 50%; background: #f0f1f3; display: flex; align-items: center; justify-content: center; font-size: 16px; }
-.st-num { font-size: 15px; font-weight: 600; min-width: 24px; text-align: center; }
-.ci-del { color: $text-placeholder; font-size: 14px; }
-/* 结算栏：bottom 抬高避开自定义 tabBar（实际约 64px + 安全区） */
-.settle-bar { position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom)); background: #fff; padding: 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 -2px 8px rgba(0,0,0,.05); z-index: 10; }
-.sb-price { color: #fa5151; font-size: 18px; font-weight: 700; }
-.sb-btn { background: $color-primary; color: #fff; padding: 10px 28px; border-radius: 22px; font-size: 15px; font-weight: 600; }
-
-/* ══════════════════════════════════════════════════════════
-   卡AQ（2026-10-01）新增样式 —— 全部写在后面：
-   ① 覆盖在上面的是**本次改造**要的形状（同特异性后者胜 / 更高特异性直接胜），
-      老规则一行没删，回滚时把这一段整段删掉即可恢复老页面；
-   ② 老规则之所以还留着，是因为验收要求本文件删除数 = 0。
-   ══════════════════════════════════════════════════════════ */
-
-/* 页面改成「上对话 / 下清单 / 输入栏吸底」的纵向三段（原规则 padding 12px + 140px 不再适用） */
 .cart-page {
   padding: 0;
-  padding-bottom: calc(120px + env(safe-area-inset-bottom));
+  padding-bottom: calc(124px + env(safe-area-inset-bottom));
   box-sizing: border-box;
   height: 100vh;
   display: flex;
   flex-direction: column;
   background: $bg-page;
 }
-/* 老的空态文案被原型 S2 的引导卡取代 —— 保留在模板里但不再渲染（删除数＝0 的代价） */
-.cart-page .empty { display: none; }
 
 /* ── 顶部标题条 ── */
 .pg-head {
@@ -378,70 +618,109 @@ onShow(() => {
 .pg-title { font-size: 15px; font-weight: 600; color: $text-title; }
 .pg-clear { font-size: 13px; color: $text-second; padding: 2px 4px; border-radius: 6px; }
 
-/* ── 上半：对话区（约 45%）── */
-.chat-zone {
-  flex: 0 0 45%; min-height: 0; display: flex; flex-direction: column;
-  background: #fff; border-bottom: 1px solid $border;
+/* ── 单栏滚动区（对话流在上 · 草稿卡在下）── */
+.col-zone { flex: 1 1 0; min-height: 0; background: $bg-page; box-sizing: border-box; }
+.col-inner { padding: 10px 12px 12px; }
+
+/* ── 公告气泡（原助手页 4 条）── */
+.notice {
+  background: $brand-soft; color: $brand-deep; font-size: 10px; line-height: 1.45;
+  padding: 6px 9px; border-radius: 8px; margin-bottom: 7px;
 }
-.chat-hd {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
-  padding: 8px 14px 6px; font-size: 11.5px; color: $brand-deep; font-weight: 700;
-  border-bottom: 1px dashed $border;
-}
-.chat-dot { width: 6px; height: 6px; border-radius: 50%; background: $brand; }
-.chat { flex: 1; min-height: 0; padding: 12px 14px 6px; box-sizing: border-box; }
-.brow { display: flex; margin-bottom: 8px; }
+.notice-line { display: block; }
+
+/* ── 对话气泡 ── */
+.brow { display: flex; margin-bottom: 6px; align-items: flex-start; gap: 6px; }
 .brow.me { justify-content: flex-end; }
+.bav {
+  width: 26px; height: 26px; border-radius: 7px; background: $brand; color: #fff; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.bav.me { background: $text-body; }
 .bubble {
-  max-width: 80%; padding: 8px 11px; border-radius: 12px; font-size: 12.5px; line-height: 1.6;
+  max-width: 80%; padding: 7px 10px; border-radius: 12px; font-size: 12px; line-height: 1.6;
+  background: #fff; color: $text-title; border: 1px solid $border; border-top-left-radius: 4px;
 }
-.bubble.me { background: $brand; color: #fff; border-top-right-radius: 4px; }
-.bubble.ai { background: #fff; color: $text-title; border: 1px solid $border; border-top-left-radius: 4px; }
+.bubble.me { background: $brand; color: #fff; border: 1px solid $brand; border-top-right-radius: 4px; border-top-left-radius: 12px; }
+.bubble.ai { background: #fff; }
+.bb-line { display: block; }
+.ai-hint { display: block; margin-top: 4px; font-size: 11px; color: $text-second; }
 
-/* ── 下半：草稿清单（约 55%，可滚动）── */
-.list-zone { flex: 1 1 0; min-height: 0; background: $bg-page; box-sizing: border-box; padding-bottom: 8px; }
-/* 结算条改回文档流，随清单滚动（不再 fixed）—— 被原型 S1 挪到清单末尾 */
-.cart-page .settle-bar {
-  position: static; margin: 12px; border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+/* 本次改动 */
+.chg { display: block; margin-top: 5px; background: $bg-page; border-radius: 7px; padding: 5px 7px; }
+.chg-item { display: flex; align-items: center; gap: 4px; font-size: 11px; line-height: 1.6; }
+.chg-tx { color: $brand-deep; font-weight: 700; }
+.chg-tip { font-size: 11px; color: $text-second; line-height: 1.6; }
+
+/* 没上架的菜 → 「到货通知我」 */
+.demand-note { margin-top: 7px; padding-top: 6px; border-top: 1px dashed $border; }
+.demand-note-t { font-size: 11.5px; color: $brand-deep; line-height: 1.55; }
+.demand-note-btn {
+  display: inline-block; margin-top: 7px; background: $brand; color: #fff;
+  font-size: 11.5px; font-weight: 700; padding: 6px 13px; border-radius: 16px;
 }
-/* 老的「提交订单」被原型 S1 的「去结算」取代 —— 同样保留在模板里、不渲染 */
-.cart-page .settle-bar .sb-btn { display: none; }
-.sb-go {
-  background: $brand; color: #fff; padding: 9px 18px; border-radius: 22px;
-  font-size: 14px; font-weight: 600; line-height: 1;
+.demand-note-btn.done { background: $bg-page; color: $text-second; }
+
+.sys-tip { text-align: center; font-size: 11px; color: $text-second; margin: 10px 0; }
+
+/* ── 可编辑草稿卡 ── */
+.dcard { background: #fff; border-radius: 12px; overflow: hidden; margin-top: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, .06); }
+.dcard-hd {
+  background: $brand-soft; padding: 8px 11px; font-size: 12px; color: $brand; font-weight: 700;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
+.dc-clr { color: $text-second; font-weight: 400; text-decoration: underline; font-size: 11.5px; }
+.dcard-bd { padding: 5px 11px 7px; }
 
-/* 草稿行：emoji + 菜名 + 单价 + 步进器 + 行小计 + 删除 */
-.cart-page .cart-item { margin: 8px 12px 0; padding: 9px 10px; gap: 8px; }
-.ci-em { font-size: 21px; width: 24px; flex: 0 0 auto; text-align: center; line-height: 1; }
-.ci-main { flex: 1; min-width: 0; }
-.cart-page .ci-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cart-page .ci-price { font-size: 10.5px; color: $text-second; margin-top: 3px; }
-.ci-sub { font-size: 13px; font-weight: 700; color: $danger; width: 58px; text-align: right; flex: 0 0 auto; }
+.drow { display: flex; align-items: center; gap: 7px; padding: 5px 0; border-bottom: 1px solid #F5F6F8; }
+.drow:last-of-type { border-bottom: none; }
+.dr-em { font-size: 19px; width: 22px; flex: 0 0 auto; text-align: center; line-height: 1; }
+.dr-main { flex: 1; min-width: 0; }
+.dr-name { font-size: 13px; font-weight: 600; color: $text-title; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dr-price { font-size: 10.5px; color: $text-second; margin-top: 2px; }
+.dr-sub { font-size: 12.5px; font-weight: 700; color: $danger; width: 58px; text-align: right; flex: 0 0 auto; }
+.dr-del { font-size: 13px; color: $text-placeholder; flex: 0 0 auto; padding: 2px; line-height: 1; }
+.stp { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.stp-btn {
+  width: 22px; height: 22px; border-radius: 50%; background: $bg-soft; color: $text-title;
+  font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center;
+}
+.stp-n { font-size: 12.5px; font-weight: 700; min-width: 22px; text-align: center; color: $text-title; }
 
-/* ── 清单末尾三字段 ── */
-.dmeta { background: #fff; border-radius: 8px; margin: 8px 12px 10px; padding: 0 12px; }
-.dm-row { display: flex; align-items: center; padding: 9px 0; border-bottom: 1px solid $bg-soft; }
-.dm-row:last-child { border-bottom: none; }
-.dm-k { font-size: 13px; color: $text-second; width: 72px; flex: 0 0 auto; }
-.dm-ipt { flex: 1; font-size: 13px; color: $text-title; }
-.chip-group { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; min-width: 0; }
+.dc-line { display: block; font-size: 11px; color: $text-title; font-weight: 600; line-height: 1.6; padding: 3px 0 0; }
+.dc-tip { display: block; font-size: 10.5px; color: $text-second; line-height: 1.5; padding: 1px 0 0; }
+
+.dc-fld { padding: 6px 0 2px; border-top: 1px dashed #F0F1F3; margin-top: 5px; }
+.fl-row { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; }
+.fl-k { font-size: 11.5px; color: $text-second; width: 52px; flex: 0 0 auto; padding-top: 2px; }
+.fl-v { flex: 1; min-width: 0; font-size: 11.5px; color: $text-placeholder; padding-top: 3px; }
+.chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
-  padding: 6px 12px; border-radius: 16px; border: 1.5px solid $border-strong;
-  font-size: 12px; color: $text-body; background: #fff;
+  padding: 3px 8px; border-radius: 14px; border: 1.5px solid $border-strong;
+  font-size: 10.5px; color: $text-body; background: #fff;
 }
-.chip.on { background: $brand-soft; border-color: $brand; color: $brand; font-weight: 600; }
+.chip.on { background: $brand-soft; border-color: $brand; color: $brand; font-weight: 700; }
 
-/* ── 没上架的菜（原型 S3 黄条；不进清单、不进金额、不进角标）── */
-.dnotice {
-  display: flex; align-items: center; gap: 8px; margin: 8px 12px 0;
-  background: $warn-soft; border: 1px solid #FFE4BA; border-radius: 10px; padding: 9px 11px;
+.add-btn {
+  margin-top: 7px; text-align: center; padding: 8px 0; border-radius: 10px;
+  border: 1.5px solid $brand; color: $brand; font-size: 12.5px; font-weight: 700; background: #fff;
 }
-.dn-tx { flex: 1; min-width: 0; font-size: 11.5px; color: #C87000; line-height: 1.5; }
+
+/* 卡内结算条 */
+.dc-foot {
+  margin-top: 8px; border-top: 1px solid #F0F1F3; padding-top: 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.dc-tt { font-size: 11.5px; color: $text-second; line-height: 1.5; }
+.dc-tt-b { display: block; color: $danger; font-size: 16px; font-weight: 800; }
+.dc-go {
+  flex: 0 0 auto; background: $brand; color: #fff; border-radius: 22px;
+  padding: 10px 20px; font-size: 13.5px; font-weight: 700; line-height: 1;
+}
+.dc-go.dis { background: $bg-soft; color: $text-placeholder; }
 
 /* ── 空态引导卡（原型 S2）── */
-.dempty { margin: 26px 12px 12px; background: #fff; border-radius: 14px; padding: 26px 18px; text-align: center; }
+.dempty { margin: 18px 0 0; background: #fff; border-radius: 14px; padding: 26px 18px; text-align: center; }
 .de-ic { font-size: 38px; line-height: 1; }
 .de-t1 { font-size: 15px; font-weight: 700; margin-top: 10px; }
 .de-t2 { font-size: 11.5px; color: $text-second; line-height: 1.7; margin-top: 8px; }
@@ -450,10 +729,10 @@ onShow(() => {
   background: $brand; color: #fff; font-size: 13.5px; font-weight: 700; text-align: center;
 }
 
-/* ── 输入栏吸底（tab 栏上方）── */
+/* ── 吸底输入栏 ── */
 .dinput {
   position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom));
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px 12px;
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px;
   background: #fff; border-top: 1px solid $border; box-shadow: 0 -3px 10px rgba(0, 0, 0, .06); z-index: 20;
 }
 .mic {
@@ -461,6 +740,7 @@ onShow(() => {
   color: #fff; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px;
 }
 .mic.on { background: $brand-deep; }
+.mic.off { opacity: .45; }
 .dipt {
   flex: 1; min-width: 0; background: $bg-page; border-radius: 18px;
   padding: 9px 12px; font-size: 12.5px; color: $text-title;
@@ -470,4 +750,46 @@ onShow(() => {
   color: #fff; font-size: 12.5px; font-weight: 700; display: flex; align-items: center;
 }
 .send.disabled { opacity: .5; }
+
+/* ── 「＋ 添加商品」页内弹层（原 ai-confirm.vue 那一版）
+      z-index 必须高于自定义 tabBar（999），否则底部「完成」条会被压住 ── */
+.pk-mask {
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0, 0, 0, .45);
+  z-index: 1000; display: flex; align-items: flex-end;
+}
+.pk-sheet {
+  width: 100%; height: 76vh; background: #fff; border-radius: 14px 14px 0 0;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.pk-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid #F5F6F8; flex: 0 0 auto; }
+.pk-title { font-size: 15px; font-weight: 700; color: $text-title; }
+.pk-close { display: inline; color: $text-placeholder; font-size: 16px; padding: 0 4px; }
+.pk-search { display: flex; align-items: center; gap: 8px; padding: 8px 14px; flex: 0 0 auto; }
+.pk-input { flex: 1; background: $bg-page; border-radius: 16px; padding: 7px 13px; font-size: 12.5px; }
+.pk-search-btn { display: inline; font-size: 13px; color: $brand; font-weight: 600; flex-shrink: 0; }
+.pk-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+.pk-cate { width: 82px; background: #F7F8FA; height: 100%; flex-shrink: 0; }
+.pk-cate-item { padding: 12px 6px; font-size: 12px; color: $text-second; text-align: center; }
+.pk-cate-item.on { background: #fff; color: $brand; font-weight: 700; }
+.pk-list { flex: 1; min-width: 0; height: 100%; padding: 4px 12px; box-sizing: border-box; }
+.pk-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #F5F6F8; }
+.pk-info { flex: 1; min-width: 0; }
+.pk-name { font-size: 13px; font-weight: 600; color: $text-title; }
+.pk-spec { font-size: 10px; color: $text-second; margin-top: 2px; overflow: hidden; white-space: nowrap; }
+.pk-price { font-size: 12px; color: $danger; font-weight: 700; margin-top: 2px; }
+.pk-stepper { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.st-btn {
+  width: 24px; height: 24px; border-radius: 50%; border: 1px solid $border-strong; background: #fff;
+  font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center; color: $text-body;
+}
+.pk-qty { min-width: 20px; text-align: center; font-size: 12.5px; font-weight: 700; color: $text-title; }
+.pk-add {
+  width: 26px; height: 26px; border-radius: 50%; background: $brand; color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0;
+}
+.pk-foot { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid $border; flex: 0 0 auto; }
+.pk-foot-txt { flex: 1; font-size: 12px; color: $text-second; }
+.pbtn { flex: none; border-radius: 10px; padding: 9px 20px; text-align: center; font-size: 13.5px; font-weight: 700; }
+.pbtn.primary { background: $brand; color: #fff; }
+.empty-tip { text-align: center; color: $text-placeholder; padding: 24px 0; font-size: 13px; }
 </style>
