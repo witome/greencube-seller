@@ -57,7 +57,9 @@
       <view class="pbtn primary" @tap="goApply">申请售后</view>
     </view>
 
-    <CustomTabBar :tabs="buyerTabs" active="/pages/buyer/mine" />
+    <!-- 卡BD（2026-10-01 三黑）：与采购方其它页统一 —— 原来用的 CustomTabBar（50px 定高、无 safe-area、
+         文案还是旧的「购物车/📋」）在 iPhone 上会被 home 指示条压住。 -->
+    <BuyerTabBar active="/pages/buyer/mine" />
   </view>
 </template>
 
@@ -68,15 +70,7 @@ import { buyerApi } from '@/api/modules'
 import { fullUrl } from '@/api/request'
 import { previewPhotos } from '@/utils/photo-upload'
 import { guardBuyerSuspended } from '@/utils/account-guard'
-import CustomTabBar from '@/components/CustomTabBar.vue'
-
-const buyerTabs = [
-  { path: '/pages/buyer/home', icon: '🏠', label: '首页' },
-  { path: '/pages/buyer/goods', icon: '🥬', label: '商品' },
-  { path: '/pages/buyer/cart', icon: '🛒', label: '购物车' },
-  { path: '/pages/buyer/order-list', icon: '📋', label: '订单' },
-  { path: '/pages/buyer/mine', icon: '👤', label: '我的' },
-]
+import BuyerTabBar from '@/components/BuyerTabBar.vue'
 
 // 状态：0 待处理 / 1 处理中 / 2 已解决 / 3 已关闭
 // 「售后中」= 未完结（待处理 + 处理中）
@@ -151,7 +145,8 @@ onShow(async () => {
 </script>
 
 <style lang="scss" scoped>
-.page { padding-bottom: 130px; }
+/* 卡BD：底部栏换成 BuyerTabBar（≈57px + safe-area）后，「申请售后」吸底条与列表留白同步上移 */
+.page { padding-bottom: calc(130px + env(safe-area-inset-bottom)); }
 .chips-row { white-space: nowrap; padding: 10px 12px; }
 .chip { display: inline-block; padding: 6px 14px; border-radius: 16px; background: #f0f1f3; font-size: 13px; color: $text-second; margin-right: 8px; }
 .chip.on { background: $color-primary; color: #fff; }
@@ -183,7 +178,8 @@ onShow(async () => {
 .as-handled { font-size: 11px; color: $text-placeholder; margin-top: 4px; }
 
 .empty { text-align: center; color: $text-placeholder; padding: 40px 0; font-size: 13px; }
-.apply-bar { position: fixed; left: 0; right: 0; bottom: 56px; padding: 8px 12px; background: #fff; border-top: 1px solid $bg-soft; }
+/* 卡BD：吸底条要落在 BuyerTabBar 之上（栏 ≈57px + safe-area + 9px 间隙） */
+.apply-bar { position: fixed; left: 0; right: 0; bottom: calc(66px + env(safe-area-inset-bottom)); padding: 8px 12px; background: #fff; border-top: 1px solid $bg-soft; }
 .pbtn { border-radius: 22px; padding: 11px 0; text-align: center; font-size: 14px; font-weight: 600; }
 .pbtn.primary { background: $color-primary; color: #fff; }
 </style>

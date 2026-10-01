@@ -180,7 +180,10 @@
     </view>
     </view>
 
-    <CustomTabBar :tabs="buyerTabs" active="/pages/buyer/order-list" />
+    <!-- 卡BD（2026-10-01 三黑）：底部导航栏换成与其它采购方页同一份 BuyerTabBar。
+         原来这里用的是 CustomTabBar（50px 定高、无 safe-area 内边距、文案还是旧的「购物车/📋」），
+         在 iPhone 上整条被 home 指示条压住、文字被切掉，与商品/订单列表/我的 三页的位置不一致。 -->
+    <BuyerTabBar active="/pages/buyer/order-list" />
 
     <!-- 卡BC（2026-10-01）：「＋ 加菜」选品弹层 —— 复用草稿页同一份 GoodsPicker，
          不许在订单详情写第二份选品逻辑。弹层内加减先改本地明细，关闭时才统一提交一次。 -->
@@ -200,17 +203,10 @@
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
-import CustomTabBar from '@/components/CustomTabBar.vue'
+import BuyerTabBar from '@/components/BuyerTabBar.vue'
 import GoodsPicker from '@/components/GoodsPicker.vue'
 
-// 采购方底部导航（订单详情为二级页，原生 tabBar 不显示，用自定义栏补齐）
-const buyerTabs = [
-  { path: '/pages/buyer/home', icon: '🏠', label: '首页' },
-  { path: '/pages/buyer/goods', icon: '🥬', label: '商品' },
-  { path: '/pages/buyer/cart', icon: '🛒', label: '购物车' },
-  { path: '/pages/buyer/order-list', icon: '📋', label: '订单' },
-  { path: '/pages/buyer/mine', icon: '👤', label: '我的' },
-]
+// 卡BD（2026-10-01 三黑）：底部导航栏改用全站同一份 BuyerTabBar（导航项/图标/角标与其它页一致）。
 
 const order = ref(null)
 const orderId = ref('')
@@ -547,7 +543,9 @@ onLoad(async (opts) => {
 </script>
 
 <style lang="scss" scoped>
-.page { padding-bottom: 70px; }
+/* 卡BD：底部导航栏改用 BuyerTabBar 后，内容需按它的真实高度留白（6+图标+文案+10 + safe-area ≈ 57px + 安全区），
+   原来写死 70px 在 iPhone 上正好被整条栏压住（「继续添加商品」按钮下半截看不见）。 */
+.page { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
 .od-status { font-size: 18px; font-weight: 700; color: $color-primary; margin-bottom: 12px; }
 .timeline { display: flex; justify-content: space-between; }
 .tl-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
