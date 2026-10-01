@@ -6,11 +6,28 @@
       <text class="buyer-home-reg-link">去注册 ›</text>
     </view>
 
-    <!-- ① 商品搜索入口 → 商品 tab -->
-    <view class="buyer-home-search" @tap="goTab('/pages/buyer/goods')">🔍 搜索：白菜 / 五花肉 / 鸡蛋…</view>
+    <!-- ① 商品搜索入口 → 商品 tab（卡BA-2：同一行右侧按需显示客服电话入口） -->
+    <view class="buyer-home-search-row">
+      <view class="buyer-home-search" @tap="goTab('/pages/buyer/goods')">🔍 搜索：白菜 / 五花肉 / 鸡蛋…</view>
+      <view v-if="serviceHotline" class="buyer-home-service" @tap="callService">☎ 客服电话</view>
+    </view>
 
-    <!-- ② 配送说明横幅（接口化：GET /buyer/home-content → home_delivery_note KV；未配置走后端中性默认；加载失败不渲染空横幅） -->
-    <view v-if="banner.title" class="buyer-home-banner">
+    <!-- ② 配送说明横幅（接口化：GET /buyer/home-content → home_delivery_note KV；未配置走后端中性默认；加载失败不渲染空横幅）
+         卡BA-2：运营配了滚动图（bannerImages 非空）优先走轮播，否则完整回退原文字横幅 -->
+    <swiper
+      v-if="bannerImages.length"
+      class="buyer-home-banner-swiper"
+      :autoplay="bannerImages.length > 1"
+      :indicator-dots="bannerImages.length > 1"
+      :circular="bannerImages.length > 1"
+      indicator-color="rgba(255,255,255,.55)"
+      indicator-active-color="#fff"
+    >
+      <swiper-item v-for="(src, i) in bannerImages" :key="i">
+        <image class="buyer-home-banner-img" :src="src" mode="aspectFill" />
+      </swiper-item>
+    </swiper>
+    <view v-else-if="banner.title" class="buyer-home-banner">
       <text class="buyer-home-banner-b">{{ banner.title }} 🚚</text>
       <text class="buyer-home-banner-s">{{ banner.subtitle }}</text>
     </view>
@@ -19,18 +36,14 @@
     <view v-if="platformNotice" class="buyer-home-notice">{{ platformNotice }}</view>
 
 
-    <!-- ④ 常用功能宫格（8 入口） -->
+    <!-- ④ 常用功能宫格（卡BA-2：接口 features 非空则渲染，否则用内置默认 8 入口，视觉零变化） -->
     <view class="buyer-home-title">常用功能</view>
     <view class="buyer-home-grid">
       <view class="buyer-home-grid-btns">
-        <view class="buyer-home-grid-item" @tap="goTab('/pages/buyer/goods')"><view class="buyer-home-grid-ico buyer-home-ico-green">🥬</view><view class="buyer-home-grid-label">分类选购</view></view>
-        <view class="buyer-home-grid-item" @tap="goTab('/pages/buyer/goods')"><view class="buyer-home-grid-ico buyer-home-ico-blue">📋</view><view class="buyer-home-grid-label">常购清单</view></view>
-        <view class="buyer-home-grid-item" @tap="goTab('/pages/buyer/order-list')"><view class="buyer-home-grid-ico buyer-home-ico-orange">🕐</view><view class="buyer-home-grid-label">最近购买</view></view>
-        <view class="buyer-home-grid-item" @tap="todo('配送日期管理')"><view class="buyer-home-grid-ico buyer-home-ico-teal">📅</view><view class="buyer-home-grid-label">配送日期</view></view>
-        <view class="buyer-home-grid-item" @tap="go('/pages/buyer/bill')"><view class="buyer-home-grid-ico buyer-home-ico-purple">🧾</view><view class="buyer-home-grid-label">对账单</view></view>
-        <view class="buyer-home-grid-item" @tap="go('/pages/buyer/aftersale')"><view class="buyer-home-grid-ico buyer-home-ico-red">🛡️</view><view class="buyer-home-grid-label">售后申请</view></view>
-        <view class="buyer-home-grid-item" @tap="todo('优惠券：暂无可用')"><view class="buyer-home-grid-ico buyer-home-ico-orange">🎫</view><view class="buyer-home-grid-label">优惠券</view></view>
-        <view class="buyer-home-grid-item" @tap="goTab('/pages/buyer/cart')"><view class="buyer-home-grid-ico buyer-home-ico-blue">💬</view><view class="buyer-home-grid-label">智能下单助手</view></view>
+        <view v-for="(f, i) in features" :key="f.key || i" class="buyer-home-grid-item" @tap="onFeature(f)">
+          <view class="buyer-home-grid-ico" :class="icoClassOf(f, i)">{{ f.emoji || '🔹' }}</view>
+          <view class="buyer-home-grid-label">{{ f.label }}</view>
+        </view>
       </view>
     </view>
 
@@ -95,6 +108,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, buyerApi } from '@/api/modules'
+import { fullUrl } from '@/api/request'
 import { guardBuyerSuspended } from '@/utils/account-guard'
 import BuyerTabBar from '@/components/BuyerTabBar.vue'
 import AiOrderFab from '@/components/AiOrderFab.vue'
@@ -110,13 +124,43 @@ const goOrder = (id) => uni.navigateTo({ url: `/pages/buyer/order-detail?id=${id
 const goDetail = (id) => uni.navigateTo({ url: `/pages/buyer/goods-detail?id=${id}` })
 
 // 暂未实现的入口：给出「功能建设中」提示，不做无声跳转
-const todo = (name) => uni.showToast({ title: `${name} · 功能建设中`, icon: 'none' })
+const todo = () => uni.showToast({ title: '功能建设中', icon: 'none' })
 
 const needRegister = ref(false)
 
 // ── 首页内容（GET /buyer/home-content 一次取全：横幅/公告/今日推荐位）──
 const banner = ref({ title: '', subtitle: '' })
 const platformNotice = ref('') // null/空 → 不渲染（运营停用或未配置公告时）
+
+// ── 卡BA-2：横幅滚动图 / 常用功能宫格 / 客服电话 ──
+// 运营未配置或接口失败时用这套默认数据，保证默认 8 宫格与改造前逐项一致（emoji/文案/跳转/图标底色）
+const DEFAULT_FEATURES = [
+  { key: 'goods', label: '分类选购', emoji: '🥬', type: 'tab', page: '/pages/buyer/goods', ico: 'buyer-home-ico-green' },
+  { key: 'usual', label: '常购清单', emoji: '📋', type: 'tab', page: '/pages/buyer/goods', ico: 'buyer-home-ico-blue' },
+  { key: 'recent', label: '最近购买', emoji: '🕐', type: 'tab', page: '/pages/buyer/order-list', ico: 'buyer-home-ico-orange' },
+  { key: 'delivery-date', label: '配送日期', emoji: '📅', type: 'todo', page: '配送日期管理', ico: 'buyer-home-ico-teal' },
+  { key: 'bill', label: '对账单', emoji: '🧾', type: 'page', page: '/pages/buyer/bill', ico: 'buyer-home-ico-purple' },
+  { key: 'aftersale', label: '售后申请', emoji: '🛡️', type: 'page', page: '/pages/buyer/aftersale', ico: 'buyer-home-ico-red' },
+  { key: 'coupon', label: '优惠券', emoji: '🎫', type: 'todo', page: '优惠券：暂无可用', ico: 'buyer-home-ico-orange' },
+  { key: 'ai-order', label: '智能下单助手', emoji: '💬', type: 'tab', page: '/pages/buyer/cart', ico: 'buyer-home-ico-blue' },
+]
+// 运营配置的功能项没有固定底色，按索引循环现有 6 种图标底色（默认项自带 ico，不受影响）
+const ICO_CYCLE = [
+  'buyer-home-ico-green', 'buyer-home-ico-blue', 'buyer-home-ico-orange',
+  'buyer-home-ico-teal', 'buyer-home-ico-purple', 'buyer-home-ico-red',
+]
+const icoClassOf = (f, i) => f.ico || ICO_CYCLE[i % ICO_CYCLE.length]
+
+const bannerImages = ref([]) // 已映射成绝对地址的图片 URL 数组；空 → 回退文字横幅
+const features = ref(DEFAULT_FEATURES)
+const serviceHotline = ref('') // 空 → 不渲染客服入口
+
+const callService = () => uni.makePhoneCall({ phoneNumber: serviceHotline.value })
+const onFeature = (f) => {
+  if (f.type === 'tab') return goTab(f.page)
+  if (f.type === 'page' && f.page) return go(f.page)
+  return todo()
+}
 
 // ── 今日推荐 ──
 const recsLoading = ref(true)
@@ -184,10 +228,19 @@ const loadHomeContent = async () => {
     banner.value = data.deliveryNote || { title: '', subtitle: '' }
     platformNotice.value = data.notice || ''
     recs.value = data.recommendations || [] // 空数组 → 空态，不用假数据兜底
+    // 卡BA-2：滚动图走全路径映射（后台存 /uploads/xxx）；空/null → bannerImages 空 → 文字横幅回退
+    const imgs = (data.bannerImages && data.bannerImages.images) || []
+    bannerImages.value = imgs.filter((u) => typeof u === 'string' && u).map(fullUrl).filter(Boolean)
+    // 卡BA-2：常用功能（空/null → 默认 8 宫格）；客服电话（空/null → 不渲染入口）
+    features.value = Array.isArray(data.features) && data.features.length ? data.features : DEFAULT_FEATURES
+    serviceHotline.value = data.serviceHotline || ''
   } catch (e) {
     banner.value = { title: '', subtitle: '' }
     platformNotice.value = ''
     recs.value = [] // 失败显示空态，不用假数据兜底
+    bannerImages.value = [] // 失败回退文字横幅
+    features.value = DEFAULT_FEATURES // 失败回退默认 8 宫格
+    serviceHotline.value = '' // 失败不显示客服入口
   } finally {
     recsLoading.value = false
   }
@@ -243,9 +296,16 @@ onShow(async () => {
 }
 .buyer-home-reg-link { font-weight: 700; white-space: nowrap; }
 
-/* ── 搜索入口 ── */
-.buyer-home-search {
+/* ── 搜索入口（卡BA-2：搜索框与客服入口同一行，客服未配置时不占位） ── */
+.buyer-home-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 12px;
+}
+.buyer-home-search {
+  flex: 1;
+  min-width: 0;
   background: #fff;
   border-radius: 10px;
   padding: 10px 14px;
@@ -255,8 +315,24 @@ onShow(async () => {
   align-items: center;
   gap: 8px;
 }
+/* 客服电话入口：手机/座机均可，点击调起系统拨号 */
+.buyer-home-service {
+  flex-shrink: 0;
+  background: $brand-soft;
+  border: 1px solid $brand;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: $brand-deep;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.buyer-home-service:active { opacity: .7; }
 
 /* ── 配送横幅（绿渐变） ── */
+/* 卡BA-2：运营配了滚动图时用它替代文字横幅，圆角/外边距与文字横幅一致 */
+.buyer-home-banner-swiper { margin: 12px; border-radius: 12px; overflow: hidden; height: 140px; }
+.buyer-home-banner-img { width: 100%; height: 140px; display: block; }
 .buyer-home-banner {
   margin: 12px;
   border-radius: 12px;

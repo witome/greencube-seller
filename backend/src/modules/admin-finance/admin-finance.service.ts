@@ -345,21 +345,31 @@ export class AdminFinanceService {
   }
 
   // ────────────────────────────────────────
-  // 首页内容（2026-09-11 任务卡：首页三处接口化）
-  // 复用 platform_config KV 表，三个 key：
+  // 首页内容（2026-09-11 任务卡：首页三处接口化；卡BA-2 2026-10-01 增滚动图/宫格/客服电话）
+  // 复用 platform_config KV 表，五个 key：
   //   home_delivery_note   { title, subtitle }
   //   home_notice          { enabled, text }
   //   home_recommendations number[]（商品 id 有序数组）
+  //   home_banner_images   { enabled, images: string[] }（卡BA-2：横幅滚动图）
+  //   home_features        HomeFeature[]（卡BA-2：常用功能宫格）
+  //   service_hotline      string（卡BA-2：客服电话，空=不显示）
   // schema 零改动（PlatformConfig 即通用 KV 表）
   // ────────────────────────────────────────
+  private static readonly HOME_CONTENT_KEYS = [
+    'home_delivery_note', 'home_notice', 'home_recommendations', 'home_banner_images', 'home_features', 'service_hotline',
+  ]
+
   async getHomeContent() {
     const keys = await this.prisma.platformConfig.findMany({
-      where: { key: { in: ['home_delivery_note', 'home_notice', 'home_recommendations'] } },
+      where: { key: { in: AdminFinanceService.HOME_CONTENT_KEYS } },
     })
     const map = new Map(keys.map((k) => [k.key, k.value as any]))
     const note = map.get('home_delivery_note') || {}
     const notice = map.get('home_notice') || {}
     const recs = map.get('home_recommendations')
+    const banner = map.get('home_banner_images') || {}
+    const feats = map.get('home_features')
+    const hotline = map.get('service_hotline')
     return {
       deliveryNote: {
         title: typeof note.title === 'string' ? note.title : '',
@@ -370,6 +380,15 @@ export class AdminFinanceService {
         text: typeof notice.text === 'string' ? notice.text : '',
       },
       recommendationIds: Array.isArray(recs) ? recs.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [],
+      // 卡BA-2：滚动图 / 宫格 / 客服电话（未配置 → 空值，前台走默认）
+      bannerImages: {
+        enabled: !!banner.enabled,
+        images: Array.isArray(banner.images) ? banner.images.filter((u: unknown) => typeof u === 'string' && u) : [],
+      },
+      features: Array.isArray(feats)
+        ? feats.filter((f: any) => f && typeof f === 'object' && typeof f.key === 'string' && typeof f.label === 'string' && typeof f.page === 'string')
+        : [],
+      serviceHotline: typeof hotline === 'string' ? hotline : '',
     }
   }
 
@@ -377,6 +396,13 @@ export class AdminFinanceService {
     const noteValue = { title: dto.deliveryNote.title, subtitle: dto.deliveryNote.subtitle || '' }
     const noticeValue = { enabled: !!dto.notice.enabled, text: dto.notice.text || '' }
     const recValue = dto.recommendationIds
+    // 卡BA-2：可选项缺省 = 保持原值不覆盖（老调用方不传新字段时零影响）
+    const current = await this.getHomeContent()
+    const bannerValue = dto.bannerImages
+      ? { enabled: !!dto.bannerImages.enabled, images: dto.bannerImages.images || [] }
+      : { enabled: current.bannerImages.enabled, images: current.bannerImages.images }
+    const featsValue = dto.features !== undefined ? dto.features : current.features
+    const hotlineValue = dto.serviceHotline !== undefined ? dto.serviceHotline : current.serviceHotline
     await this.prisma.$transaction([
       this.prisma.platformConfig.upsert({
         where: { key: 'home_delivery_note' },
@@ -393,14 +419,29 @@ export class AdminFinanceService {
         update: { value: recValue },
         create: { key: 'home_recommendations', value: recValue },
       }),
+      this.prisma.platformConfig.upsert({
+        where: { key: 'home_banner_images' },
+        update: { value: bannerValue },
+        create: { key: 'home_banner_images', value: bannerValue },
+      }),
+      this.prisma.platformConfig.upsert({
+        where: { key: 'home_features' },
+        update: { value: featsValue },
+        create: { key: 'home_features', value: featsValue },
+      }),
+      this.prisma.platformConfig.upsert({
+        where: { key: 'service_hotline' },
+        update: { value: hotlineValue },
+        create: { key: 'service_hotline', value: hotlineValue },
+      }),
     ])
-    // 铁律 3：配置变更留痕（一次保存记一条，after 记三项合并值）
+    // 铁律 3：配置变更留痕（一次保存记一条，after 记各项合并值）
     await this.audit.log({
       operatorId: userId,
       action: 'UPDATE_HOME_CONTENT',
       entity: 'platform_config',
       entityId: 0,
-      after: { ...noteValue, ...noticeValue, recommendationIds: recValue },
+      after: { ...noteValue, ...noticeValue, recommendationIds: recValue, bannerImages: bannerValue, features: featsValue, serviceHotline: hotlineValue },
     })
     return this.getHomeContent()
   }

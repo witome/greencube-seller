@@ -361,7 +361,7 @@ export class BuyerService {
   async getHomeContent(userId: bigint) {
     const [keys, priceVisible] = await Promise.all([
       this.prisma.platformConfig.findMany({
-        where: { key: { in: ['home_delivery_note', 'home_notice', 'home_recommendations'] } },
+        where: { key: { in: ['home_delivery_note', 'home_notice', 'home_recommendations', 'home_banner_images', 'home_features', 'service_hotline'] } },
       }),
       this.priceVisibleFor(userId),
     ])
@@ -375,6 +375,25 @@ export class BuyerService {
 
     const noticeCfg = map.get('home_notice') || {}
     const notice = noticeCfg.enabled && typeof noticeCfg.text === 'string' && noticeCfg.text.trim() ? noticeCfg.text.trim() : null
+
+    // 卡BA-2：横幅滚动图（enabled 且 ≥1 张才下发；否则 null → 前台回退文字横幅）
+    const bannerCfg = map.get('home_banner_images') || {}
+    const bannerImages =
+      bannerCfg.enabled && Array.isArray(bannerCfg.images) && bannerCfg.images.some((u: unknown) => typeof u === 'string' && u)
+        ? { images: bannerCfg.images.filter((u: unknown) => typeof u === 'string' && u) }
+        : null
+
+    // 卡BA-2：常用功能宫格（null/空 → 前端用内置默认 8 宫格，与现状一致）
+    const featsRaw = map.get('home_features')
+    const features = Array.isArray(featsRaw)
+      ? featsRaw.filter(
+          (f: any) => f && typeof f === 'object' && typeof f.key === 'string' && typeof f.label === 'string' && typeof f.page === 'string',
+        )
+      : null
+
+    // 卡BA-2：客服电话（空 → null，首页不显示客服入口）
+    const hotlineRaw = map.get('service_hotline')
+    const serviceHotline = typeof hotlineRaw === 'string' && hotlineRaw.trim() ? hotlineRaw.trim() : null
 
     const rawIds = map.get('home_recommendations')
     const ids = (Array.isArray(rawIds) ? rawIds : [])
@@ -402,7 +421,7 @@ export class BuyerService {
         }
       })
 
-    return { deliveryNote, notice, recommendations, priceVisible }
+    return { deliveryNote, notice, recommendations, priceVisible, bannerImages, features, serviceHotline }
   }
 
   // ────────────────────────────────────────
