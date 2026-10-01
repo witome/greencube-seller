@@ -20,7 +20,7 @@
       </scroll-view>
 
       <!-- 商品流 -->
-      <scroll-view scroll-y class="goods-list" :style="{ paddingBottom: selectedCount > 0 ? '122px' : '70px' }" @scrolltolower="loadMore">
+      <scroll-view scroll-y class="goods-list" :style="{ paddingBottom: barVisible ? '122px' : '70px' }" @scrolltolower="loadMore">
         <view v-for="g in goodsList" :key="g.id" class="goods-card" @tap="goDetail(g.id)">
           <!-- 卡Z1：有封面显真图，无封面回退首字占位（不许白块/破图） -->
           <view class="gc-cover">
@@ -43,9 +43,11 @@
               <!-- 未选：＋按钮；已选：步进器（可加减/输入数字） -->
               <view v-if="!cartMap[g.id]" class="gc-add" @tap.stop="increase(g)">＋</view>
               <view v-else class="stepper" @tap.stop>
-                <view class="st-btn" @tap.stop="decrease(g)">−</view>
+                <!-- 卡AY：给 −/＋ 各加一个区分性 class（样式仍走 .st-btn，视觉零变化）——
+                     自测时才能精确点其中一个（automator 按选择器只命中第一个匹配元素） -->
+                <view class="st-btn st-minus" @tap.stop="decrease(g)">−</view>
                 <input class="st-input" type="number" :value="cartMap[g.id]" @input="onQtyInput(g, $event)" />
-                <view class="st-btn" @tap.stop="increase(g)">＋</view>
+                <view class="st-btn st-plus" @tap.stop="increase(g)">＋</view>
               </view>
             </view>
           </view>
@@ -59,8 +61,8 @@
       </scroll-view>
     </view>
 
-    <!-- 底部结算栏：有选中商品时显示 -->
-    <view v-if="selectedCount > 0" class="cart-bar">
+    <!-- 底部结算栏：有选中商品、或有未提交改动（含「减到 0」要删掉的行）时显示 -->
+    <view v-if="barVisible" class="cart-bar">
       <view class="cb-left">
         <view class="cb-count">已选 {{ selectedCount }} 件</view>
         <view class="cb-total">合计 <text class="cb-price">¥{{ totalAmount }}</text></view>
@@ -78,7 +80,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { buyerApi } from '@/api/modules'
 import { fullUrl } from '@/api/request'
 import { availableTimeWindows, dateStr, tomorrowStr } from '@/utils/time-window'
@@ -95,18 +97,78 @@ const total = ref(0)
 const loading = ref(false)
 const loadError = ref('')
 
-// 已选商品：productId -> 数量
+/**
+ * 已选商品：productId -> 数量。
+ *
+ * 🔒 卡AY（2026-10-01）口径变更：**列表 = 服务端草稿的镜像，服务端是唯一真源**。
+ *   以前它是纯本地「本次选择」态 —— 从不读服务端、提交后还被清空，
+ *   于是列表完全不认识已经加进草稿的商品（草稿里 黄瓜×5，列表上还是「未加入」的 ＋）。
+ *   现在：进页 / 切回来 / FAB 说完话都重新 `GET /cart` 整份回填（见 `syncFromServer`），
+ *   页内 ± / 手输仍然只改本地（保持「攒一批再提交」的手感，绝不每点一下打一次接口）。
+ */
 const cartMap = reactive({})
+
+/**
+ * 服务端草稿快照：productId -> { cartItemId, qty }（最近一次 `GET /cart` 的真值）。
+ * `cartItemId` 是「加入草稿」时按行分别提交的关键：
+ *   · 有它 → 这行已在草稿里 → 用 `PUT /cart/:id`（**覆盖**为目标数量，0 = 删除）；
+ *   · 没有 → 是新行 → 用 `POST /cart`（新增）。
+ * ⚠️ 绝不能对新老行一律用 `POST /cart`：后端 add 是 `qty: { increment }` 累加，
+ *    已存在的行会被重复累加（草稿 5 → 点一下 ＋ → 提交完变 11）。
+ */
+const serverCart = reactive({})
 
 const go = (url) => uni.navigateTo({ url })
 
-const selectedCount = computed(() => Object.keys(cartMap).length)
+const selectedCount = computed(() => Object.values(cartMap).filter((q) => Number(q) > 0).length)
+
+/**
+ * 有没有「已改但还没提交」的行（含**减到 0 = 要删掉**的行）。
+ * ⚠️ 结算栏的显示条件必须是「有选中 **或** 有未提交改动」：
+ *    草稿里本来有一条、用户把它一路减到 0 时 `selectedCount` 归零 ——
+ *    若只按 selectedCount 显示，结算栏会在**删除还没提交**时先消失，
+ *    这次删除就永远送不到服务端（返回本页又被回填回来，表现为「删不掉」）。
+ */
+const dirtyCount = computed(
+  () => Object.keys(serverCart).filter((k) => Number(cartMap[k] || 0) !== Number(serverCart[k].qty)).length,
+)
+const barVisible = computed(() => selectedCount.value > 0 || dirtyCount.value > 0)
 const totalAmount = computed(() => {
   return Object.entries(cartMap).reduce((s, [id, qty]) => {
     const g = goodsList.value.find((x) => x.id === Number(id))
-    return s + (g ? g.salePrice * qty : 0)
+    return s + (g && Number(qty) > 0 ? g.salePrice * Number(qty) : 0)
   }, 0).toFixed(2)
 })
+
+/**
+ * 用服务端清单**整份覆盖**本地镜像（不做合并 —— 合并只有服务端一处）。
+ * 两个 map 一起重建：`cartMap` 管页面显示，`serverCart` 管提交时认路。
+ */
+function applyServerList(list) {
+  Object.keys(cartMap).forEach((k) => delete cartMap[k])
+  Object.keys(serverCart).forEach((k) => delete serverCart[k])
+  ;(list || []).forEach((it) => {
+    const k = String(it.productId)
+    const qty = Number(it.qty) || 0
+    serverCart[k] = { cartItemId: it.cartItemId, qty }
+    if (qty > 0) cartMap[k] = qty
+  })
+}
+
+/**
+ * 拉服务端草稿回填本地（卡AY 的「唯一真源」通道）。
+ * ⚠️ 失败必须兜住：草稿拉不到**不许**影响商品列表本身（与 `loadGoods` 一个兜底风格）。
+ * @returns {Promise<boolean>} 是否拉到了（false = 本次失败，本地镜像保持原样）
+ */
+const syncFromServer = async () => {
+  try {
+    const data = await buyerApi.getCart()
+    applyServerList(data && data.list)
+    return true
+  } catch (e) {
+    return false
+  }
+}
 
 // ── 步进器 ──
 const increase = (g) => {
@@ -124,16 +186,57 @@ const onQtyInput = (g, e) => {
 }
 
 // ── 统一加购 / 立即下单 ──
+const submitting = ref(false)
+
+/**
+ * 「加入草稿」：按行分别提交（卡AY 的核心）。
+ *
+ *   · **草稿里已有的行**（serverCart 里有 cartItemId）→ `PUT /cart/:id`（覆盖为目标数量；
+ *     目标 0 = 该行从草稿删除，后端 update 的 qty=0 就是这个语义）；
+ *   · **草稿里没有的新行** → `POST /cart`（新增，累加语义无害，因为它本来就不存在）；
+ *   · 数量与服务端一致的行**跳过**（进页回填出来的行没被碰过就别白打一次接口）；
+ *   · 单行失败不中断其余行（request.js 已统一 toast），最后统一回读一次真值。
+ *
+ * ⚠️ 提交完成后**重新 GET /cart 回填**，**不再清空** cartMap ——
+ *    清空正是「刚加进草稿的商品，在列表上立刻又变回 ＋」的直接原因。
+ */
 const addAllToCart = async () => {
-  for (const [productId, qty] of Object.entries(cartMap)) {
-    await buyerApi.addToCart({ productId: Number(productId), qty })
+  if (submitting.value) return
+  submitting.value = true
+  let ok = true
+  try {
+    const ids = Array.from(new Set([...Object.keys(serverCart), ...Object.keys(cartMap)]))
+    for (const k of ids) {
+      const target = Number(cartMap[k] || 0)
+      const srv = serverCart[k]
+      try {
+        if (srv) {
+          if (target === Number(srv.qty)) continue // 没动过：不打接口
+          await buyerApi.updateCart(srv.cartItemId, target)
+        } else {
+          if (target <= 0) continue
+          await buyerApi.addToCart({ productId: Number(k), qty: target })
+        }
+      } catch (e) {
+        ok = false // 单行失败不中断其余行
+      }
+    }
+  } finally {
+    // 以服务端最新真值回填（不再清空），列表上的步进器继续显示草稿里的真实数量
+    await syncFromServer()
+    submitting.value = false
+    uni.$emit('cart-badge-refresh')
+    if (ok) uni.showToast({ title: '已加入草稿', icon: 'success' })
   }
-  uni.showToast({ title: '已加入草稿', icon: 'success' })
-  Object.keys(cartMap).forEach((k) => delete cartMap[k])
-  uni.$emit('cart-badge-refresh')
 }
 
 const buyAll = async () => {
+  // 卡AY：结算栏现在也会为「有未提交改动（如减到 0 待删除）」而显示，
+  //   此时「已选」可能为 0 —— 空 items 直接下单会被后端判参数错，先拦住。
+  if (!selectedCount.value) {
+    uni.showToast({ title: '请先选择商品', icon: 'none' })
+    return
+  }
   // 配送日期：当天有可选时段用当天，否则顺延次日；自动选最早可用时段（不弹窗）
   let deliveryDate = dateStr()
   let winList = availableTimeWindows(deliveryDate)
@@ -193,13 +296,43 @@ const goDetail = (id) => go(`/pages/buyer/goods-detail?id=${id}`)
 // 卡AA：价格不可见时点价格区 → 注册页
 const goRegister = () => go('/pages/buyer/register')
 
+/**
+ * 卡AY（2026-10-01）：FAB 说完话 → 本页**重拉服务端草稿**回填。
+ *
+ * 与本页自己的提交不同，AI 说话走的是 `PUT /cart/sync`（整份替换），写完之后
+ * 本页的 `cartMap` 完全不知情 —— 必须靠这条事件通道把列表拉回服务端真值。
+ * ⚠️ 只监听 `ai-draft-synced`，**不监听** `cart-badge-refresh`：
+ *   ① 本页提交成功后自己就在 finally 里回读过一次真值，再监听它等于每次提交多拉一次；
+ *   ② 别的页（草稿页 cart.vue、商品详情 goods-detail.vue）改完草稿后回到本页，
+ *      `onShow` 一定会回填一次 —— 已被覆盖，监听是重复请求；
+ *   ③ `cart-badge-refresh` 语义是「角标该刷新了」（tabBar 用），拿它当草稿刷新源会重复。
+ *      ⇒ 两条通道（onShow + ai-draft-synced）已覆盖全部入口，**不许出现「改了草稿列表不更新」**。
+ * ⚠️ `visible`：页面不在前台时不拉（回前台 onShow 会整体回填一次，不会漏）。
+ */
+const visible = ref(false)
+const onDraftSynced = async () => {
+  if (!visible.value) return
+  await syncFromServer()
+}
+
 onMounted(() => { loadCategories(); loadGoods() })
+// ⚠️ 注册一次即可；页面反复进出会重复注册 → 一次事件触发 N 遍回读，故 onUnload 配对 $off
+uni.$on('ai-draft-synced', onDraftSynced)
+onUnload(() => {
+  visible.value = false
+  uni.$off('ai-draft-synced', onDraftSynced)
+})
+onHide(() => { visible.value = false })
+
 onShow(async () => {
+  visible.value = true
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
   // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
   if (await guardBuyerSuspended()) return
   // 上次加载失败（如后端不可达）时，回到本页自动补一次，避免一直卡在「加载中」
   if (loadError.value && !loading.value) loadGoods()
+  // 卡AY：进页 / 从别的页（草稿页、商品详情、下单页…）切回来 → 以服务端草稿为准回填
+  await syncFromServer()
 })
 </script>
 
