@@ -51,7 +51,7 @@ async function main() {
   const regPhone = '139' + String(ts).slice(-8)
   const reg = await call('POST', '/buyer/register', {
     shopName: '验收测试餐馆', contact: '测试员', phone: regPhone,
-    address: '验收路 ' + (ts % 100) + ' 号',
+    address: '验收路 ' + (ts % 100) + ' 号-' + ts, // 卡BL 补：地址带唯一后缀，避开「同址 30 天 3 联系人」限制
   }, bt)
   check('采购方注册成功', reg.code === 0 && reg.data.accountStatus === 1)
   const deny = await call('POST', '/order', { deliveryDate: '2026-09-20', timeWindow: 1, items: [{ productId: 1, qty: 5 }] }, bt)
@@ -92,7 +92,7 @@ async function main() {
   // ② 只改自己：A 的 token 传 targetId 也改不到 B（服务端按 token userId 取档案）
   const reg2Phone = '137' + String(ts).slice(-8)
   const buyer2login = await call('POST', '/auth/wx-login', { code: 'buyer2_' + ts })
-  const reg2 = await call('POST', '/buyer/register', { shopName: '验收B餐馆', contact: '乙方', phone: reg2Phone, address: '乙路 1 号' }, buyer2login.data.token)
+  const reg2 = await call('POST', '/buyer/register', { shopName: '验收B餐馆', contact: '乙方', phone: reg2Phone, address: '乙路 1 号-' + ts }, buyer2login.data.token) // 卡BL 补：地址带唯一后缀
   check('B 账号注册成功', reg2.code === 0 && reg2.data.accountStatus === 1)
   const found2 = await (async () => {
     const first = await call('GET', '/admin/buyers/pending?pageSize=50', null, at)
@@ -467,11 +467,11 @@ async function main() {
   // ④ 采购方注册撞号：同上双证（撞号时不得留下半成品 purchaser 记录）
   const pend0 = (await call('GET', '/admin/buyers/pending?pageSize=1', null, at)).data.total
   const buyRegTok = (await call('POST', '/auth/wx-login', { code: 'buyreg_' + ts })).data.token
-  const buyHit = await call('POST', '/buyer/register', { shopName: '撞号半成品检测餐馆', contact: '测试', phone: collidePhone, address: '撞号路 1 号' }, buyRegTok)
+  const buyHit = await call('POST', '/buyer/register', { shopName: '撞号半成品检测餐馆', contact: '测试', phone: collidePhone, address: '撞号路 1 号-' + ts }, buyRegTok) // 卡BL 补：地址带唯一后缀
   check('采购方注册·撞号被拒(3009)', buyHit.code === 3009)
   const pend1 = (await call('GET', '/admin/buyers/pending?pageSize=1', null, at)).data.total
   check('采购方注册·撞号无半成品(待审核总数不变)', pend1 === pend0, { pend0, pend1 })
-  const buyOk = await call('POST', '/buyer/register', { shopName: '#24验收餐馆', contact: '测试', phone: '134' + String(ts).slice(-8), address: '验收路 2 号' }, buyRegTok)
+  const buyOk = await call('POST', '/buyer/register', { shopName: '#24验收餐馆', contact: '测试', phone: '134' + String(ts).slice(-8), address: '验收路 2 号-' + ts }, buyRegTok) // 卡BL 补：地址带唯一后缀
   check('采购方注册·正确手机号成功(前置校验无误伤)', buyOk.code === 0 && buyOk.data.accountStatus === 1)
   check('采购方注册·成功后待审核总数+1', (await call('GET', '/admin/buyers/pending?pageSize=1', null, at)).data.total === pend1 + 1)
 
