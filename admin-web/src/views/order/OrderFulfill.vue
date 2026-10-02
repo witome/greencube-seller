@@ -33,6 +33,15 @@
         <div class="admin-fulfill-stat-num admin-fulfill-num-red">{{ markedCount }}</div>
         <div class="admin-fulfill-stat-lbl">已标记未收款</div>
       </div>
+      <!-- 卡BN-2（2026-10-02）：催办两个统计卡（阈值取不到 GET config 时不显示，不许硬编码） -->
+      <div v-if="notifyStatVisible" class="admin-fulfill-stat" :class="{ on: ackFilter === 'unackedTimeout' }" @click="filterByTimeout()">
+        <div class="admin-fulfill-stat-num admin-fulfill-num-red">{{ notifyTimeoutCount }}</div>
+        <div class="admin-fulfill-stat-lbl">超时未接单</div>
+      </div>
+      <div v-if="notifyStatVisible" class="admin-fulfill-stat">
+        <div class="admin-fulfill-stat-num">{{ notifyTodayCalls }}</div>
+        <div class="admin-fulfill-stat-lbl">今日自动拨打</div>
+      </div>
     </div>
 
     <!-- 已送达/客户称已付/已标记未收款 视图下的筛选：收款标记 + 送达日 + 只看未核销 -->
@@ -69,6 +78,8 @@
           <el-radio-group v-model="ackFilter" size="small">
             <el-radio-button value="all">全部</el-radio-button>
             <el-radio-button value="unacked">未接单</el-radio-button>
+            <!-- 卡BN-2（2026-10-02）：超时未接单（判据：status===30 && 有 ackAt=null 供应商 && 已超时分钟 ≥ 阈值；阈值取不到则不可选） -->
+            <el-radio-button value="unackedTimeout" :disabled="notifyThreshold == null">超时未接单</el-radio-button>
           </el-radio-group>
         </div>
       </template>
@@ -116,6 +127,17 @@
                 :class="{ unacked: !a.ackAt }"
               >
                 {{ a.supplierName }}：{{ a.ackAt ? `已接单 ${fmtHM(a.ackAt)}` : unackedLabel(row) }}
+              </div>
+            </template>
+            <span v-else style="color:#c0c4cc;">—</span>
+          </template>
+        </el-table-column>
+        <!-- 卡BN-2（2026-10-02）：催办列（供应商接单之后新增一列；数据来自 GET /admin/supplier-notify/list，不改 pendingList 接口） -->
+        <el-table-column label="催办" min-width="190">
+          <template #default="{ row }">
+            <template v-if="row.status === 30 && row.supplierAcks?.length">
+              <div v-for="a in row.supplierAcks" :key="'bn2-' + a.supplierId" class="notify-line" :class="{ unacked: !a.ackAt }">
+                {{ a.supplierName }}：{{ notifyCellText(row, a.supplierId) }}
               </div>
             </template>
             <span v-else style="color:#c0c4cc;">—</span>
@@ -291,6 +313,8 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+// 卡BN-2（2026-10-02）：单独再 import 一次 watch（不改上面既有 import 行，保证 0 删除）
+import { watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { orderAdminApi } from '../../api/modules'
@@ -546,6 +570,93 @@ onMounted(async () => {
   await load()
   await applyRouteQuery()
 })
+
+// ══════════════════════════════════════════════════════════
+// 卡BN-2（2026-10-02）：未接单电话催办 —— 催办列 + 两个统计卡 + 超时未接单筛选
+// 纯增量实现（改造文件删除行数=0，不改既有 filteredList / rowClassName / load 任何一行）。
+// 数据：额外拉 GET /admin/supplier-notify/list 与 /config（不改 pendingList 接口、不把催办数据塞进订单接口）。
+// ══════════════════════════════════════════════════════════
+import request from '../../api/request'
+
+const notifyConfig = ref(null)          // GET config（取阈值 / todayStats；取不到 → 两个统计卡不显示）
+const notifyThreshold = computed(() => notifyConfig.value?.thresholdMinutes ?? null)
+const notifyTodayCalls = computed(() => notifyConfig.value?.todayStats?.calls ?? 0)
+const notifyStatVisible = computed(() => notifyThreshold.value != null)
+const notifyMap = ref(new Map())        // Map<'orderId-supplierId', { remindCount, lastResult, nextAction }>
+
+// 催办行「结果」中文映射（与催单台/原型同口径）
+const NOTIFY_RESULT_TEXT = {
+  dry_run: '演练模式未真拨',
+  initiated: '已发起（等回执）',
+  connected: '已接通',
+  no_answer: '未接通',
+  failed: '拨打失败',
+  skipped_no_phone: '手机号为空',
+  skipped_ack_call_off: '供应商已关闭电话提醒',
+  skipped_quiet: '免打扰时段内',
+}
+const notifyResultText = (r) => (r == null ? '未拨打' : NOTIFY_RESULT_TEXT[r] || r)
+
+async function fetchNotifyData() {
+  try {
+    const listRes = await request.get('/admin/supplier-notify/list')
+    const map = new Map()
+    for (const r of listRes.rows || []) {
+      map.set(`${r.orderId}-${r.supplierId}`, {
+        remindCount: r.remindCount ?? 0,
+        lastResult: r.lastResult ?? null,
+        nextAction: r.nextAction,
+        minutesUnacked: r.minutesUnacked ?? 0,
+        ackAt: r.ackAt ?? null,
+      })
+    }
+    notifyMap.value = map
+  } catch (e) { /* 后端未合并/异常时催办列显示 —，不阻塞本页 */ }
+  try {
+    notifyConfig.value = await request.get('/admin/supplier-notify/config')
+  } catch (e) { /* 取不到 → 隐藏两个统计卡、超时筛选置灰 */ }
+}
+
+// 页面 onMounted 与每次刷新（load 完成即 loading true→false）后各拉一次催办数据
+watch(loading, (v) => {
+  if (!v) fetchNotifyData()
+})
+
+// 催办列单元格文案：`已自动拨打 n 次 · 结果`；该对（订单×供应商）无催办数据时显示 —
+function notifyCellText(row, supplierId) {
+  const info = notifyMap.value.get(`${row.orderId}-${supplierId}`)
+  if (!info) return '—'
+  return `已自动拨打 ${info.remindCount} 次 · ${notifyResultText(info.lastResult)}`
+}
+
+// ── 超时未接单统计卡 + 筛选判据（与任务书一致：status===30 && 存在 ackAt=null 的供应商 && 该供应商已超时分钟 ≥ 阈值；
+//    超时分钟口径与既有 unackedLabel 相同 = 当前时间 − 订单 createdAt）──
+function hasTimedOutUnacked(row) {
+  const threshold = notifyThreshold.value
+  if (threshold == null || row.status !== 30) return false
+  const created = row.createdAt ? new Date(row.createdAt) : null
+  if (!created || Number.isNaN(created.getTime())) return false
+  const minutes = Math.max(0, Math.floor((Date.now() - created.getTime()) / 60000))
+  return minutes >= threshold && (row.supplierAcks || []).some((a) => !a.ackAt)
+}
+const notifyTimeoutCount = computed(() => list.value.filter(hasTimedOutUnacked).length)
+
+// 点统计卡 = 切到超时未接单筛选（与「超时未接单」radio 同一状态）
+function filterByTimeout() {
+  if (notifyThreshold.value != null) ackFilter.value = 'unackedTimeout'
+}
+
+// 筛选动作：不改既有 filteredList（0 删除约束），借 rowClassName 是函数声明（可重绑定）的特性，
+// 在 **setup 期间就换装** 成包装版（首次行渲染即建立对 ackFilter/阈值的响应依赖，勾选项一变行类名即时重算），
+// 把「不满足超时判据」的行挂 bn2-hide-row 类整行隐藏（element-plus 2.7 固定列同行渲染，display:none 生效一致）；
+// 包装版内部原样调用原实现，原有筛选行为分毫不差。
+const __origRowClassName = rowClassName
+function bn2RowClassName(ctx) {
+  const orig = __origRowClassName(ctx)
+  const hide = ackFilter.value === 'unackedTimeout' && ctx?.row && !hasTimedOutUnacked(ctx.row)
+  return [orig, hide ? 'bn2-hide-row' : ''].filter(Boolean).join(' ')
+}
+rowClassName = bn2RowClassName
 </script>
 
 <style scoped>
@@ -738,5 +849,19 @@ onMounted(async () => {
     margin-left: 0;
     width: 100%;
   }
+}
+
+/* ── 卡BN-2（2026-10-02）：催办列 + 超时未接单筛选 ── */
+.notify-line {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.6;
+}
+.notify-line.unacked {
+  color: #e6a23c;
+}
+/* 超时未接单筛选激活时，把不满足判据的行整行隐藏（既有 rowClassName 原样保留在类名前段） */
+:deep(.bn2-hide-row) {
+  display: none;
 }
 </style>

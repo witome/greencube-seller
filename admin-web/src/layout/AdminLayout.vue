@@ -44,6 +44,10 @@
         <el-menu-item index="/order">
           <el-icon><Tickets /></el-icon><span>订单履约</span>
         </el-menu-item>
+        <!-- 卡BN-2（2026-10-02）：催单台（订单履约下方新增，其余菜单项不动） -->
+        <el-menu-item index="/reminder">
+          <el-icon><Phone /></el-icon><span>📞 催单台</span>
+        </el-menu-item>
         <el-menu-item index="/aftersale">
           <el-icon><Service /></el-icon><span>售后管理</span>
         </el-menu-item>

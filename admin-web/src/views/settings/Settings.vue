@@ -249,6 +249,57 @@
       </div>
     </el-card>
 
+    <!-- 卡BN-2（2026-10-02）：未接单催办设置（新增卡，既有卡片一律不动） -->
+    <el-card shadow="never" class="admin-settings-card">
+      <template #header>📞 未接单催办设置</template>
+      <div v-loading="notifyLoading">
+        <div class="admin-settings-row">
+          <span class="admin-settings-k">电话提醒总开关</span>
+          <el-switch v-model="notifyForm.enabled" />
+          <span class="admin-settings-unit">关掉=一通都不打，后台仍会提示你</span>
+        </div>
+        <div class="admin-settings-row" style="margin-top:12px;">
+          <span class="admin-settings-k">未接单判定阈值</span>
+          <el-input-number v-model="notifyForm.thresholdMinutes" :min="1" :max="1440" :step="1" :precision="0" size="small" />
+          <span class="admin-settings-unit">分钟（建议 1–60）。从下单时间起算</span>
+        </div>
+        <div class="admin-settings-row" style="margin-top:12px;">
+          <span class="admin-settings-k">第 2 通间隔</span>
+          <el-input-number v-model="notifyForm.secondGapMinutes" :min="1" :max="1440" :step="1" :precision="0" size="small" />
+          <span class="admin-settings-unit">分钟（从<b>上一次拨打</b>起算，不是从下单起算）</span>
+        </div>
+        <div class="admin-settings-row" style="margin-top:12px;">
+          <span class="admin-settings-k">最多拨打次数</span>
+          <el-input-number v-model="notifyForm.maxCalls" :min="0" :max="5" :step="1" :precision="0" size="small" />
+          <span class="admin-settings-unit">次。填 <b>0</b> = 只提醒运营、完全不打电话</span>
+        </div>
+        <div class="admin-settings-row" style="margin-top:12px;">
+          <span class="admin-settings-k">免打扰时段</span>
+          <el-time-select v-model="notifyForm.quietStart" start="00:00" end="23:30" step="00:30" size="small" style="width:110px" :disabled="!notifyForm.quietEnabled" />
+          <span class="admin-settings-unit">至</span>
+          <el-time-select v-model="notifyForm.quietEnd" start="00:00" end="23:30" step="00:30" size="small" style="width:110px" :disabled="!notifyForm.quietEnabled" />
+          <span class="admin-settings-unit">不拨打，只进后台列表</span>
+          <el-switch v-model="notifyForm.quietEnabled" style="margin-left:6px" />
+          <span class="admin-settings-unit">关闭后 24 小时都打</span>
+        </div>
+
+        <!-- 只读区：值来自 GET config（AK/密钥后端不回显） -->
+        <div class="notify-readonly">
+          <b>语音通道（只读 · 由我们配置）</b><br>
+          服务商：<b>阿里云语音服务</b>（公共模式 / 专属模式） · 显示号码：<b>{{ notifyConfig?.callerNumber || '未配置' }}</b>（专属号 · 号码固定 · 可回拨）<br>
+          语音模板 ID：<b>{{ notifyConfig?.templateId || '未配置' }}</b>（审核通过后不可改）<br>
+          计费：接通才计费，<b>0.11 元 / 通</b>（不满 1 分钟按 1 分钟）；未接通不计费；号码月租 35 元/月<br>
+          <span class="notify-launchat">⚠️ 只对 <b>{{ fmtLaunchAt }}</b> 之后创建的订单生效（历史订单一律不拨打）</span>
+        </div>
+
+        <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+          <el-button type="primary" size="small" :loading="savingNotify" @click="saveNotify">保存</el-button>
+          <el-button size="small" :loading="testingCall" @click="doTestCall">测试拨打（打给运营自己的手机）</el-button>
+          <span class="admin-settings-unit">保存后，正在等待的订单会按新设置生效；后台会记一条审计。</span>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 其他配置（暂未接入） -->
     <el-card shadow="never" class="admin-settings-card">
       <template #header>⚙️ 其他配置</template>
@@ -262,8 +313,12 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+// 卡BN-2：测试拨打弹窗需要 ElMessageBox（单独补一行 import，不改上面既有行）
+import { ElMessageBox } from 'element-plus'
 import { financeAdminApi, categoryAdminApi, goodsAdminApi } from '../../api/modules'
 import { compressFileToDataUri } from '../../utils/image-compress'
+// 卡BN-2（2026-10-02）：催办设置直接走冻结契约接口（不改 api/modules.js，遵守本卡只改 5 文件）
+import request from '../../api/request'
 
 const loading = ref(false)
 const globalRate = ref(5)
@@ -639,6 +694,114 @@ onMounted(() => {
   loadQr()
   loadHome()
 })
+
+// ── 卡BN-2（2026-10-02）：未接单催办设置卡（纯增量，不改任何既有逻辑） ──
+// 契约：GET/PUT /admin/supplier-notify/config；PUT body 为配置子集，launchAt 由后端管理（首次保存写入，之后不可改）
+const notifyLoading = ref(false)
+const savingNotify = ref(false)
+const testingCall = ref(false)
+const notifyConfig = ref(null)
+const notifyForm = reactive({
+  enabled: false,
+  thresholdMinutes: 5,
+  secondGapMinutes: 10,
+  maxCalls: 2,
+  quietEnabled: true,
+  quietStart: '22:00',
+  quietEnd: '05:00',
+})
+
+const fmtLaunchAt = computed(() => {
+  const iso = notifyConfig.value?.launchAt
+  if (!iso) return '（未定）'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+})
+
+async function loadNotify() {
+  notifyLoading.value = true
+  try {
+    const cfg = await request.get('/admin/supplier-notify/config')
+    notifyConfig.value = cfg
+    notifyForm.enabled = !!cfg.enabled
+    notifyForm.thresholdMinutes = cfg.thresholdMinutes ?? 5
+    notifyForm.secondGapMinutes = cfg.secondGapMinutes ?? 10
+    notifyForm.maxCalls = cfg.maxCalls ?? 2
+    notifyForm.quietEnabled = !!cfg.quietEnabled
+    notifyForm.quietStart = cfg.quietStart || '22:00'
+    notifyForm.quietEnd = cfg.quietEnd || '05:00'
+  } catch (e) { /* 已提示 */ } finally {
+    notifyLoading.value = false
+  }
+}
+
+// 保存前前端基本校验（与后端 validateReminderConfig 同口径）；后端仍会校验，400 的 msg 由 request 拦截器原样 toast
+const HH_MM_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+function validateNotify() {
+  const intIn = (v, min, max, name) => {
+    if (!Number.isInteger(v) || v < min || v > max) {
+      ElMessage.warning(`${name} 必须为 ${min}–${max} 的整数`)
+      return false
+    }
+    return true
+  }
+  if (!intIn(notifyForm.thresholdMinutes, 1, 1440, '未接单判定阈值')) return false
+  if (!intIn(notifyForm.secondGapMinutes, 1, 1440, '第 2 通间隔')) return false
+  if (!intIn(notifyForm.maxCalls, 0, 5, '最多拨打次数')) return false
+  if (!HH_MM_RE.test(notifyForm.quietStart || '') || !HH_MM_RE.test(notifyForm.quietEnd || '')) {
+    ElMessage.warning('免打扰时段必须为 HH:mm')
+    return false
+  }
+  return true
+}
+
+async function saveNotify() {
+  if (!validateNotify()) return
+  savingNotify.value = true
+  try {
+    notifyConfig.value = await request.put('/admin/supplier-notify/config', {
+      enabled: notifyForm.enabled,
+      thresholdMinutes: notifyForm.thresholdMinutes,
+      secondGapMinutes: notifyForm.secondGapMinutes,
+      maxCalls: notifyForm.maxCalls,
+      quietEnabled: notifyForm.quietEnabled,
+      quietStart: notifyForm.quietStart,
+      quietEnd: notifyForm.quietEnd,
+    })
+    ElMessage.success('已保存，正在等待的订单会按新设置生效')
+  } catch (e) { /* 已提示（400 的 msg 原样 toast） */ } finally {
+    savingNotify.value = false
+  }
+}
+
+// 测试拨打：弹输入框填手机号 → POST test-call（演练模式下后端 dry-run，不会真拨）
+async function doTestCall() {
+  let phone = ''
+  try {
+    const r = await ElMessageBox.prompt('输入运营自己的手机号，系统拨一通测试电话', '测试拨打', {
+      confirmButtonText: '拨打',
+      cancelButtonText: '取消',
+      inputPattern: /^1\d{10}$/,
+      inputErrorMessage: 'phone 必须为 11 位手机号',
+    })
+    phone = (r.value || '').trim()
+  } catch (e) {
+    return
+  }
+  testingCall.value = true
+  try {
+    const r = await request.post('/admin/supplier-notify/test-call', { phone })
+    if (r.dryRun || r.result === 'dry_run') ElMessage.warning('演练模式：未真拨（已记审计）')
+    else ElMessage.success(`测试电话已发起（${r.result || '已发起'}）`)
+  } catch (e) { /* 已提示 */ } finally {
+    testingCall.value = false
+  }
+}
+
+// 与既有 onMounted 并列注册（Vue 3 支持多次注册），不改上面已有的挂载逻辑
+onMounted(loadNotify)
 </script>
 
 <style scoped>
@@ -745,5 +908,26 @@ onMounted(() => {
     flex: 0 0 auto;
     min-width: 96px;
   }
+}
+
+/* ── 卡BN-2：未接单催办设置卡 · 语音通道只读区 ── */
+.notify-readonly {
+  margin-top: 14px;
+  background: #fafbfc;
+  border: 1px solid #eef1f4;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.9;
+}
+.notify-readonly b {
+  color: #1f2329;
+}
+.notify-launchat {
+  color: #c87000;
+}
+.notify-launchat b {
+  color: #c87000;
 }
 </style>
