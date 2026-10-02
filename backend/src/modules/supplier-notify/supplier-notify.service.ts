@@ -333,9 +333,11 @@ export class SupplierNotifyService {
     }
   }
 
-  /** 手动触发一次扫描（自测/取证用），返回判定明细统计 */
+  /** 手动触发一次扫描（自测/取证用），返回判定明细统计；卡BO：与 cron 一致先查回执再扫描，新增 receipts 统计字段（原有字段不动） */
   async scanOnce() {
-    return this.runScan()
+    const receipts = await this.updateReceipts()
+    const scan = await this.runScan()
+    return { ...scan, receipts }
   }
 
   /**
@@ -455,28 +457,43 @@ export class SupplierNotifyService {
   /**
    * 回执查询：result='initiated' 且发起已过 90 秒的台账 → QueryCallDetailByCallId →
    * 更新为 connected / no_answer / failed（字段名以实测为准，查询失败保留 initiated 不丢台账）。
+   *
+   * 卡BO（2026-10-02）窗口黑洞修复：查询层用 JSON 路径条件过滤 result='initiated'
+   * （Prisma 5.22 + MySQL 8 支持 after: { path, equals }），已完结的老行不再占满 take:200
+   * 的窗口、把新 initiated 行挤出查询（旧实现取「48h 内最早 200 条」，拨打密度上来后
+   * 新台账永远拿不到回执）。代码侧保留 result/callId 判定作为最终口径（callId 缺失
+   * 无法用 path 条件表达）。dry-run（四值未配置）下 queryCallDetail 返回空对象 →
+   * 只统计、不写库，零副作用。返回统计供 scan-once 透出（cron 忽略返回值，行为不变）。
    */
-  private async updateReceipts() {
-    if (!isVmsConfigured()) return // dry-run 环境没有真拨，无需回执
+  private async updateReceipts(): Promise<{ windowRows: number; initiatedSeen: number; queried: number; updated: number }> {
     const cutoff = new Date(Date.now() - 90 * 1000)
     const rows = await this.prisma.auditLog.findMany({
-      where: { action: 'SUPPLIER_NOTIFY_CALL', createdAt: { lt: cutoff, gte: new Date(Date.now() - 48 * 3600 * 1000) } },
+      where: {
+        action: 'SUPPLIER_NOTIFY_CALL',
+        createdAt: { lt: cutoff, gte: new Date(Date.now() - 48 * 3600 * 1000) },
+        after: { path: '$.result', equals: 'initiated' }, // 卡BO：查询层只取未完结行，老行不再挡窗口
+      },
       orderBy: { id: 'asc' },
       take: 200,
     })
+    const stats = { windowRows: rows.length, initiatedSeen: 0, queried: 0, updated: 0 }
     for (const row of rows) {
       const a = row.after as any
-      if (a?.result !== 'initiated' || !a?.callId) continue
+      if (a?.result !== 'initiated' || !a?.callId) continue // 最终口径：未完结 = initiated 且有 callId
+      stats.initiatedSeen++
       const at = a.at ? new Date(a.at) : row.createdAt
       // QueryDate = 发起日（上海时区 yyyyMMdd）
       const ymd = at.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace(/-/g, '')
-      const detail = await queryCallDetail(a.callId, ymd)
+      const detail = await queryCallDetail(a.callId, ymd) // dry-run 环境返回 {}（不发请求、零副作用）
+      stats.queried++
       if (detail.result) {
         await this.prisma.auditLog.update({
           where: { id: row.id },
           data: { after: { ...a, result: detail.result, statusCode: detail.statusCode ?? null, receiptCheckedAt: new Date().toISOString() } },
         })
+        stats.updated++
       }
     }
+    return stats
   }
 }
