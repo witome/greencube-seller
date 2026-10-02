@@ -72,9 +72,15 @@
           <el-input v-model="form.name" placeholder="如：大白菜" />
         </el-form-item>
         <el-form-item label="分类" required>
-          <el-select v-model="form.categoryId" placeholder="选择一级分类" style="width: 100%">
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
+          <div class="gm-cat-tags">
+            <span
+              v-for="c in categories"
+              :key="c.id"
+              class="gm-cat-tag"
+              :class="{ on: form.categoryId === c.id }"
+              @click="form.categoryId = c.id"
+            >{{ c.name }}</span>
+          </div>
         </el-form-item>
         <el-form-item label="计量方式" required>
           <el-radio-group v-model="form.weighType">
@@ -262,6 +268,25 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+.gm-cat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gm-cat-tag {
+  padding: 5px 14px;
+  border-radius: 14px;
+  background: #f0f2f5;
+  font-size: 13px;
+  color: #606266;
+  cursor: pointer;
+  line-height: 20px;
+}
+.gm-cat-tag.on {
+  background: #e6f7ef;
+  color: #00b96b;
+  font-weight: 600;
 }
 .gm-tip {
   color: #909399;

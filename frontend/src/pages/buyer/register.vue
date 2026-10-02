@@ -16,7 +16,7 @@
       </view>
     </view>
 
-    <view class="notice" v-if="role === 'purchaser'">⚠️ 同一手机号 30 天内最多注册 2 次；同一营业执照仅可注册 1 次</view>
+    <view class="notice" v-if="role === 'purchaser'">⚠️ 同一手机号 30 天内最多注册 2 次；同一收货地址 30 天内最多 3 个联系人</view>
     <view class="notice" v-else>⚠️ 提交后需运营审核，审核通过方可{{ role === 'supplier' ? '接单供货' : '接单配送' }}</view>
 
     <!-- ② 采购方（餐馆）表单 -->
@@ -43,10 +43,6 @@
         <view class="chip-group">
           <view v-for="w in windows" :key="w" :class="['chip', { on: form.deliveryWindows.includes(w) }]" @tap="toggleWindow(w)">{{ w }}</view>
         </view>
-      </view>
-      <view class="form-row">
-        <view class="fr-l">营业执照号</view>
-        <input class="ipt" v-model="form.businessLicenseNo" placeholder="选填，统一社会信用代码" />
       </view>
     </view>
 
@@ -204,7 +200,9 @@ const submit = async () => {
   submitting.value = true
   try {
     if (role.value === 'purchaser') {
-      await buyerApi.register(form.value)
+      // 卡BK：采购方不再提交营业执照号（后端字段保留不动）
+      const { businessLicenseNo, ...purchaserForm } = form.value
+      await buyerApi.register(purchaserForm)
     } else if (role.value === 'supplier') {
       await registerApi.supplier({
         stallName: form.value.stallName,

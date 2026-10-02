@@ -82,8 +82,10 @@ onLoad(async (opts) => {
 </script>
 
 <style lang="scss" scoped>
-.gd-cover { height: 200px; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 72px; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
-.gd-cover-img { width: 100%; height: 200px; display: block; }
+.gd-cover { position: relative; width: 100%; padding-top: 100%; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 72px; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.gd-cover-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* 容器改 padding 撑高后内容盒为 0，兜底首字改绝对定位居中 */
+.gd-cover text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .gd-name { font-size: 18px; font-weight: 700; color: $text-title; }
 .gd-price { color: #fa5151; font-size: 22px; font-weight: 700; margin: 8px 0; }
 /* 卡AA：价格脱敏态（¥** + 引导注册灰字，点击整块跳注册页） */

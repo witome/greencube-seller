@@ -9,8 +9,8 @@
     </view>
 
     <template v-else>
-      <!-- ① 账号状态提示条 -->
-      <view v-if="profile" :class="['buyer-mine-status', 'buyer-mine-status-' + statusClass]">
+      <!-- ① 账号状态提示条（正常态不显示） -->
+      <view v-if="profile && accountStatus !== 2" :class="['buyer-mine-status', 'buyer-mine-status-' + statusClass]">
         <text class="buyer-mine-status-ico">{{ statusIcon }}</text>
         <view class="buyer-mine-status-main">
           <text class="buyer-mine-status-b">{{ statusTitle }}</text>
@@ -56,15 +56,7 @@
           <view class="buyer-mine-menu-ico buyer-mine-ico-green">🏪</view>
           <view class="buyer-mine-menu-main">
             <view class="buyer-mine-menu-t">餐馆资料</view>
-            <view class="buyer-mine-menu-d">营业执照 · 食品经营许可证</view>
-          </view>
-          <view class="buyer-mine-arrow">›</view>
-        </view>
-        <view class="buyer-mine-menu-item" @tap="go('/pages/buyer/profile-edit')">
-          <view class="buyer-mine-menu-ico buyer-mine-ico-blue">📍</view>
-          <view class="buyer-mine-menu-main">
-            <view class="buyer-mine-menu-t">收货地址</view>
-            <view class="buyer-mine-menu-d">配送时段 07:00-09:00</view>
+            <view class="buyer-mine-menu-d">店名 · 收货地址 · 配送时段</view>
           </view>
           <view class="buyer-mine-arrow">›</view>
         </view>

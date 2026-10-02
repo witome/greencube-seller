@@ -1,6 +1,6 @@
 <template>
   <view class="bpe-page">
-    <!-- ① 餐馆资料（原型：🏪 餐馆资料 · 营业执照/食品经营许可证） -->
+    <!-- ① 餐馆资料（卡BK：合并收货地址为一张卡，删只读资质行） -->
     <view class="bpe-card">
       <view class="bpe-card-title">🏪 餐馆资料</view>
 
@@ -16,28 +16,10 @@
         <text class="bpe-label">电话</text>
         <input class="bpe-input" v-model="form.phone" type="number" placeholder="11 位手机号" maxlength="11" />
       </view>
-
-      <!-- 资质属准入材料：只读展示，必须运营审核修改 -->
-      <view class="bpe-field bpe-field-readonly">
-        <text class="bpe-label">营业执照号</text>
-        <text class="bpe-readonly-value">{{ form.businessLicenseNo || '未填写' }}</text>
-      </view>
-      <view class="bpe-field bpe-field-readonly">
-        <text class="bpe-label">食品经营许可证</text>
-        <text class="bpe-readonly-value">{{ form.permitImg ? '已上传' : '未上传' }}</text>
-      </view>
-      <view class="bpe-readonly-tip">执照与资质图片需联系运营修改（准入审核材料）</view>
-    </view>
-
-    <!-- ② 收货地址（原型：📍 收货地址 · 1 个地址 · 配送时段 07:00-09:00） -->
-    <view class="bpe-card">
-      <view class="bpe-card-title">📍 收货地址</view>
-
       <view class="bpe-field">
         <text class="bpe-label">收货地址</text>
         <textarea class="bpe-textarea" v-model="form.address" placeholder="请输入详细收货地址" maxlength="255" :auto-height="true" />
       </view>
-
       <view class="bpe-field">
         <text class="bpe-label">配送时段</text>
         <view class="bpe-windows">
@@ -72,8 +54,6 @@ const form = ref({
   contact: '',
   phone: '',
   address: '',
-  businessLicenseNo: '', // 只读
-  permitImg: '',         // 只读
 })
 // 预设配送时段（与订单 timeWindow 1/2/3 对应）；DB 里已有非预设值时保留显示、不强制覆盖
 const windowOptions = ['早 05-08', '中 10-13', '晚 16-19']
@@ -99,8 +79,6 @@ const load = async () => {
       contact: d.contact || '',
       phone: d.phone || '',
       address: d.address || '',
-      businessLicenseNo: d.businessLicenseNo || '',
-      permitImg: d.permitImg || '',
     }
     const wins = Array.isArray(d.deliveryWindows) ? d.deliveryWindows : []
     initialWindows.value = wins
@@ -143,7 +121,7 @@ const save = async () => {
 }
 
 onLoad(() => {
-  uni.setNavigationBarTitle({ title: '餐馆资料与收货地址' })
+  uni.setNavigationBarTitle({ title: '餐馆资料' })
   load()
 })
 </script>

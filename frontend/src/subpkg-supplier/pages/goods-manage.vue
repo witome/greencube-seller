@@ -35,9 +35,15 @@
       <view class="form-row">
         <view class="fr-l">商品分类</view>
         <view class="fr-r">
-          <picker v-if="catNames.length" :range="catNames" @change="onCatChange">
-            <view class="picker-val">{{ form.categoryName || '请选择分类' }} ▾</view>
-          </picker>
+          <view v-if="catNames.length" class="chip-group">
+            <view
+              v-for="c in cats"
+              :key="c.id"
+              class="chip"
+              :class="{ on: form.categoryId === c.id }"
+              @tap="selectCat(c)"
+            >{{ c.name }}</view>
+          </view>
           <view v-else class="muted">暂无授权分类，请联系运营开通</view>
         </view>
       </view>
@@ -508,9 +514,7 @@ async function loadCats() {
   } catch (e) { /* 忽略，无授权分类时提交会校验 */ }
 }
 
-function onCatChange(e) {
-  const idx = Number(e.detail.value)
-  const c = cats.value[idx]
+function selectCat(c) {
   if (c) {
     form.value.categoryId = c.id
     form.value.categoryName = c.name
