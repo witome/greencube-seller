@@ -85,7 +85,7 @@ async function call(m, p, b, t) {
 
   const l1 = await call('POST', '/auth/wx-login', { code: `fallback_${ts}` })
   await call('POST', '/buyer/register', {
-    shopName: `降级店${ts}`, contact: 'd', phone: '13' + String(ts).slice(-8) + '2', address: 'd',
+    shopName: `降级店${ts}`, contact: 'd', phone: '13' + String(ts).slice(-8) + '2', address: 'd-' + ts, // 卡BL：地址带唯一后缀
   }, l1.data.token)
   const bt = (await call('POST', '/auth/wx-login', { code: `fallback_${ts}` })).data.token
   await call('POST', '/buyer/demand/report', { items: [{ rawText: dish }], source: 1 }, bt)

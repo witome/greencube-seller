@@ -59,7 +59,7 @@ const buyerToken = async () => {
   const phone = '139' + String(ts).slice(-8)
   const reg = await call('/buyer/register', {
     method: 'POST', token: bt,
-    body: { shopName: '卡AQ自测餐馆', contact: '自测员', phone, address: '自测路 ' + (ts % 100) + ' 号' },
+    body: { shopName: '卡AQ自测餐馆', contact: '自测员', phone, address: '自测路 ' + (ts % 100) + ' 号-' + ts }, // 卡BL：地址带唯一后缀
   })
   if (!reg.json || reg.json.code !== 0) abort('采购方注册失败：' + reg.text.slice(0, 200))
 

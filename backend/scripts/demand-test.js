@@ -87,7 +87,7 @@ async function newBuyer(tag) {
         shopName: `需求验收${buyerSeq}号店`,
         contact: `验收${buyerSeq}`,
         phone,
-        address: `验收路${buyerSeq}号`,
+        address: `验收路${buyerSeq}号-${ts}`, // 卡BL：地址带唯一后缀，避开「同址 30 天 3 联系人」限制
       },
       token,
     )

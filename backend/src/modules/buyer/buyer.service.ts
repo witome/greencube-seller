@@ -30,6 +30,30 @@ export class BuyerService {
     })
     if (phoneCount >= 2) throw new BizException(ErrorCode.PHONE_REGIST_TOO_OFTEN)
 
+    // ①b 收货地址维度（卡BL 2026-10-02）：同一收货地址 30 天内最多 3 个联系人 —— 把注册页文案落到后端。
+    // 归一化口径：去掉**首尾与中间所有空白**（半角空格/制表符/换行 + 全角空格 U+3000）后比对，
+    //   防「验收路 2 号」vs「验收路2号」绕过；**不做**门牌号/同义词归一（「1 号」与「一号」仍是两个地址）。
+    // 窗口口径：registeredAt >= now-30d（与①手机号校验同源，UTC 口径）。
+    // 计数口径：窗口内该地址**不同 phone 的条数**（Set 去重；不限 account_status —— 已驳回/停用/已注销的
+    //   注册行为本身也要拦；address 为空的行不参与，天然排除注销匿名化后 address='' 的历史行）。
+    // 判据：已存在 ≥3 个不同手机号 → 第 4 个拒绝（「最多 3 个联系人」）。
+    // 代价：purchaser.address 无索引，本查询全表扫（现 792 行，毫秒级）；上万行再考虑归一化列 + 索引（本卡不加）。
+    // 只拦新注册：不改任何既有采购方数据；运营后台改地址、采购方自助改地址均不受此校验约束。
+    if (dto.address) {
+      const normAddr = (s: string) => s.replace(/[\s\u3000]/g, '')
+      const target = normAddr(dto.address)
+      const recent = await this.prisma.purchaser.findMany({
+        where: { registeredAt: { gte: thirtyDaysAgo } },
+        select: { address: true, phone: true },
+      })
+      const sameAddrPhones = new Set(
+        recent
+          .filter((p) => p.address && normAddr(p.address) === target && p.phone)
+          .map((p) => p.phone),
+      )
+      if (sameAddrPhones.size >= 3) throw new BizException(ErrorCode.ADDRESS_CONTACT_TOO_MANY)
+    }
+
     // ② 营业执照唯一校验
     if (dto.businessLicenseNo) {
       const dup = await this.prisma.purchaser.findUnique({

@@ -193,7 +193,7 @@ async function main() {
     const first = await call('POST', '/auth/wx-login', { code: `${tag}_${ts}` })
     const token0 = first.json?.data?.token
     const phone = '139' + String(crypto.randomInt(10_000_000, 99_999_999))
-    await call('POST', '/buyer/register', { shopName: `${tag}自测店${ts}`, contact: '自测员', phone, address: '自测路 1 号' }, token0)
+    await call('POST', '/buyer/register', { shopName: `${tag}自测店${ts}`, contact: '自测员', phone, address: '自测路 1 号-' + ts }, token0) // 卡BL：地址带唯一后缀，避开「同址 30 天 3 联系人」限制
     const admin0 = await call('POST', '/auth/wx-login', { code: 'admin' })
     const adminToken0 = admin0.json?.data?.token
     let hit = null

@@ -22,6 +22,7 @@ export const ErrorCode = {
   APPEAL_LIMIT: 3007,         // 30 天内仅可申诉 1 次
   PRODUCT_OFF_SHELF: 3008,    // 已下架商品不可发起变更
   PHONE_ALREADY_USED: 3009,   // 该手机号已被其他账号使用（撞 user.phone 唯一约束，2026-09-12 补）
+  ADDRESS_CONTACT_TOO_MANY: 3010, // 卡BL（2026-10-02）：同一收货地址 30 天内最多 3 个联系人（任务书原定 3007，已被 APPEAL_LIMIT 占用 → 顺延取 3010）
 
   // 4xxx 资源不存在
   NOT_FOUND: 4001,
@@ -44,6 +45,7 @@ export const ErrorMessage: Record<number, string> = {
   [ErrorCode.APPEAL_LIMIT]: '30 天内仅可申诉 1 次',
   [ErrorCode.PRODUCT_OFF_SHELF]: '已下架商品不可发起变更',
   [ErrorCode.PHONE_ALREADY_USED]: '该手机号已被其他账号使用',
+  [ErrorCode.ADDRESS_CONTACT_TOO_MANY]: '该收货地址近期注册联系人过多，请到店或联系运营协助开通',
   [ErrorCode.NOT_FOUND]: '资源不存在',
   [ErrorCode.INTERNAL_ERROR]: '服务异常，请稍后重试',
 }

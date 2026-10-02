@@ -180,7 +180,7 @@ async function main() {
   const reg = await call(
     'POST',
     '/buyer/register',
-    { shopName: '卡AH自测餐馆', contact: '自测', phone: buyerPhone, address: '自测路 1 号' },
+    { shopName: '卡AH自测餐馆', contact: '自测', phone: buyerPhone, address: '自测路 1 号-' + ts }, // 卡BL：地址带唯一后缀
     buyerLogin.data.token,
   )
   if (reg.code !== 0) abort('采购方注册失败：' + JSON.stringify(reg))

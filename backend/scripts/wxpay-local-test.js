@@ -153,7 +153,7 @@ async function main() {
   check('运营登录', adminLogin.json?.code === 0 && adminLogin.json?.data?.currentRole === 'admin')
 
   const regPhone = '137' + String(ts).slice(-8)
-  await call('POST', '/buyer/register', { shopName: '微信支付自测店', contact: '自测员', phone: regPhone, address: '自测路 1 号' }, token)
+  await call('POST', '/buyer/register', { shopName: '微信支付自测店', contact: '自测员', phone: regPhone, address: '自测路 1 号-' + ts }, token) // 卡BL：地址带唯一后缀
   const found = await (async () => {
     let hit = null
     for (let p = 1; p <= 5 && !hit; p++) {

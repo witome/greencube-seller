@@ -75,7 +75,7 @@ async function main() {
       shopName: `降级验收店${ts}`,
       contact: '降级',
       phone: '13' + String(ts).slice(-8) + '7',
-      address: '降级路7号',
+      address: '降级路7号-' + ts, // 卡BL：地址带唯一后缀
     },
     bt,
   )

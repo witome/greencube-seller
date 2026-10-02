@@ -257,7 +257,7 @@ const main = async () => {
   const NEW_PHONE = '137' + String(Date.now()).slice(-8)
   r = await call('/buyer/register', {
     method: 'POST', token: reToken,
-    body: { shopName: '重开餐馆', contact: '王五', phone: NEW_PHONE, address: '新地址1号', businessLicenseNo: `ACRELIC${SUFFIX}` },
+    body: { shopName: '重开餐馆', contact: '王五', phone: NEW_PHONE, address: '新地址1号-' + SUFFIX, businessLicenseNo: `ACRELIC${SUFFIX}` }, // 卡BL：地址带唯一后缀
   })
   console.log('  ' + JSON.stringify(r.body))
   check('6.2 重新注册成功（code=0）', r.body.code === 0, r.body)
