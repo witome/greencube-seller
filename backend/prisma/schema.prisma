@@ -147,6 +147,8 @@ model Supplier {
   address   String?  @map("address") @db.VarChar(255)
   /// 0 待审核 / 1 合作中 / 2 停合作
   status    Int      @default(0) @db.TinyInt
+  /// 卡BN-1（2026-10-02）：电话催办开关（0 = 供应商自己关了，不拨打）—— 默认开
+  ackCallEnabled Int @default(1) @map("ack_call_enabled") @db.TinyInt
   /// 营业执照、检疫证等，⚠️ 含有效期字段，临期预警
   qualification Json?
   createdAt DateTime @default(now()) @map("created_at")
@@ -431,6 +433,8 @@ model OrderSupplierAck {
   remindCount  Int       @default(0) @map("remind_count")
   /// 预留：最近一次提醒时间（本卡只建不用）
   lastRemindAt DateTime? @map("last_remind_at")
+  /// 卡BN-1（2026-10-02）：运营点了「已处理」→ 不再自动拨打
+  remindStopped Int @default(0) @map("remind_stopped") @db.TinyInt
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 

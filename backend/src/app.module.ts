@@ -33,6 +33,7 @@ import { UploadModule } from './modules/upload/upload.module'
 import { PaymentModule } from './modules/payment/payment.module'
 import { DemandModule } from './modules/demand/demand.module'
 import { WxModule } from './modules/wx/wx.module'
+import { SupplierNotifyModule } from './modules/supplier-notify/supplier-notify.module'
 
 @Module({
   imports: [
@@ -71,6 +72,8 @@ import { WxModule } from './modules/wx/wx.module'
     WxModule,
     // 采购需求登记 + 到货主动通知（2026-09-25）
     DemandModule,
+    // 未接单电话催办（卡BN-1 2026-10-02）
+    SupplierNotifyModule,
   ],
   providers: [
     // 全局统一响应包装
