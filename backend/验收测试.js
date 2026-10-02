@@ -799,6 +799,60 @@ async function main() {
     }
   }
 
+  // ── 收尾：回收本轮自己建的账号（2026-10-02 卡BP 复核期新增）──
+  // 为什么加：此前每跑一轮就用新时间戳注册一批账号（`#24验收档口` 供应商 / 验收采购方 /
+  //   验收配送员），从不回收 —— 实测累积到 169 个测试供应商、553 个测试采购方，买家侧
+  //   页面里也能看见测试分类与商品。大辉 2026-10-02 拍板「改验收测试.js 收尾回收自己的账号」，
+  //   与 2026-09-21「测试数据保留不清理」的旧口径相比，此处按新口径执行。
+  // 判据：本轮所有 wx-login 的 code 都带 `_<ts>` 后缀（buyer_/buyer2_/supreg_/courreg_/buyreg_），
+  //   而共用账号（admin / demo_supplier / courier / test001）不带 ts → 只删前者，绝不误伤共用账号。
+  // 边界：下单过的采购方被 order 等表引用（FK RESTRICT），删不掉 → 保留并在下面如实报数，不硬删业务数据。
+  console.log('\n【收尾：回收本轮测试账号】')
+  try {
+    const _fs = require('fs')
+    const dbUrl = (_fs.readFileSync(__dirname + '/.env', 'utf8').match(/DATABASE_URL="([^"]+)"/) || [])[1]
+    if (dbUrl) {
+      const { PrismaClient } = require('@prisma/client')
+      const cp = new PrismaClient({ datasources: { db: { url: dbUrl } } })
+      const Q = (t) => '`' + t + '`'
+      const users = await cp.$queryRawUnsafe('SELECT id, wx_openid FROM `user` WHERE wx_openid LIKE ?', '%\\_' + ts)
+      let delSup = 0, delCou = 0, delPur = 0, delUser = 0, kept = 0
+      for (const u of users) {
+        const uid = u.id
+        // ① 供应商：仅有 0 引用时才删（挂着的档口大多是注册用例刚建的）
+        const sup = await cp.$queryRawUnsafe(
+          `SELECT s.id, (SELECT COUNT(*) FROM order_item WHERE supplier_id=s.id)
+             + (SELECT COUNT(*) FROM order_supplier_ack WHERE supplier_id=s.id)
+             + (SELECT COUNT(*) FROM product_application WHERE supplier_id=s.id)
+             + (SELECT COUNT(*) FROM product_supplier_link WHERE supplier_id=s.id)
+             + (SELECT COUNT(*) FROM settlement WHERE supplier_id=s.id) refs
+           FROM supplier s WHERE s.user_id=?`, uid)
+        if (sup.length && Number(sup[0].refs) === 0) {
+          await cp.$executeRawUnsafe('DELETE FROM supplier_category WHERE supplier_id=?', sup[0].id)
+          await cp.$executeRawUnsafe('DELETE FROM supplier WHERE id=?', sup[0].id)
+          delSup++
+        }
+        // ② 配送员
+        const cou = await cp.$queryRawUnsafe('SELECT id FROM courier WHERE user_id=?', uid)
+        if (cou.length) { try { await cp.$executeRawUnsafe('DELETE FROM courier WHERE id=?', cou[0].id); delCou++ } catch (e) { /* 被订单引用，保留 */ } }
+        // ③ 采购方：被订单/需求/核销记录引用的保留（不硬删业务数据）
+        const pur = await cp.$queryRawUnsafe('SELECT id FROM purchaser WHERE user_id=?', uid)
+        if (pur.length) { try { await cp.$executeRawUnsafe('DELETE FROM purchaser WHERE id=?', pur[0].id); delPur++ } catch (e) { kept++ } }
+        // ④ 账号本身：还有 dependent 行（如保留的 purchaser）就留着
+        try {
+          await cp.$executeRawUnsafe('DELETE FROM `user` WHERE id=?', uid)
+          delUser++
+        } catch (e) {
+          if (!pur.length || kept === 0) kept++
+        }
+      }
+      await cp.$disconnect()
+      console.log(`  回收：供应商 ${delSup} / 配送员 ${delCou} / 采购方 ${delPur} / 账号 ${delUser}；因被订单引用保留 ${kept}`)
+    }
+  } catch (e) {
+    console.log('  ⚠ 收尾回收失败（不影响验收结论）：' + String(e.message).slice(0, 120))
+  }
+
   console.log('\n' + '='.repeat(50))
   console.log(`验收结果：✅ 通过 ${passed} 项 / ❌ 失败 ${failed} 项`)
   console.log('='.repeat(50))
