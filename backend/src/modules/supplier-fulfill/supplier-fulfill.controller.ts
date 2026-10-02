@@ -16,6 +16,13 @@ export class SupplierFulfillController {
     return this.service.stockList(userId, query)
   }
 
+  /// 卡BJ：供应商接单（「收到，开始备货」；幂等，不改订单状态）
+  @Post('ack')
+  @Roles(Role.SUPPLIER)
+  async ack(@CurrentUser('userId') userId: bigint, @Body() dto: { orderId: number }) {
+    return this.service.ack(userId, dto)
+  }
+
   /// 申报备货（少交必填原因）
   @Post('declare')
   @Roles(Role.SUPPLIER)

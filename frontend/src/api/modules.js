@@ -120,6 +120,7 @@ export const supplierApi = {
   quickStock: (productId, dailySupply) => put(`/supplier-goods/${productId}/stock`, { dailySupply }), // 免审即时生效
   // 履约
   getStockList: (date) => get('/supplier-fulfill/stock-list', { date }),
+  ackStock: (orderId) => post('/supplier-fulfill/ack', { orderId }), // 卡BJ：收到，开始备货（接单，幂等）
   declareStock: (orderId, items) => post('/supplier-fulfill/declare', { orderId, items }), // 少交必填原因
   handover: (orderId) => post('/supplier-fulfill/handover', { orderId }), // 备货完成确认
   // 结算（含服务费扣除行）

@@ -35,10 +35,28 @@ export class AdminOrderService {
     const suppliers = await this.prisma.supplier.findMany({ where: { id: { in: supplierIds } } })
     const supplierNameMap = new Map(suppliers.map((s) => [Number(s.id), s.stallName]))
 
+    // 卡BJ（2026-10-02）：备货中订单按「订单 × 供应商」带接单状态（ackAt null = 未接单）。
+    // 只对备货中(30)订单查/返回；待核单(10)还没拆供应商，没有接单语义。
+    const stockingOrderIds = orders.filter((o) => o.status === OrderStatus.STOCKING).map((o) => o.id)
+    const ackRows = stockingOrderIds.length
+      ? await this.prisma.orderSupplierAck.findMany({
+          where: { orderId: { in: stockingOrderIds } },
+          select: { orderId: true, supplierId: true, ackAt: true },
+        })
+      : []
+    const ackByOrder = new Map<number, Map<number, string | null>>()
+    for (const a of ackRows) {
+      const k = Number(a.orderId)
+      if (!ackByOrder.has(k)) ackByOrder.set(k, new Map())
+      ackByOrder.get(k)!.set(Number(a.supplierId), a.ackAt ? a.ackAt.toISOString() : null)
+    }
+
     return orders.map((o) => ({
       orderId: Number(o.id),
       shopName: o.purchaser.shopName,
       deliveryDate: o.deliveryDate.toISOString().slice(0, 10),
+      // 卡BJ：未接单分钟数的计时起点（运营后台展示口径），UTC ISO 串
+      createdAt: o.createdAt.toISOString(),
       status: o.status,
       statusText: this.statusText(o.status),
       amountOrdered: Number(o.amountOrdered),
@@ -47,6 +65,16 @@ export class AdminOrderService {
       deliveryFee: Number(o.deliveryFee),
       amountFinal: o.amountFinal != null ? Number(o.amountFinal) : null,
       receivable: receivableAmount(o),
+      // 卡BJ：该订单里出现的每个供应商逐个给接单状态（未接单 ackAt=null）
+      supplierAcks: o.status === OrderStatus.STOCKING
+        ? [...new Set(o.items.map((it) => (it.supplierId !== null ? Number(it.supplierId) : 0)))]
+            .filter((sid) => sid !== 0)
+            .map((sid) => ({
+              supplierId: sid,
+              supplierName: supplierNameMap.get(sid) ?? `供应商#${sid}`,
+              ackAt: ackByOrder.get(Number(o.id))?.get(sid) ?? null,
+            }))
+        : [],
       items: o.items.map((it) => ({
         orderItemId: Number(it.id),
         productName: it.product?.name,

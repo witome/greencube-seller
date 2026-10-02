@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
 import { DeclareDto } from './dto/declare.dto'
@@ -63,7 +64,75 @@ export class SupplierFulfillService {
       })
     }
 
+    // 卡BJ（2026-10-02）：每单带接单时间（未接单 = null），供应商端据此显示「收到，开始备货」按钮
+    const orderIds = [...grouped.keys()]
+    const ackRows = orderIds.length
+      ? await this.prisma.orderSupplierAck.findMany({
+          where: { orderId: { in: orderIds.map((id) => BigInt(id)) }, supplierId: supplier.id },
+          select: { orderId: true, ackAt: true },
+        })
+      : []
+    const ackMap = new Map(ackRows.map((a) => [Number(a.orderId), a.ackAt ? a.ackAt.toISOString() : null]))
+    for (const g of grouped.values()) g.ackAt = ackMap.get(g.orderId) ?? null
+
     return Array.from(grouped.values())
+  }
+
+  // ────────────────────────────────────────
+  // 卡BJ（2026-10-02）：供应商接单（「收到，开始备货」）
+  // 只在 order_supplier_ack 落 ackAt，**不改订单状态/数量/金额**（订单状态机零改动）。
+  // 幂等：已接单再次调用 → 返回原 ackAt，不报错、不改时间；并发双击靠唯一键 + P2002 兜底。
+  // ────────────────────────────────────────
+  async ack(userId: bigint, dto: { orderId: number }) {
+    const supplier = await this.getSupplier(userId)
+
+    const order = await this.prisma.order.findFirst({
+      where: { id: BigInt(dto.orderId), items: { some: { supplierId: supplier.id } } },
+      select: { id: true, status: true },
+    })
+    if (!order) throw new BizException(ErrorCode.FORBIDDEN, '订单不存在或没有本供应商名下的订单项')
+    if (order.status !== OrderStatus.STOCKING) {
+      throw new BizException(ErrorCode.ORDER_STATUS_INVALID, '订单当前状态不可接单')
+    }
+
+    const existing = await this.prisma.orderSupplierAck.findUnique({
+      where: { orderId_supplierId: { orderId: order.id, supplierId: supplier.id } },
+    })
+    // 幂等：已接单 → 返回原 ackAt（不报错、不改时间、不重复写审计）
+    if (existing?.ackAt) {
+      return { orderId: Number(order.id), ackAt: existing.ackAt.toISOString() }
+    }
+
+    const now = new Date()
+    try {
+      if (existing) {
+        await this.prisma.orderSupplierAck.update({ where: { id: existing.id }, data: { ackAt: now } })
+      } else {
+        await this.prisma.orderSupplierAck.create({
+          data: { orderId: order.id, supplierId: supplier.id, ackAt: now },
+        })
+      }
+    } catch (e) {
+      // 并发双击：另一请求已落行 → 视为已接单，返回库里的时间，绝不覆盖
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const row = await this.prisma.orderSupplierAck.findUnique({
+          where: { orderId_supplierId: { orderId: order.id, supplierId: supplier.id } },
+        })
+        return { orderId: Number(order.id), ackAt: row?.ackAt ? row.ackAt.toISOString() : null }
+      }
+      throw e
+    }
+
+    await this.audit.log({
+      operatorId: userId,
+      action: 'SUPPLIER_ACK',
+      entity: 'order',
+      entityId: Number(order.id),
+      before: null,
+      after: { supplierId: Number(supplier.id), ackAt: now.toISOString() },
+    })
+
+    return { orderId: Number(order.id), ackAt: now.toISOString() }
   }
 
   // ────────────────────────────────────────

@@ -416,6 +416,29 @@ model OrderItem {
   @@map("order_item")
 }
 
+/// 卡BJ（2026-10-02）：供应商「开始备货」接单确认（订单 × 供应商 层）
+///
+/// ⚠️ 不新增/不修改订单状态枚举：接单信息记在本表，订单状态机零改动。
+/// ackAt NULL = 未接单（行可先存在后接单，当前实现只在接单时落行）；
+/// remindCount / lastRemindAt 本卡**只建不用**——给后续「超时未接单电话提醒」预留。
+model OrderSupplierAck {
+  id           BigInt    @id @default(autoincrement())
+  orderId      BigInt    @map("order_id")
+  supplierId   BigInt    @map("supplier_id")
+  /// 供应商点「收到，开始备货」的时间；NULL = 未接单
+  ackAt        DateTime? @map("ack_at")
+  /// 预留：超时未接单的提醒次数（本卡只建不用）
+  remindCount  Int       @default(0) @map("remind_count")
+  /// 预留：最近一次提醒时间（本卡只建不用）
+  lastRemindAt DateTime? @map("last_remind_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([orderId, supplierId])
+  @@index([supplierId])
+  @@map("order_supplier_ack")
+}
+
 model DeliveryTask {
   id        BigInt   @id @default(autoincrement())
   courierId BigInt   @map("courier_id")

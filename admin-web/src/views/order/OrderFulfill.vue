@@ -65,6 +65,11 @@
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span>待处理订单</span>
+          <!-- 卡BJ（2026-10-02）：供应商接单筛选（默认全部；只对备货中订单生效） -->
+          <el-radio-group v-model="ackFilter" size="small">
+            <el-radio-button value="all">全部</el-radio-button>
+            <el-radio-button value="unacked">未接单</el-radio-button>
+          </el-radio-group>
         </div>
       </template>
       <el-table :data="filteredList" v-loading="loading" stripe :row-class-name="rowClassName">
@@ -98,6 +103,22 @@
               </div>
             </div>
             <span v-else style="color:#c0c4cc;">-</span>
+          </template>
+        </el-table-column>
+        <!-- 卡BJ（2026-10-02）：供应商接单状态（仅备货中(30)订单显示；其他状态无接单语义） -->
+        <el-table-column label="供应商接单" min-width="180">
+          <template #default="{ row }">
+            <template v-if="row.status === 30 && row.supplierAcks?.length">
+              <div
+                v-for="a in row.supplierAcks"
+                :key="a.supplierId"
+                class="ack-line"
+                :class="{ unacked: !a.ackAt }"
+              >
+                {{ a.supplierName }}：{{ a.ackAt ? `已接单 ${fmtHM(a.ackAt)}` : `未接单（已 ${unackedMinutes(row)} 分钟）` }}
+              </div>
+            </template>
+            <span v-else style="color:#c0c4cc;">—</span>
           </template>
         </el-table-column>
         <!-- 卡M：客户称已付标记（仅 COD 送达后采购方自称，≠已核销）+ 配送员 -->
@@ -333,10 +354,28 @@ const filteredList = computed(() => {
   if (activeFilter.value === 'claimed') return deliveredFiltered.value.filter((o) => o.buyerPaidClaimAt)
   // 卡AH：仅看已标记未收款（标记仍生效、未被线上支付覆盖）
   if (activeFilter.value === 'unpaidMarked') return deliveredFiltered.value
-  if (activeFilter.value === 'all') return list.value
-  if (activeFilter.value === 'shortage') return list.value.filter((o) => hasShortage(o))
-  return list.value.filter((o) => o.status === Number(activeFilter.value))
+  // 卡BJ（2026-10-02）：「未接单」筛选只作用于待处理列表（备货中订单才有接单语义）
+  let pendingRows = list.value
+  if (ackFilter.value === 'unacked') pendingRows = pendingRows.filter(hasUnacked)
+  if (activeFilter.value === 'all') return pendingRows
+  if (activeFilter.value === 'shortage') return pendingRows.filter((o) => hasShortage(o))
+  return pendingRows.filter((o) => o.status === Number(activeFilter.value))
 })
+
+// ── 卡BJ（2026-10-02）：供应商接单状态 ──
+// 筛选：all=全部（默认）/ unacked=未接单（备货中订单存在 ackAt=null 的供应商）
+const ackFilter = ref('all')
+const hasUnacked = (row) => row.status === 30 && (row.supplierAcks || []).some((a) => !a.ackAt)
+// 未接单分钟数口径（拍板：写死一种并说清）＝ 当前时间 − **订单创建时间**（order.created_at）。
+// 不用 order.updated_at：它在备货中期间会随改拆单等操作漂移，不可靠；
+// 用创建时间得到的是「从下单到接单」的上界口径，库上稳定、跨环境可复现。
+const unackedMinutes = (row) => Math.max(0, Math.floor((Date.now() - new Date(row.createdAt).getTime()) / 60000))
+const fmtHM = (iso) => {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // ── 卡M：客户称已付（已送达列表的送达日/未核销筛选，前端本地过滤——数据为全量 take 400）──
 const claimDate = ref(null)
@@ -663,6 +702,10 @@ onMounted(async () => {
 .shortage { color: #f56c6c; font-size: 12px; margin-top: 2px; }
 .shortage-list { display: flex; flex-direction: column; gap: 2px; }
 .shortage-line { color: #f56c6c; font-size: 12px; line-height: 1.5; }
+
+/* 卡BJ：供应商接单列（已接单常规灰字；未接单红字一眼看出要催） */
+.ack-line { font-size: 12px; color: #606266; line-height: 1.6; }
+.ack-line.unacked { color: #f56c6c; font-weight: 600; }
 
 /* ── 卡BE：≤768px 顶部统计可换行（每格最小 140px，两列起），工具条换行 ── */
 @media (max-width: 768px) {
