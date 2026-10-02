@@ -7,6 +7,7 @@ import { SetPriorityDto } from './dto/set-priority.dto'
 import { CreateProductDto } from './dto/create-product.dto'
 import { UpdateProductDto } from './dto/update-product.dto'
 import { AuditService } from '../audit/audit.service'
+import { resolveDefaultMarkup, loadMarkupConfigs, resolveMarkupFromConfigs } from '../admin-pricing/markup-resolver'
 
 @Injectable()
 export class AdminGoodsService {
@@ -75,16 +76,29 @@ export class AdminGoodsService {
       if (!dto.markupRate && dto.salePrice === undefined) {
         throw new BizException(ErrorCode.PARAM_ERROR, '通过新品需提供加价比例或直接指定销售价')
       }
+      // 卡BI：运营显式给比例 = 单品单独设过（markupOverridden=1）；
+      // 未给（只指定销售价）→ 按配置解析默认比例（供应商 > 分类 > 全局 > 0.30），markupOverridden=0
+      let markupRate: number
+      let markupOverridden: number
+      if (dto.markupRate) {
+        markupRate = dto.markupRate
+        markupOverridden = 1
+      } else {
+        const resolved = await resolveDefaultMarkup(this.prisma, app.supplierId, BigInt(payload.categoryId))
+        markupRate = resolved.rate
+        markupOverridden = 0
+      }
       const salePrice = dto.salePrice !== undefined
         ? dto.salePrice
-        : Math.round(supplyPrice * (1 + dto.markupRate!) * 100) / 100
+        : Math.round(supplyPrice * (1 + markupRate) * 100) / 100
 
       await this.prisma.$transaction([
         this.prisma.product.update({
           where: { id: app.productId! },
           data: {
             status: 1, // 上架
-            markupRate: dto.markupRate ?? 0,
+            markupRate,
+            markupOverridden,
             salePrice,
           },
         }),
@@ -296,8 +310,20 @@ export class AdminGoodsService {
       }),
     ])
 
+    // 卡BI：比例来源（单品/供应商/分类/全局默认）——配置一次载入，避免逐行查库
+    const configs = await loadMarkupConfigs(this.prisma)
+
     const list = rows.map((p) => {
       const primary = p.links[0]
+      const resolved = resolveMarkupFromConfigs(
+        {
+          markupOverridden: p.markupOverridden,
+          markupRate: p.markupRate,
+          categoryId: p.categoryId,
+          supplierId: primary?.supplierId ?? null,
+        },
+        configs,
+      )
       return {
         productId: Number(p.id),
         name: p.name,
@@ -307,6 +333,8 @@ export class AdminGoodsService {
         specText: p.specText,
         salePrice: Number(p.salePrice),
         markupRate: Number(p.markupRate),
+        markupSource: resolved.source,
+        markupOverridden: p.markupOverridden,
         status: p.status,
         supplierCount: p.links.length,
         primarySupplier: primary
@@ -352,7 +380,18 @@ export class AdminGoodsService {
     const supplier = await this.prisma.supplier.findUnique({ where: { id: BigInt(dto.supplierId) } })
     if (!supplier) throw new BizException(ErrorCode.PARAM_ERROR, '供应商不存在')
 
-    const markupRate = dto.markupRate ?? 0.3
+    // 卡BI：运营显式给比例 = 单品单独设过（markupOverridden=1）；
+    // 未给 → 按配置解析默认比例（供应商 > 分类 > 全局 > 0.30），markupOverridden=0
+    let markupRate: number
+    let markupOverridden: number
+    if (dto.markupRate !== undefined) {
+      markupRate = dto.markupRate
+      markupOverridden = 1
+    } else {
+      const resolved = await resolveDefaultMarkup(this.prisma, BigInt(dto.supplierId), BigInt(dto.categoryId))
+      markupRate = resolved.rate
+      markupOverridden = 0
+    }
     const salePrice = dto.salePrice !== undefined
       ? dto.salePrice
       : Math.round(dto.supplyPrice * (1 + markupRate) * 100) / 100
@@ -367,6 +406,7 @@ export class AdminGoodsService {
           specText: dto.specText,
           salePrice,
           markupRate,
+          markupOverridden,
           status: 1,
         },
       })

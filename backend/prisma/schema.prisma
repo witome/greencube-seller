@@ -249,6 +249,9 @@ model Product {
   salePrice   Decimal  @map("sale_price") @db.Decimal(10, 2)
   /// 加价比例（销售价 = 供货价 × (1+rate)）
   markupRate  Decimal  @default(0.30) @map("markup_rate") @db.Decimal(5, 4)
+  /// 1 = 单品单独设过加价比例（配置重算/批量时跳过）；0 = 继承（供应商 > 分类 > 全局默认，见 MarkupConfig）
+  /// 最终生效值始终存本表 markup_rate（计算路径、列表展示不改语义）；来源文案由 admin-pricing 的解析函数给出
+  markupOverridden Int @default(0) @map("markup_overridden") @db.TinyInt
 
   /// 0 下架 / 1 在售 / 2 变更审核中
   status      Int      @default(1) @db.TinyInt
@@ -559,6 +562,26 @@ model ServiceFeeConfig {
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
   @@map("service_fee_config")
+}
+
+/// 加价比例配置（卡BI 2026-10-02）：一张表存三档，生效优先级 单品 > 供应商 > 分类 > 全局默认 > 0.30
+/// ⚠️ 库层有生成列唯一键（migration 20261002090000_add_markup_config）：
+///    ref_id 可空，而 MySQL 唯一索引**不约束 NULL**，Prisma 的 @@unique([scope, refId]) 挡不住
+///    「重复的全局行」——同 service_fee_config 的先例，加生成列 ref_key = COALESCE(ref_id, 0)
+///    再对 (scope, ref_key) 加唯一键。**不要声明 ref_key 字段**（Prisma 写生成列 MySQL 报 3105），
+///    **不要删这条约束**（写入路径是单条原子 INSERT ... ON DUPLICATE KEY UPDATE，见 admin-pricing.service.ts）。
+model MarkupConfig {
+  id        BigInt   @id @default(autoincrement())
+  /// 1 全局 / 2 分类 / 3 供应商
+  scope     Int      @db.TinyInt
+  /// 全局 = null；分类 = categoryId；供应商 = supplierId
+  refId     BigInt?  @map("ref_id")
+  /// 加价比例（0.35 = 35%），范围 0–9.99
+  rate      Decimal  @db.Decimal(5, 4)
+  updatedBy BigInt?  @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("markup_config")
 }
 
 /// 平台通用配置（key-value：运费规则等）

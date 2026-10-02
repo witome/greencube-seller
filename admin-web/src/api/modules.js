@@ -96,6 +96,10 @@ export const pricingAdminApi = {
   getList: () => request.get('/admin/pricing'),
   update: (id, data) => request.put(`/admin/pricing/${id}`, data),
   batchMarkup: (data) => request.put('/admin/pricing/batch', data),
+  // 加价比例配置（卡BI 2026-10-02：全局/按分类/按供应商；重算在售商品走 apply）
+  getMarkupConfig: () => request.get('/admin/pricing/markup-config'),
+  putMarkupConfig: (data) => request.put('/admin/pricing/markup-config', data),
+  applyMarkupConfig: (data) => request.post('/admin/pricing/markup-config/apply', data),
 }
 
 /* ── 报表 ── */
