@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common'
 import { SupplierFulfillService } from './supplier-fulfill.service'
 import { DeclareDto } from './dto/declare.dto'
+import { AckDto } from './dto/ack.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -19,7 +20,7 @@ export class SupplierFulfillController {
   /// 卡BJ：供应商接单（「收到，开始备货」；幂等，不改订单状态）
   @Post('ack')
   @Roles(Role.SUPPLIER)
-  async ack(@CurrentUser('userId') userId: bigint, @Body() dto: { orderId: number }) {
+  async ack(@CurrentUser('userId') userId: bigint, @Body() dto: AckDto) {
     return this.service.ack(userId, dto)
   }
 

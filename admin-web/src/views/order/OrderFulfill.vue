@@ -115,7 +115,7 @@
                 class="ack-line"
                 :class="{ unacked: !a.ackAt }"
               >
-                {{ a.supplierName }}：{{ a.ackAt ? `已接单 ${fmtHM(a.ackAt)}` : `未接单（已 ${unackedMinutes(row)} 分钟）` }}
+                {{ a.supplierName }}：{{ a.ackAt ? `已接单 ${fmtHM(a.ackAt)}` : unackedLabel(row) }}
               </div>
             </template>
             <span v-else style="color:#c0c4cc;">—</span>
@@ -366,10 +366,20 @@ const filteredList = computed(() => {
 // 筛选：all=全部（默认）/ unacked=未接单（备货中订单存在 ackAt=null 的供应商）
 const ackFilter = ref('all')
 const hasUnacked = (row) => row.status === 30 && (row.supplierAcks || []).some((a) => !a.ackAt)
-// 未接单分钟数口径（拍板：写死一种并说清）＝ 当前时间 − **订单创建时间**（order.created_at）。
+// 未接单时长口径（拍板：写死一种并说清）＝ 当前时间 − **订单创建时间**（order.created_at）。
 // 不用 order.updated_at：它在备货中期间会随改拆单等操作漂移，不可靠；
 // 用创建时间得到的是「从下单到接单」的上界口径，库上稳定、跨环境可复现。
-const unackedMinutes = (row) => Math.max(0, Math.floor((Date.now() - new Date(row.createdAt).getTime()) / 60000))
+// 卡BM（2026-10-02）：文案按分钟/小时/天三档展示（口径不变，仍以 createdAt 为起点）：
+//   < 60 分钟 → 「已 N 分钟」；≥ 60 分钟且 < 24 小时 → 「已 N 小时」（向下取整）；≥ 24 小时 → 「已 N 天」（向下取整）。
+//   createdAt 缺失或非法（new Date 得 NaN）→ 回退只显示「未接单」，不显示 NaN。
+const unackedLabel = (row) => {
+  const created = row.createdAt ? new Date(row.createdAt) : null
+  if (!created || Number.isNaN(created.getTime())) return '未接单'
+  const minutes = Math.max(0, Math.floor((Date.now() - created.getTime()) / 60000))
+  if (minutes < 60) return `未接单（已 ${minutes} 分钟）`
+  if (minutes < 60 * 24) return `未接单（已 ${Math.floor(minutes / 60)} 小时）`
+  return `未接单（已 ${Math.floor(minutes / (60 * 24))} 天）`
+}
 const fmtHM = (iso) => {
   if (!iso) return '-'
   const d = new Date(iso)

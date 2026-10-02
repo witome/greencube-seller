@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode, OrderStatus } from '../../common/constants/error-codes'
 import { DeclareDto } from './dto/declare.dto'
+import { AckDto } from './dto/ack.dto'
 import { AuditService } from '../audit/audit.service'
 
 @Injectable()
@@ -83,7 +84,7 @@ export class SupplierFulfillService {
   // 只在 order_supplier_ack 落 ackAt，**不改订单状态/数量/金额**（订单状态机零改动）。
   // 幂等：已接单再次调用 → 返回原 ackAt，不报错、不改时间；并发双击靠唯一键 + P2002 兜底。
   // ────────────────────────────────────────
-  async ack(userId: bigint, dto: { orderId: number }) {
+  async ack(userId: bigint, dto: AckDto) {
     const supplier = await this.getSupplier(userId)
 
     const order = await this.prisma.order.findFirst({
