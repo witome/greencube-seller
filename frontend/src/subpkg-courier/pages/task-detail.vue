@@ -88,7 +88,7 @@ onLoad((opts) => {
 </script>
 
 <style lang="scss" scoped>
-.page { padding-bottom: 70px; }
+.page { padding-bottom: 70px; padding-bottom: calc(70px + env(safe-area-inset-bottom)); padding-bottom: calc(70px + var(--ctb-safe-final, env(safe-area-inset-bottom))); } /* 卡BF: 三重声明，env 失效时由 CustomTabBar 写入的 --ctb-safe-final 兜底 */
 .td-route { font-size: 16px; font-weight: 700; color: $text-title; margin-bottom: 6px; }
 .station { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f1f3; }
 .st-seq { width: 22px; height: 22px; border-radius: 50%; background: $color-primary; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }

@@ -153,7 +153,7 @@ onShow(async () => {
 </script>
 
 <style lang="scss" scoped>
-.page { padding-bottom: 70px; }
+.page { padding-bottom: 70px; padding-bottom: calc(70px + env(safe-area-inset-bottom)); padding-bottom: calc(70px + var(--ctb-safe-final, env(safe-area-inset-bottom))); } /* 卡BF: 三重声明，env 失效时由 CustomTabBar 写入的 --ctb-safe-final 兜底 */
 .home-head { padding: 4px 2px 12px; }
 .hello { font-size: 18px; font-weight: 700; color: $text-title; }
 .addr { font-size: 12px; color: $text-second; margin-top: 4px; }

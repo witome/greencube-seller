@@ -63,7 +63,7 @@ onShow(async () => {
 </script>
 
 <style lang="scss" scoped>
-.page { padding-bottom: 70px; }
+.page { padding-bottom: 70px; padding-bottom: calc(70px + env(safe-area-inset-bottom)); padding-bottom: calc(70px + var(--ctb-safe-final, env(safe-area-inset-bottom))); } /* 卡BF: 三重声明，env 失效时由 CustomTabBar 写入的 --ctb-safe-final 兜底 */
 .tip-bar { margin: 10px 12px; padding: 8px 12px; background: #E6F9F0; border-radius: 8px; font-size: 12px; color: $color-primary; }
 .stock-card { background: #fff; border-radius: 8px; padding: 12px; margin: 0 12px 10px; }
 .sc-head { display: flex; justify-content: space-between; }

@@ -161,7 +161,7 @@ onLoad(async (opts) => {
 </script>
 
 <style lang="scss" scoped>
-.page { padding-bottom: 70px; }
+.page { padding-bottom: 70px; padding-bottom: calc(70px + env(safe-area-inset-bottom)); padding-bottom: calc(70px + var(--ctb-safe-final, env(safe-area-inset-bottom))); } /* 卡BF: 三重声明，env 失效时由 CustomTabBar 写入的 --ctb-safe-final 兜底 */
 .form-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; font-size: 14px; }
 .fr-l { color: $text-second; }
 .fr-r { color: $color-primary; }

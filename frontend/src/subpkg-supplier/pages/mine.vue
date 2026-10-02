@@ -78,7 +78,7 @@ const logout = () => logoutToLogin()
 </script>
 
 <style lang="scss" scoped>
-.page { padding-bottom: 70px; }
+.page { padding-bottom: 70px; padding-bottom: calc(70px + env(safe-area-inset-bottom)); padding-bottom: calc(70px + var(--ctb-safe-final, env(safe-area-inset-bottom))); } /* 卡BF: 三重声明，env 失效时由 CustomTabBar 写入的 --ctb-safe-final 兜底 */
 .user-row { display: flex; align-items: center; gap: 12px; }
 .avatar { width: 48px; height: 48px; border-radius: 50%; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
 .user-name { font-size: 16px; font-weight: 700; color: $text-title; }

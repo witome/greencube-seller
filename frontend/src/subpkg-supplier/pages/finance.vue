@@ -62,7 +62,7 @@ onMounted(load)
 </script>
 
 <style lang="scss" scoped>
-.page { padding-bottom: 70px; }
+.page { padding-bottom: 70px; padding-bottom: calc(70px + env(safe-area-inset-bottom)); padding-bottom: calc(70px + var(--ctb-safe-final, env(safe-area-inset-bottom))); } /* 卡BF: 三重声明，env 失效时由 CustomTabBar 写入的 --ctb-safe-final 兜底 */
 .period-picker { text-align: center; padding: 10px; font-size: 15px; font-weight: 600; color: $color-primary; }
 .settle-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; color: $text-title; }
 .settle-row .fee { color: #ff8f1f; }
