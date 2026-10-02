@@ -1,8 +1,10 @@
 import { Controller, Post, Body } from '@nestjs/common'
 import { AiService } from './ai.service'
 import { SupplierAiService } from './supplier-ai.service'
+import { VisionRecognizeService } from './vision-recognize.service'
 import { ParseDto } from './dto/parse.dto'
 import { SupplierParseDto, SupplierAuditTrailDto } from './dto/supplier-parse.dto'
+import { RecognizeGoodsDto } from './dto/recognize-goods.dto'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 
@@ -12,6 +14,7 @@ export class AiController {
   constructor(
     private readonly service: AiService,
     private readonly supplierService: SupplierAiService,
+    private readonly visionService: VisionRecognizeService,
   ) {}
 
   /// 解析自然语言 → 订单草稿
@@ -40,5 +43,14 @@ export class AiController {
   @Roles(Role.SUPPLIER)
   async supplierAuditTrail(@CurrentUser() user: any, @Body() dto: SupplierAuditTrailDto) {
     return this.supplierService.auditTrail(user.userId, dto)
+  }
+
+  /// 拍照快速上架 · 视觉识别（卡BP 2026-10-02，独立链路）
+  /// 🔒 只返回「名称/分类/计量」三个建议值给表单预填，绝不落库、绝不碰价格与可供量；
+  ///    categoryId 超出该供应商授权分类 → 服务端置空；失败/超时 → 全空建议（前端手填，不阻断）
+  @Post('supplier/recognize-goods')
+  @Roles(Role.SUPPLIER)
+  async recognizeGoods(@CurrentUser() user: any, @Body() dto: RecognizeGoodsDto) {
+    return this.visionService.recognize(user.userId, dto.image)
   }
 }

@@ -14,7 +14,8 @@
         <view class="gd-mask-tip">注册审核通过后可见价格</view>
       </view>
       <view v-else class="gd-price">¥{{ goods.salePrice }} <text class="gd-unit">/{{ goods.unit }}</text></view>
-      <view class="gd-spec">{{ goods.specText || (goods.weighType === 1 ? '称重商品' : '固定规格') }}</view>
+      <!-- 卡BP（2026-10-02）：灰字位 = 主供货商备注优先；无备注回退规格/称重（原逻辑，不新增独立区块） -->
+      <view class="gd-spec">{{ goods.remark || goods.specText || (goods.weighType === 1 ? '称重商品' : '固定规格') }}</view>
       <view class="gd-supply">今日可售 {{ goods.dailySupply }} {{ goods.unit }}</view>
     </view>
 

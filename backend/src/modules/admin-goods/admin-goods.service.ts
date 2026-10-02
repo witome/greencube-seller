@@ -33,6 +33,8 @@ export class AdminGoodsService {
       categoryId: (a.payload as any).categoryId,
       weighType: (a.payload as any).weighType,
       qualification: (a.payload as any).qualification,
+      // 卡BP（2026-10-02）：商品备注随新品申请一起审核
+      remark: (a.payload as any).remark ?? null,
       submittedAt: a.createdAt.toISOString(),
     }))
   }
@@ -102,6 +104,13 @@ export class AdminGoodsService {
             salePrice,
           },
         }),
+        // 卡BP（2026-10-02）：新品备注审核通过后写入该供应商的 link 记录
+        ...(payload.remark !== undefined && payload.remark !== null
+          ? [this.prisma.productSupplierLink.updateMany({
+              where: { productId: app.productId!, supplierId: app.supplierId },
+              data: { remark: String(payload.remark) },
+            })]
+          : []),
         this.prisma.productApplication.update({
           where: { id: app.id },
           data: { status: 1, reviewedBy: operatorId, reviewedAt: new Date() },
@@ -176,6 +185,10 @@ export class AdminGoodsService {
       }
       if (changes.dailySupply !== undefined && link) {
         linkUpdate.dailySupply = Number(changes.dailySupply)
+      }
+      // 卡BP（2026-10-02）：商品备注变更通过后写入 link（挂在 link 上，多供应商互不覆盖）
+      if (changes.remark !== undefined && link) {
+        linkUpdate.remark = String(changes.remark)
       }
 
       await this.prisma.$transaction([

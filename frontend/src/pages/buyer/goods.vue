@@ -29,7 +29,8 @@
           </view>
           <view class="gc-main">
             <view class="gc-name">{{ g.name }}</view>
-            <view class="gc-spec">{{ g.specText || (g.weighType === 1 ? '称重' : '固定规格') }}</view>
+            <!-- 卡BP（2026-10-02）：名称下灰字位 = 主供货商备注优先；无备注回退规格/称重（原逻辑） -->
+            <view class="gc-spec">{{ g.remark || g.specText || (g.weighType === 1 ? '称重' : '固定规格') }}</view>
             <view class="gc-bottom">
               <!-- 卡AA：价格按审核状态脱敏 —— 不可见时 ¥** + 灰字引导注册，点价格区跳注册页 -->
               <view v-if="g.priceVisible === false" class="gc-price-mask" @tap.stop="goRegister">

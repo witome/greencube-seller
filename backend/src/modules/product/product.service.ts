@@ -83,6 +83,8 @@ export class ProductService {
         ...this.priceFields(p.salePrice, priceVisible),
         priceVisible,
         dailySupply: Number(p.links[0]?.dailySupply ?? 0),
+        // 卡BP（2026-10-02）：主供货商（priority 最小）的备注；空 → 前端回退 specText/称重
+        remark: p.links[0]?.remark || null,
         supplierCount: p._count.links,
       })),
     }
@@ -95,7 +97,7 @@ export class ProductService {
     const [p, priceVisible] = await Promise.all([
       this.prisma.product.findUnique({
         where: { id: BigInt(id) },
-        include: { links: true },
+        include: { links: { orderBy: { priority: 'asc' } } },
       }),
       this.priceVisibleFor(userId),
     ])
@@ -113,6 +115,8 @@ export class ProductService {
       ...this.priceFields(p.salePrice, priceVisible),
       priceVisible,
       dailySupply: Number(p.links[0]?.dailySupply ?? 0),
+      // 卡BP（2026-10-02）：主供货商备注（详情页名称下灰字位沿用，与列表同口径）
+      remark: p.links[0]?.remark || null,
       weighNote: p.weighNote,
       supplyPrice: null, // ⚠️ 采购方不可见供货价
     }

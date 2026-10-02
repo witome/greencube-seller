@@ -16,6 +16,10 @@
             <el-table-column label="计量" width="90">
               <template #default="{ row }">{{ row.weighType === 1 ? '称重' : '固定规格' }}</template>
             </el-table-column>
+            <!-- 卡BP（2026-10-02）：商品备注随新品申请一起审核 -->
+            <el-table-column label="商品备注" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.remark || '—' }}</template>
+            </el-table-column>
             <el-table-column label="提交时间" width="160">
               <template #default="{ row }">{{ fmtTime(row.submittedAt) }}</template>
             </el-table-column>

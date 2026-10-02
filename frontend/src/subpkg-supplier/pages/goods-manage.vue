@@ -31,7 +31,8 @@
     </view>
     <view v-if="showForm" class="card">
       <view class="card-title">🆕 提交新商品</view>
-      <view class="form-row"><view class="fr-l">商品名称</view><view class="fr-r"><input v-model="form.name" class="ipt" placeholder="如：山东大姜（老姜）" /></view></view>
+      <!-- 卡BP：名称 AI 绿底可改；识别后自动预填 -->
+      <view class="form-row"><view class="fr-l">商品名称</view><view class="fr-r"><input v-model="form.name" class="ipt" :class="{ 'ipt-ai': aiFilled.name }" placeholder="如：山东大姜（老姜）" @input="aiFilled.name = false" /></view></view>
       <view class="form-row">
         <view class="fr-l">商品分类</view>
         <view class="fr-r">
@@ -45,15 +46,25 @@
             >{{ c.name }}</view>
           </view>
           <view v-else class="muted">暂无授权分类，请联系运营开通</view>
+          <!-- 卡BP：AI 选中的分类给一句可核对提示（原型口径：认错了点别的分类即可） -->
+          <view v-if="aiFilled.category && aiSuggest && form.categoryId === aiSuggest.categoryId" class="muted">AI 选的是「{{ aiSuggest.categoryName }}」，认错了点别的分类即可</view>
         </view>
       </view>
       <view class="form-row">
         <view class="fr-l">计量方式</view>
         <view class="fr-r">
           <view class="chip-group">
-            <view class="chip" :class="{ on: form.weighType === 1 }" @tap="form.weighType = 1">称重（斤）</view>
-            <view class="chip" :class="{ on: form.weighType === 2 }" @tap="form.weighType = 2">固定规格</view>
+            <view class="chip" :class="{ on: form.weighType === 1 }" @tap="form.weighType = 1; aiFilled.weigh = false">称重（斤）</view>
+            <view class="chip" :class="{ on: form.weighType === 2 }" @tap="form.weighType = 2; aiFilled.weigh = false">固定规格</view>
           </view>
+        </view>
+      </view>
+      <!-- 卡BP：商品备注（≤30 字，随申请走运营审核，显示在买家商品名下方灰字位） -->
+      <view class="form-row form-top">
+        <view class="fr-l">商品备注</view>
+        <view class="fr-r">
+          <textarea v-model="form.remark" class="ipt ta-remark" :maxlength="30" placeholder="如：今天刚到的老姜，辣味足（可不填）" />
+          <view class="muted remark-meta">会显示在采购方商品名下方（灰字），可不填；最多 30 字<text class="remark-count">{{ (form.remark || '').length }}/30</text></view>
         </view>
       </view>
       <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="form.supplyPrice" class="ipt" type="digit" placeholder="如 2.20（元/斤，提交后审核）" /></view></view>
@@ -74,6 +85,10 @@
               <view class="cover-meta-d">随申请一起提交，走运营审核</view>
             </view>
           </view>
+          <!-- 卡BP：拍照后 AI 自动识别（loading/成功/失败三态，失败不阻断、留空手填） -->
+          <view v-if="aiState === 'loading'" class="ai-flash"><view class="ai-spin"></view>AI 正在识别照片，约 2~3 秒…</view>
+          <view v-else-if="aiState === 'done'" class="ai-flash"><text>✨</text> AI 已识别，已帮你填好下面 3 项，请核对</view>
+          <view v-else-if="aiState === 'fail'" class="muted" style="margin-top:6px;">AI 没认出这张照片，手动填写也一样能提交</view>
         </view>
       </view>
       <view class="form-row form-top">
@@ -179,6 +194,14 @@
         <view class="form-row"><view class="fr-l">商品名称</view><view class="fr-r"><input v-model="editForm.name" class="ipt" placeholder="不改则留空" /></view></view>
         <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="editForm.supplyPrice" class="ipt" type="digit" placeholder="不改则留空" /></view></view>
         <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="editForm.dailySupply" class="ipt" type="digit" placeholder="不改则留空（也可用⚡改库存）" /></view></view>
+        <!-- 卡BP：商品备注可改（随变更走运营审核） -->
+        <view class="form-row form-top">
+          <view class="fr-l">商品备注</view>
+          <view class="fr-r">
+            <textarea v-model="editForm.remark" class="ipt ta-remark" :maxlength="30" placeholder="最多 30 字，显示在买家商品名下方（灰字）" />
+            <view class="muted remark-meta">改动后随变更一起走运营审核<text class="remark-count">{{ (editForm.remark || '').length }}/30</text></view>
+          </view>
+        </view>
         <view class="row-btns">
           <view class="pbtn ghost" @tap="editTarget = null">取消</view>
           <view class="pbtn primary" @tap="submitEdit">提交变更</view>
@@ -267,9 +290,42 @@ const filters = [
 // 分类（提交新品用）
 const cats = ref([])
 const catNames = ref([])
-const form = ref({ name: '', categoryId: null, categoryName: '', weighType: 1, supplyPrice: '', dailySupply: '' })
+const form = ref({ name: '', categoryId: null, categoryName: '', weighType: 1, supplyPrice: '', dailySupply: '', remark: '' })
 
 const showForm = ref(false)
+
+// ── 卡BP：拍照快速上架 · AI 识别（2026-10-02）──
+// 封面上传成功 → POST /ai/supplier/recognize-goods → 预填 名称/分类/计量 三项（绿底可改）。
+// 🔒 AI 只做表单预填，绝不直接落库；供货价/日可供量一律手填。
+// 识别失败/超时/返回无效结果 → aiState='fail'，表单留空按现状手填，绝不报错阻断。
+const aiState = ref('idle') // idle | loading | done | fail
+const aiSuggest = ref(null) // AI 原始建议（用于「AI 选的是 xx」提示文案）
+const aiFilled = ref({ name: false, category: false, weigh: false }) // 哪些字段是 AI 填的（绿底标识，用户一动就撤）
+
+async function aiRecognize(url) {
+  aiState.value = 'loading'
+  aiFilled.value = { name: false, category: false, weigh: false }
+  try {
+    const res = await post('/ai/supplier/recognize-goods', { image: url })
+    // parser='none'（降级/没认出来）或三项全空 → 按失败口径，不弹「识别成功」
+    if (res && res.parser === 'vl' && (res.name || res.categoryId || res.weighType)) {
+      aiSuggest.value = res
+      if (res.name) { form.value.name = res.name; aiFilled.value.name = true }
+      // 分类只能从已授权分类中选：服务端已硬校验丢弃越权值，这里再兜一层
+      if (res.categoryId && cats.value.some((c) => c.id === res.categoryId)) {
+        form.value.categoryId = res.categoryId
+        form.value.categoryName = res.categoryName || ''
+        aiFilled.value.category = true
+      }
+      if (res.weighType) { form.value.weighType = res.weighType; aiFilled.value.weigh = true }
+      aiState.value = 'done'
+    } else {
+      aiState.value = 'fail'
+    }
+  } catch (e) {
+    aiState.value = 'fail' // 网络异常也不阻断：表单留空，手填链路与现状一致
+  }
+}
 
 // 快速改库存
 const stockTarget = ref(null)
@@ -277,7 +333,7 @@ const stockValue = ref('')
 
 // 编辑（变更审核）
 const editTarget = ref(null)
-const editForm = ref({ name: '', supplyPrice: '', dailySupply: '' })
+const editForm = ref({ name: '', supplyPrice: '', dailySupply: '', remark: '' })
 
 // ── 换封面（卡Z1：免审即时生效，走 PUT /supplier-goods/:id/cover）──
 const coverUploadingId = ref(null) // 正在上传的商品 id：盖转圈 + 防重复点击
@@ -378,6 +434,8 @@ async function pickFormCover() {
     } finally {
       coverPicking.value = false
     }
+    // 卡BP：封面就位 → 自动触发 AI 识别（不 await 阻断选图流程，识别态由 aiState 驱动）
+    if (formCover.value) aiRecognize(formCover.value)
   } catch (e) {
     coverPicking.value = false
     if (e && e.cancelled) return
@@ -518,6 +576,7 @@ function selectCat(c) {
   if (c) {
     form.value.categoryId = c.id
     form.value.categoryName = c.name
+    aiFilled.value.category = false // 用户手选 → 撤 AI 绿底提示
   }
 }
 
@@ -538,12 +597,16 @@ async function submit() {
     // 卡Z1：封面 + 资质证明（资质照片走 apply 已有的 images 字段，原型⑦屏口径）一并提交
     cover: formCover.value || undefined,
     images: formQual.value.length ? formQual.value : undefined,
+    // 卡BP：商品备注（≤30 字，随申请走运营审核）
+    remark: (form.value.remark || '').trim() || undefined,
   })
   uni.showToast({ title: '已提交，等待运营审核', icon: 'none' })
   showForm.value = false
-  form.value = { name: '', categoryId: null, categoryName: '', weighType: 1, supplyPrice: '', dailySupply: '' }
+  form.value = { name: '', categoryId: null, categoryName: '', weighType: 1, supplyPrice: '', dailySupply: '', remark: '' }
   formCover.value = ''
   formQual.value = []
+  aiState.value = 'idle'
+  aiSuggest.value = null
   load()
 }
 
@@ -563,7 +626,8 @@ async function saveStock() {
 
 function openEdit(g) {
   editTarget.value = g
-  editForm.value = { name: '', supplyPrice: '', dailySupply: '' }
+  // 卡BP：备注回显当前生效值，可改（留空=清空备注）；改名/价/量仍走「不改则留空」
+  editForm.value = { name: '', supplyPrice: '', dailySupply: '', remark: g.remark || '' }
 }
 
 async function submitEdit() {
@@ -575,6 +639,9 @@ async function submitEdit() {
   if (editForm.value.dailySupply && (isNaN(supply) || supply < 0)) { uni.showToast({ title: '日可供量无效', icon: 'none' }); return }
   if (price) changes.supplyPrice = price
   if (editForm.value.dailySupply) changes.dailySupply = supply
+  // 卡BP：备注有变化才进变更（含「清空」），随变更走运营审核
+  const remarkNew = (editForm.value.remark || '').trim()
+  if (remarkNew !== (editTarget.value.remark || '')) changes.remark = remarkNew
 
   if (!Object.keys(changes).length) { uni.showToast({ title: '未填写任何变更内容', icon: 'none' }); return }
 
@@ -655,6 +722,22 @@ onMounted(() => {
   width: 52px; height: 52px; border-radius: 9px; border: 1.5px dashed #C9D2DA;
   display: flex; align-items: center; justify-content: center; font-size: 20px; color: #B3B9C2;
 }
+
+/* ── 卡BP（2026-10-02）：拍照识别三态 + AI 绿底预填 + 备注框 ── */
+.ipt-ai { border: 1px solid #00B96B; background: #F2FBF7; border-radius: 8px; padding: 0 9px; box-sizing: border-box; }
+.ai-flash {
+  display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #00995A;
+  background: #E6F9F0; border-radius: 8px; padding: 7px 10px; margin-top: 8px;
+}
+.ai-spin {
+  width: 12px; height: 12px; flex-shrink: 0;
+  border: 2px solid #B6E4CF; border-top-color: #00B96B; border-radius: 50%;
+  animation: ai-rot 0.8s linear infinite;
+}
+@keyframes ai-rot { to { transform: rotate(360deg); } }
+.ta-remark { min-height: 52px; height: auto; line-height: 1.5; padding: 8px 9px; background: $bg-soft; border-radius: 8px; width: 100%; box-sizing: border-box; }
+.remark-meta { display: flex; justify-content: space-between; margin-top: 4px; }
+.remark-count { color: #B3B9C2; flex-shrink: 0; margin-left: 8px; }
 
 /* 弹层 */
 .mask {

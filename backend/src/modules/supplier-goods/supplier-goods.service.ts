@@ -103,6 +103,8 @@ export class SupplierGoodsService {
         dailySupply: Number(link.dailySupply),
         unit: p.unit,
         weighType: p.weighType,
+        // 卡BP（2026-10-02）：本供应商对该商品的备注（审核通过后的生效值；编辑弹层回显用）
+        remark: link.remark ?? null,
         status,
         statusText,
         // 卡Z2：最新新品申请 id（前端「删除」按钮需要，DELETE /supplier-goods/apply/:applyId）
@@ -190,6 +192,8 @@ export class SupplierGoodsService {
             images: dto.images,
             qualification: dto.qualification,
             cover: dto.cover,
+            // 卡BP（2026-10-02）：商品备注随申请走审核，通过后由 admin-goods 写入 link
+            remark: dto.remark,
           },
           status: 0,
         },
@@ -224,8 +228,9 @@ export class SupplierGoodsService {
     if (inProgress) throw new BizException(ErrorCode.CHANGE_IN_PROGRESS)
 
     // 生成新旧对照 diffs
+    // 卡BP（2026-10-02）：remark 挂在 link 上（非 product），旧值取 link.remark
     const fieldText: Record<string, string> = {
-      name: '品名', categoryId: '分类', weighType: '计量方式', specText: '规格', supplyPrice: '供货价', dailySupply: '日可供量',
+      name: '品名', categoryId: '分类', weighType: '计量方式', specText: '规格', supplyPrice: '供货价', dailySupply: '日可供量', remark: '商品备注',
     }
     const diffs = Object.entries(dto.changes)
       .filter(([, v]) => v !== undefined)
@@ -234,6 +239,7 @@ export class SupplierGoodsService {
         fieldText: fieldText[field] || field,
         oldValue: field === 'supplyPrice' ? Number(link.supplyPrice)
           : field === 'dailySupply' ? Number(link.dailySupply)
+          : field === 'remark' ? (link.remark ?? '')
           : (product as any)[field],
         newValue,
       }))

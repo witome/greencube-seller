@@ -30,6 +30,12 @@ class ChangesDto {
   @IsNumber()
   @Min(0)
   dailySupply?: number
+
+  /// 商品备注（2026-10-02 卡BP）：≤30 字，挂 product_supplier_link.remark，审核通过后写入
+  @IsOptional()
+  @IsString()
+  @MaxLength(30, { message: '商品备注最多 30 字' })
+  remark?: string
 }
 
 /// 提交变更申请（走审核，原版本在售至新版本生效）

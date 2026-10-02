@@ -46,4 +46,11 @@ export class ApplyGoodsDto {
   @IsString()
   @MaxLength(255, { message: '封面地址过长' })
   cover?: string
+
+  /// 商品备注（2026-10-02 卡BP）：可选，≤30 字，随申请走运营审核，
+  /// 通过后写入 product_supplier_link.remark（挂在 link 上，多供应商互不覆盖）
+  @IsOptional()
+  @IsString()
+  @MaxLength(30, { message: '商品备注最多 30 字' })
+  remark?: string
 }
