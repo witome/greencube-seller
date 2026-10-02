@@ -176,7 +176,7 @@ onLoad(async (opts) => {
 
 /* 卡AH C1：交付完成后的半屏两路选择（原型：拍照留痕 → 客户付没付二选一） */
 .sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.34); display: flex; align-items: flex-end; z-index: 99; }
-.sheet { width: 100%; background: #fff; border-radius: 16px 16px 0 0; padding: 14px 14px 16px; box-sizing: border-box; }
+.sheet { width: 100%; background: #fff; border-radius: 16px 16px 0 0; padding: 14px 14px 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); box-sizing: border-box; }
 .sh-t { font-size: 15px; font-weight: 800; color: $text-title; }
 .sh-s { font-size: 12px; color: $text-second; margin-top: 4px; line-height: 1.6; }
 .sbtn { border-radius: 22px; padding: 12px 0; text-align: center; font-size: 15px; font-weight: 700; margin-top: 9px; }

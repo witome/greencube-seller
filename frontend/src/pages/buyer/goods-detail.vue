@@ -93,7 +93,7 @@ onLoad(async (opts) => {
 .gd-unit { font-size: 13px; font-weight: 400; color: $text-second; }
 .gd-spec { font-size: 13px; color: $text-second; }
 .gd-supply { font-size: 12px; color: $color-primary; margin-top: 6px; }
-.gd-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; padding: 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 -2px 8px rgba(0,0,0,.05); }
+.gd-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 10px; box-shadow: 0 -2px 8px rgba(0,0,0,.05); }
 .stepper { display: flex; align-items: center; gap: 8px; }
 .st-btn { width: 28px; height: 28px; border-radius: 50%; background: #f0f1f3; display: flex; align-items: center; justify-content: center; font-size: 16px; }
 .st-num { font-size: 15px; font-weight: 600; min-width: 24px; text-align: center; }
