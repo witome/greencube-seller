@@ -17,6 +17,8 @@
           </text>
         </view>
       </view>
+      <!-- 卡BN-3：未接单且已超阈值 → 红字提示（明细下方、按钮上方；阈值/createdAt 取不到不显示，不出 NaN） -->
+      <view v-if="!o.ackAt && overThreshold(o)" class="sc-unacked">已超过 {{ notifyThreshold }} 分钟未接单，系统已打电话提醒你。请尽快接单，避免耽误配送。</view>
       <view class="sc-btns">
         <!-- 卡BJ：未接单 → 主按钮「收到，开始备货」（醒目实心绿）；接单后恢复原来的两个按钮 -->
         <template v-if="!o.ackAt">
@@ -94,6 +96,24 @@ const handover = async (o) => {
 onShow(async () => {
   orders.value = await supplierApi.getStockList()
 })
+
+// ─── 卡BN-3（2026-10-02）：未接单超阈值红字提示 ───
+// 阈值进页拉一次缓存（onShow 拉一次，不轮询）；取不到 → null → 提示一律不显示
+const notifyThreshold = ref(null)
+onShow(async () => {
+  try {
+    const me = await supplierApi.getNotifySetting()
+    notifyThreshold.value = (me && me.thresholdMinutes != null) ? me.thresholdMinutes : null
+  } catch (e) {
+    notifyThreshold.value = null
+  }
+})
+// 判据与后端口径一致：minutesUnacked = now - createdAt，>= thresholdMinutes 即超时；
+// 仅未接单（!ackAt）且阈值/createdAt 齐备时才成立
+const overThreshold = (o) => {
+  if (o.ackAt || notifyThreshold.value == null || !o.createdAt) return false
+  return Date.now() - new Date(o.createdAt).getTime() >= notifyThreshold.value * 60000
+}
 </script>
 
 <style lang="scss" scoped>
@@ -114,4 +134,6 @@ onShow(async () => {
 .sc-btn.ghost { background: #f0f1f3; color: $text-second; }
 .sc-btn.primary { background: $color-primary; color: #fff; }
 .empty { text-align: center; color: $text-placeholder; padding: 60px 0; }
+/* 卡BN-3：未接单超阈值提示（浅红底 + 红字 + 圆角 8，照原型 S4） */
+.sc-unacked { margin-top: 8px; padding: 8px 10px; background: #FFF3F3; border: 1px solid #FFD9D9; border-radius: 8px; font-size: 12px; line-height: 1.5; color: #C0392B; }
 </style>

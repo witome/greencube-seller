@@ -49,6 +49,7 @@ export class SupplierFulfillService {
       if (!grouped.has(oid)) {
         grouped.set(oid, {
           orderId: oid,
+          createdAt: it.order.createdAt.toISOString(), // 卡BN-3（2026-10-02 经用户批准补字段）：未接单红字提示的计时起点（任务书原以为已返回）
           deliveryDate: it.order.deliveryDate.toISOString().slice(0, 10),
           declareDeadline: this.deadline(it.order.deliveryDate),
           items: [],

@@ -130,6 +130,9 @@ export const supplierApi = {
   updateProfile: (data) => put('/supplier/profile', data),
   // 售后台账（卡AE 2026-09-30）—— **只读**：只返回归属本档口的工单 + pendingCount（首页红点）
   getAftersales: () => get('/supplier/aftersale'),
+  // 卡BN-3：未接单电话催办 —— 自己的提醒开关（读 ackCallEnabled + thresholdMinutes）
+  getNotifySetting: () => get('/supplier-notify/me'),
+  updateNotifySetting: (data) => put('/supplier-notify/me', data),
 }
 
 /* ── 配送员端 ── */

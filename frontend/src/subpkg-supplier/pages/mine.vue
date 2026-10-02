@@ -16,6 +16,15 @@
       <view class="list-item" @tap="go('/subpkg-supplier/pages/profile-edit')"><view class="li-ico" style="background:#FFF3E6;">🏪</view><view class="li-main"><view class="li-t">店铺资料</view><view class="li-d">档口信息 · 资质证照（只读）</view></view><view class="arrow">›</view></view>
     </view>
 
+    <!-- 卡BN-3：提醒设置（接口拿不到时整卡隐藏降级，不显示成「关闭」误导供应商） -->
+    <view class="card" v-if="notify">
+      <view class="card-title">提醒设置</view>
+      <view class="list-item">
+        <view class="li-main"><view class="li-t">📞  电话提醒</view><view class="li-d">超 {{ notify.thresholdMinutes }} 分钟未接单，系统打电话给你</view></view>
+        <switch :key="notify.ackCallEnabled ? 'on' : 'off'" :checked="notify.ackCallEnabled" color="#00b96b" @change="onNotifyToggle" />
+      </view>
+    </view>
+
     <!-- 身份切换 -->
     <view class="card" v-if="profile && profile.roles && profile.roles.length > 1">
       <view class="card-title">切换身份</view>
@@ -75,6 +84,34 @@ const switchRole = async (r) => {
 // Hermes 复核收口（2026-09-30）：并到唯一共享实现 —— 原内联版本漏了 stopAllPollers()，
 // 会出现「退出登录后旧页轮询还拿旧身份打接口 → 反复弹权限错」。
 const logout = () => logoutToLogin()
+
+// ─── 卡BN-3（2026-10-02）：电话提醒开关（GET/PUT /supplier-notify/me）───
+// 追加独立 import（不改上面的原有行，保证删除行数=0）
+import { supplierApi } from '@/api/modules'
+
+const notify = ref(null) // null = 接口不可用 → 整卡隐藏（降级）
+
+// uni-app 的 onShow 支持多次注册：这里追加一个回调，不改动上面的原 onShow
+onShow(async () => {
+  try {
+    notify.value = await supplierApi.getNotifySetting()
+  } catch (e) {
+    notify.value = null // 网络错/未上线 → 隐藏卡片，绝不显示成「关闭」
+  }
+})
+
+// 切换：乐观更新 → PUT；失败回滚开关并 toast（switch 绑了 :key，回滚后强制重渲染保证 UI 一致）
+const onNotifyToggle = async (e) => {
+  const next = !!(e && e.detail && e.detail.value)
+  const prev = notify.value.ackCallEnabled
+  notify.value = { ...notify.value, ackCallEnabled: next }
+  try {
+    await supplierApi.updateNotifySetting({ ackCallEnabled: next })
+  } catch (err) {
+    notify.value = { ...notify.value, ackCallEnabled: prev }
+    t('设置失败，请重试')
+  }
+}
 </script>
 
 <style lang="scss" scoped>
