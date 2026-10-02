@@ -605,4 +605,23 @@ onMounted(() => {
 .admin-buyers-mb {
   margin-bottom: 16px;
 }
+
+/* ── 卡BE：≤768px 统计卡可换行、筛选条换行 ── */
+@media (max-width: 768px) {
+  .admin-buyers-stats {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .admin-buyers-stat {
+    flex: 1 1 140px;
+    max-width: none;
+  }
+  .admin-buyers-filter {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .admin-buyers-filter > * {
+    margin-left: 0 !important;
+  }
+}
 </style>

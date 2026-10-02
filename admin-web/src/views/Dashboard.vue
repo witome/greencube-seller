@@ -347,4 +347,16 @@ onMounted(async () => {
   border-radius: 12px;
   padding: 4px 12px;
 }
+
+/* ── 卡BE：≤768px 统计卡/宫格自适应多列，禁止单字竖排 ── */
+@media (max-width: 768px) {
+  .admin-dashboard-cards,
+  .admin-dashboard-quick-grid,
+  .admin-dashboard-ov-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  .admin-dashboard-card-num {
+    font-size: 24px;
+  }
+}
 </style>

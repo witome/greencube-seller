@@ -663,4 +663,27 @@ onMounted(async () => {
 .shortage { color: #f56c6c; font-size: 12px; margin-top: 2px; }
 .shortage-list { display: flex; flex-direction: column; gap: 2px; }
 .shortage-line { color: #f56c6c; font-size: 12px; line-height: 1.5; }
+
+/* ── 卡BE：≤768px 顶部统计可换行（每格最小 140px，两列起），工具条换行 ── */
+@media (max-width: 768px) {
+  .admin-fulfill-stats {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .admin-fulfill-stat {
+    flex: 1 1 140px;
+    max-width: none;
+  }
+  .admin-fulfill-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .admin-fulfill-toolbar > * {
+    margin-left: 0 !important; /* 间距统一交给 gap */
+  }
+  .admin-fulfill-toolbar-tip {
+    margin-left: 0;
+    width: 100%;
+  }
+}
 </style>

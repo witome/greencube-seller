@@ -21,3 +21,57 @@ body {
 :root {
   --lvl-brand: #00b96b;
 }
+
+/* ── 卡BE 手机端适配：仅 ≤768px 生效；≥769px 桌面零变化 ── */
+@media (max-width: 768px) {
+  /* 表单控件：固定宽度一律铺满（!important 覆盖页面内联 style width:320px 等） */
+  .el-main .el-select,
+  .el-main .el-input,
+  .el-main .el-input-number,
+  .el-main .el-range-editor {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* 各页筛选/工具条：允许换行（scoped 样式未声明 flex-wrap，不冲突） */
+  .el-main .filter-bar,
+  .el-main .toolbar,
+  .el-main .admin-appeals-filter,
+  .el-main .admin-dailyrec-filter,
+  .el-main .admin-payments-filter,
+  .el-main .admin-aftersale-filter,
+  .el-main .admin-demand-filter {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  /* 触摸友好：点击热区 ≥32px */
+  .el-main .el-button {
+    min-height: 32px;
+  }
+  .el-main .el-button--small,
+  .el-main .el-button.is-link {
+    min-height: 32px;
+  }
+  .el-main .el-input__wrapper,
+  .el-main .el-select__wrapper {
+    min-height: 32px;
+  }
+  .el-main .el-radio-button__inner {
+    min-height: 32px;
+  }
+  .el-main .el-checkbox {
+    min-height: 32px;
+  }
+
+  /* 弹层窄屏不超宽（默认 el-dialog 在组件树内渲染，会被 .el-main 触发的横向滚动撑破） */
+  .el-dialog,
+  .el-message-box {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+  .el-drawer.ltr,
+  .el-drawer.rtl {
+    width: calc(100vw - 24px) !important;
+  }
+}

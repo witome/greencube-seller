@@ -732,4 +732,18 @@ onMounted(() => {
   color: #8a9099;
   word-break: break-all;
 }
+
+/* ── 卡BE：≤768px 表单行可换行（输入框已由全局规则铺满） ── */
+@media (max-width: 768px) {
+  .admin-settings-row,
+  .admin-settings-add,
+  .admin-settings-qr {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .admin-settings-k {
+    flex: 0 0 auto;
+    min-width: 96px;
+  }
+}
 </style>
