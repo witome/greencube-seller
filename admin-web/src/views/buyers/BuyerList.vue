@@ -19,16 +19,21 @@
       </div>
     </div>
 
-    <!-- 状态筛选 -->
+    <!-- 状态筛选（卡BQ 照原型屏3：页签式，待审核/已忽略带计数；已驳回/已开通/运营停用保留原筛选能力） -->
     <el-card shadow="never" class="admin-buyers-filter-card">
       <div class="admin-buyers-filter">
-        <el-radio-group v-model="statusFilter" @change="load">
-          <el-radio-button :value="''">全部</el-radio-button>
-          <el-radio-button :value="1">待审核</el-radio-button>
-          <el-radio-button :value="3">已驳回</el-radio-button>
-          <el-radio-button :value="2">已开通</el-radio-button>
-          <el-radio-button :value="5">运营停用</el-radio-button>
-        </el-radio-group>
+        <div class="admin-buyers-tabs">
+          <div class="admin-buyers-tab" :class="{ on: statusFilter === 1 }" @click="filterBy(1)">
+            待审核 ({{ fmtNum(stats.pending) }})
+          </div>
+          <div class="admin-buyers-tab" :class="{ on: statusFilter === 7 }" @click="filterBy(7)">
+            已忽略 ({{ fmtNum(stats.ignored) }})
+          </div>
+          <div class="admin-buyers-tab" :class="{ on: statusFilter === '' }" @click="filterBy('')">全部</div>
+          <div class="admin-buyers-tab" :class="{ on: statusFilter === 3 }" @click="filterBy(3)">已驳回</div>
+          <div class="admin-buyers-tab" :class="{ on: statusFilter === 2 }" @click="filterBy(2)">已开通</div>
+          <div class="admin-buyers-tab" :class="{ on: statusFilter === 5 }" @click="filterBy(5)">运营停用</div>
+        </div>
         <el-input
           v-model="keyword"
           placeholder="搜索餐馆名 / 联系人 / 手机号"
@@ -65,15 +70,19 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === 1" type="primary" link @click="openVerifyDrawer(row)">核实</el-button>
+            <!-- 卡BQ：已忽略行操作只留「查看」（照原型屏3-3） -->
+            <el-button v-if="row.status === 7" type="primary" link @click="openVerifyDrawer(row)">查看</el-button>
+            <el-button v-else-if="row.status === 1" type="primary" link @click="openVerifyDrawer(row)">核实</el-button>
             <el-button v-else-if="row.status === 3" type="warning" link @click="openVerifyDrawer(row)">复核申诉</el-button>
             <el-button v-else type="primary" link @click="openVerifyDrawer(row)">详情</el-button>
-            <el-button type="success" link @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="row.status !== 7" type="success" link @click="openEdit(row)">编辑</el-button>
             <!-- 卡AA：启用/停用（仅 2↔5 切换；停用挡新单，已有订单不受影响） -->
             <el-button v-if="row.status === 2" type="danger" link @click="toggleSuspend(row, 5)">停用</el-button>
             <el-button v-else-if="row.status === 5" type="success" link @click="toggleSuspend(row, 2)">启用</el-button>
+            <!-- 卡BQ：待审行加「忽略」（中性灰，不与红色「驳回」混淆） -->
+            <el-button v-if="row.status === 1" link class="admin-buyers-ignore" @click="askIgnore(row)">忽略</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -159,6 +168,8 @@
             <el-button type="success" @click="openAppeal(true)">通过申诉（激活）</el-button>
             <el-button type="danger" @click="openAppeal(false)">驳回申诉（冻结 60 天）</el-button>
           </div>
+          <!-- 卡BQ：已忽略账号不给申诉/核实入口 -->
+          <el-empty v-else-if="detail.accountStatus === 7" description="该账号已忽略（恶意注册处置），无核实操作" />
           <el-empty v-else description="该账号已激活，无需核实" />
         </el-card>
       </div>
@@ -242,9 +253,9 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 10
 const loading = ref(false)
-const statusFilter = ref('')
+const statusFilter = ref(1) // 卡BQ：默认页签「待审核」（照原型屏3）
 const keyword = ref('')
-const stats = ref({ pending: null, appeal: null, overdue: null })
+const stats = ref({ pending: null, appeal: null, overdue: null, ignored: null })
 
 // ── 核实详情 ──
 const verifyDrawer = ref(false)
@@ -284,6 +295,7 @@ function statusType(status) {
   if (status === 2) return 'success'
   if (status === 3) return 'danger'
   if (status === 5) return 'info' // 卡AA：运营停用（灰色 tag，后端 statusText=「运营停用」）
+  if (status === 7) return 'info' // 卡BQ：已忽略（灰字，照原型屏3-3）
   return 'info'
 }
 
@@ -292,6 +304,7 @@ function statusText(status) {
   if (status === 2) return '已激活'
   if (status === 3) return '已驳回'
   if (status === 5) return '运营停用'
+  if (status === 7) return '已忽略' // 卡BQ
   return '未知'
 }
 
@@ -350,6 +363,13 @@ async function loadStats() {
     stats.value.appeal = a?.total ?? 0
   } catch (e) {
     stats.value.appeal = -1
+  }
+  // 卡BQ：已忽略计数（页签角标）
+  try {
+    const i = await buyerAdminApi.getPendingBuyers({ status: 7, page: 1, pageSize: 1 })
+    stats.value.ignored = i?.total ?? 0
+  } catch (e) {
+    stats.value.ignored = -1
   }
 }
 
@@ -503,6 +523,28 @@ async function toggleSuspend(row, targetStatus) {
   }
 }
 
+// ── 忽略（卡BQ 2026-10-03）：仅待审核可忽略 → 7 已忽略；对付恶意注册 ──
+async function askIgnore(row) {
+  try {
+    await ElMessageBox.confirm(
+      '忽略后该账号不再出现在待审核列表、无法下单，也不给申诉入口。适合恶意注册。',
+      '忽略这条注册？',
+      { confirmButtonText: '确认忽略', cancelButtonText: '再想想', type: 'info', confirmButtonClass: 'admin-buyers-ignore-confirm' },
+    )
+  } catch (e) {
+    return // 用户取消
+  }
+  try {
+    // 新接口走 request 直调（modules.js 不在本卡白名单内，同卡AA toggleSuspend 先例）；拦截器已解包信封
+    await request.post(`/admin/buyers/${row.purchaserId}/ignore`)
+    ElMessage.success('已忽略')
+    load()
+    loadStats()
+  } catch (e) {
+    /* 失败已由 request 拦截器提示 */
+  }
+}
+
 onMounted(() => {
   load()
   loadStats()
@@ -623,5 +665,48 @@ onMounted(() => {
   .admin-buyers-filter > * {
     margin-left: 0 !important;
   }
+}
+
+/* ── 卡BQ（2026-10-03）：页签（照原型屏3：下划线式，选中绿色加粗）+ 忽略中性灰 ── */
+.admin-buyers-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid #e5e8eb;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+.admin-buyers-tab {
+  font-size: 13px;
+  color: #606266;
+  padding: 9px 16px;
+  cursor: pointer;
+  position: relative;
+  white-space: nowrap;
+}
+.admin-buyers-tab.on {
+  color: #00b96b;
+  font-weight: 600;
+}
+.admin-buyers-tab.on::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: #00b96b;
+}
+.admin-buyers-ignore {
+  color: #6b7280 !important; /* 中性灰，不与红色「驳回」混淆 */
+}
+</style>
+
+<!-- 卡BQ：忽略二次确认「确认忽略」键用中性色（MessageBox 挂在 body 下，scoped 样式够不着） -->
+<style>
+.admin-buyers-ignore-confirm {
+  background: #6b7280;
+  border-color: #6b7280;
+  color: #fff;
 }
 </style>

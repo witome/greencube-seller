@@ -122,8 +122,9 @@
       <view class="li-main">
         <view class="li-t">
           {{ g.name }}
-          <!-- 卡Z2：已下架 → 编辑/改库存置灰（点了只给提示，后端本来也会拒） -->
-          <view class="act-link" :class="{ dim: g.status === 'off_shelf' }" @tap="tapEdit(g)">✏️ 编辑</view>
+          <!-- 卡Z2：已下架 → 编辑/改库存置灰（点了只给提示，后端本来也会拒）；
+               卡BQ：待审核/已驳回两行编辑点亮（绿底描边，照原型屏4），点了走「编辑待审商品」弹层 -->
+          <view class="act-link" :class="{ dim: g.status === 'off_shelf', lit: g.status === 'pending' || g.status === 'rejected' }" @tap="tapEdit(g)">✏️ 编辑</view>
           <view class="act-stock" :class="{ dim: g.status === 'off_shelf' }" @tap="tapStock(g)">⚡ 改库存</view>
           <!-- 卡Z2：在售/变更中 → 下架；已下架 → 重新上架；待审核/已驳回（申请态）→ 删除 -->
           <view
@@ -205,6 +206,70 @@
         <view class="row-btns">
           <view class="pbtn ghost" @tap="editTarget = null">取消</view>
           <view class="pbtn primary" @tap="submitEdit">提交变更</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 卡BQ（2026-10-03）：编辑待审商品弹层（照原型屏4-2）——
+         编辑的是待审核/已驳回那条申请本身：原地改，改完仍是这一条，不会多出一条待审 -->
+    <view v-if="pendingEditTarget" class="mask" @tap="pendingEditTarget = null">
+      <view class="modal" @tap.stop>
+        <view class="card-title">✏️ 编辑待审商品</view>
+        <view class="pending-sub">还没审核通过，改完仍是这一条，不会多出一条待审</view>
+        <view class="form-row"><view class="fr-l">商品名称</view><view class="fr-r"><input v-model="pendingEditForm.name" class="ipt" placeholder="商品名称" /></view></view>
+        <view class="form-row form-top">
+          <view class="fr-l">商品分类</view>
+          <view class="fr-r">
+            <view class="chip-group">
+              <view
+                v-for="c in cats"
+                :key="c.id"
+                class="chip"
+                :class="{ on: pendingEditForm.categoryId === c.id }"
+                @tap="pendingEditForm.categoryId = c.id"
+              >{{ c.name }}</view>
+            </view>
+            <view class="muted">只能选已授权分类</view>
+          </view>
+        </view>
+        <view class="form-row">
+          <view class="fr-l">计量方式</view>
+          <view class="fr-r">
+            <view class="chip-group">
+              <view class="chip" :class="{ on: pendingEditForm.weighType === 1 }" @tap="pendingEditForm.weighType = 1">称重（斤）</view>
+              <view class="chip" :class="{ on: pendingEditForm.weighType === 2 }" @tap="pendingEditForm.weighType = 2">固定规格</view>
+            </view>
+          </view>
+        </view>
+        <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="pendingEditForm.supplyPrice" class="ipt" type="digit" placeholder="元/斤，提交后审核" /></view></view>
+        <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="pendingEditForm.dailySupply" class="ipt" type="digit" placeholder="斤" /></view></view>
+        <view class="form-row form-top">
+          <view class="fr-l">商品备注</view>
+          <view class="fr-r">
+            <textarea v-model="pendingEditForm.remark" class="ipt ta-remark" :maxlength="30" placeholder="如：今早现摘，带花带刺（可不填）" />
+            <view class="muted remark-meta">会显示在采购方商品名下方（灰字），可不填；最多 30 字<text class="remark-count">{{ (pendingEditForm.remark || '').length }}/30</text></view>
+          </view>
+        </view>
+        <view class="form-row form-top">
+          <view class="fr-l">封面图</view>
+          <view class="fr-r">
+            <view v-if="!pendingEditCover && !pendingCoverPicking" class="cover-empty" @tap="pickPendingCover">📷 点击选封面图<small>建议实拍：光线好、菜新鲜</small></view>
+            <view v-else class="cover-picked" @tap="pickPendingCover">
+              <view class="cover-thumb">
+                <image v-if="pendingEditCover" :src="fullUrl(pendingEditCover)" mode="aspectFill" class="cover-thumb-img" />
+                <view v-else class="cover-thumb-img cover-loading"></view>
+                <view class="cam-badge lg">📷</view>
+              </view>
+              <view class="cover-meta">
+                <view class="cover-meta-t">{{ pendingCoverPicking ? '上传中…' : '已选 1 张 · 点击可重选' }}</view>
+                <view class="cover-meta-d">随申请一起提交，走运营审核</view>
+              </view>
+            </view>
+          </view>
+        </view>
+        <view class="row-btns">
+          <view class="pbtn ghost" @tap="pendingEditTarget = null">取消</view>
+          <view class="pbtn primary" :class="{ disabled: pendingEditBusy }" @tap="submitPendingEdit">{{ pendingEditBusy ? '提交中…' : '提交修改' }}</view>
         </view>
       </view>
     </view>
@@ -408,13 +473,91 @@ async function doConfirm() {
 }
 
 // 已下架的行：编辑/改库存置灰，点了给可读提示（后端 quickStock/applyChange 本来也会拒）
+// 卡BQ：待审核/已驳回两行编辑点亮 → 走「编辑待审商品」弹层（原地改申请，不走变更）
 function tapEdit(g) {
   if (g.status === 'off_shelf') { uni.showToast({ title: '商品已下架，请先重新上架再改价/改名', icon: 'none' }); return }
+  if (g.status === 'pending' || g.status === 'rejected') { openPendingEdit(g); return }
   openEdit(g)
 }
 function tapStock(g) {
   if (g.status === 'off_shelf') { uni.showToast({ title: '商品已下架，请先重新上架再改价/改名', icon: 'none' }); return }
   openStock(g)
+}
+
+// ── 卡BQ（2026-10-03）：编辑待审/已驳回商品（PUT /supplier-goods/apply/:applyId，原地改不新增申请） ──
+const pendingEditTarget = ref(null)
+const pendingEditForm = ref({ name: '', categoryId: null, weighType: 1, supplyPrice: '', dailySupply: '', remark: '' })
+const pendingEditCover = ref('')
+const pendingCoverPicking = ref(false)
+const pendingEditBusy = ref(false)
+
+function openPendingEdit(g) {
+  pendingEditTarget.value = g
+  pendingEditForm.value = {
+    name: g.name || '',
+    categoryId: g.categoryId ?? null,
+    weighType: g.weighType || 1,
+    supplyPrice: String(g.supplyPrice ?? ''),
+    dailySupply: String(g.dailySupply ?? ''),
+    remark: g.remark || '',
+  }
+  pendingEditCover.value = g.cover || ''
+}
+
+async function pickPendingCover() {
+  if (pendingCoverPicking.value) return
+  try {
+    const paths = await pickPhotos({ count: 1 })
+    if (!paths || !paths[0]) return
+    pendingCoverPicking.value = true
+    try {
+      pendingEditCover.value = await uploadPhoto(paths[0])
+    } finally {
+      pendingCoverPicking.value = false
+    }
+  } catch (e) {
+    pendingCoverPicking.value = false
+    if (e && e.cancelled) return // 用户取消选图
+    if (e && e.msg) uni.showToast({ title: e.msg, icon: 'none' })
+  }
+}
+
+async function submitPendingEdit() {
+  const g = pendingEditTarget.value
+  if (!g || pendingEditBusy.value) return
+  const f = pendingEditForm.value
+  if (!f.name.trim()) { uni.showToast({ title: '请填写商品名称', icon: 'none' }); return }
+  if (!f.categoryId) { uni.showToast({ title: '请选择商品分类', icon: 'none' }); return }
+  const price = Number(f.supplyPrice)
+  const supply = Number(f.dailySupply)
+  if (!price || price <= 0) { uni.showToast({ title: '请填写正确的供货价', icon: 'none' }); return }
+  if (isNaN(supply) || supply < 0) { uni.showToast({ title: '请填写正确的日可供量', icon: 'none' }); return }
+  pendingEditBusy.value = true
+  try {
+    const res = await put(`/supplier-goods/apply/${g.applyId}`, {
+      name: f.name.trim(),
+      categoryId: f.categoryId,
+      weighType: f.weighType,
+      supplyPrice: price,
+      dailySupply: supply,
+      remark: (f.remark || '').trim(), // 传空串 = 显式清空备注
+      ...(pendingEditCover.value ? { cover: pendingEditCover.value } : {}),
+    })
+    pendingEditTarget.value = null
+    // 三种提交反馈照原型屏4-3：待审态改完仍在等待审核；已驳回态改完重新进待审；
+    // 兜底态（提交瞬间刚好被通过）→ 后端业务错在 catch 里原样透出
+    if (res && res.resubmitted) {
+      uni.showToast({ title: '已重新提交审核', icon: 'none' })
+    } else {
+      uni.showToast({ title: '已更新，仍在等待审核', icon: 'none' })
+    }
+    load()
+  } catch (e) {
+    // 兜底态：「该商品已审核通过，请用「变更申请」修改」等后端文案原样给到供应商
+    if (e && e.msg) uni.showToast({ title: e.msg, icon: 'none' })
+  } finally {
+    pendingEditBusy.value = false
+  }
 }
 
 // ── 新商品表单：封面 + 资质证明（卡Z1：把「＋ 上传检疫合格证」死文案接上真上传）──
@@ -665,6 +808,18 @@ onMounted(() => {
 .act-down { display: inline; color: #C87000; font-size: 12px; font-weight: 600; margin-left: 8px; }
 .act-del { display: inline; color: #FA5151; font-size: 12px; font-weight: 600; margin-left: 8px; }
 .act-link.dim, .act-stock.dim { color: #C0C6CC; }
+/* 卡BQ：待审核/已驳回行编辑点亮（绿底绿字描边，照原型屏4，观感与在售行一致可点） */
+.act-link.lit {
+  color: #00B96B;
+  background: #F2FBF7;
+  border: 1px solid #B6E4CF;
+  border-radius: 6px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  box-shadow: 0 0 0 1.5px rgba(0, 185, 107, 0.25);
+}
+/* 卡BQ：编辑待审商品弹层副标题（橙色小字，照原型屏4-2） */
+.pending-sub { font-size: 11px; color: #FF8F1F; margin: -6px 0 10px; line-height: 1.5; }
 .act-down.disabled, .act-del.disabled, .pbtn.disabled { opacity: 0.45; pointer-events: none; }
 .form-row { display: flex; align-items: center; padding: 12px 0; font-size: 14px; }
 .fr-l { width: 76px; color: $text-second; flex-shrink: 0; }

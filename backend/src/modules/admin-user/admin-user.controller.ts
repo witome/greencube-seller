@@ -79,6 +79,13 @@ export class AdminUserController {
     return this.service.updateBuyerStatus(Number(id), dto.status, userId)
   }
 
+  /// 忽略待审核采购方（卡BQ 2026-10-03：仅待审核(1)可忽略 → 7 已忽略；对付恶意注册）
+  @Post('buyers/:id/ignore')
+  @Roles(Role.ADMIN)
+  async ignoreBuyer(@Param('id') id: string, @CurrentUser('userId') userId: bigint) {
+    return this.service.ignoreBuyer(Number(id), userId)
+  }
+
   /// 供应商列表
   @Get('suppliers')
   @Roles(Role.ADMIN)

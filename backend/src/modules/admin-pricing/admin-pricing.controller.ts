@@ -48,6 +48,13 @@ export class AdminPricingController {
     return this.service.batchMarkup(userId, dto)
   }
 
+  /// 卡BQ（2026-10-03）：恢复继承（清除单品覆盖 markupOverridden→0，按档位重算比例与销售价）
+  @Post(':productId/reset-override')
+  @Roles(Role.ADMIN)
+  async resetOverride(@Param('productId') productId: string, @CurrentUser('userId') userId: bigint) {
+    return this.service.resetOverride(Number(productId), userId)
+  }
+
   /// 改价（加价比例 / 销售价）；改比例 = 单品单独设过（markupOverridden=1）
   @Put(':productId')
   @Roles(Role.ADMIN)

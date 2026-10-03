@@ -122,6 +122,63 @@ export class AdminPricingService {
   }
 
   // ────────────────────────────────────────
+  // 卡BQ（2026-10-03）：恢复继承 —— 清除单品覆盖（markupOverridden 1→0），
+  // 按 供应商 > 分类 > 全局 > 0.30 重新解析比例并联动销售价（有主供供货价时 salePrice = 供货价 × (1+比例)）。
+  // ⚠️ 比例解析复用 markup-resolver 的唯一实现（resolveMarkupFromConfigs / loadMarkupConfigs），不另写一套
+  // ────────────────────────────────────────
+  async resetOverride(productId: number, operatorId: bigint) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: BigInt(productId) },
+      include: { links: { where: { status: 1 }, orderBy: { priority: 'asc' } } },
+    })
+    if (!product) throw new BizException(ErrorCode.NOT_FOUND, '商品不存在')
+
+    const before = {
+      markupRate: Number(product.markupRate),
+      salePrice: Number(product.salePrice),
+      markupOverridden: product.markupOverridden,
+    }
+
+    const primary = product.links[0]
+    const configs = await loadMarkupConfigs(this.prisma)
+    const resolved = resolveMarkupFromConfigs(
+      {
+        // 强制按继承链解析（忽略既有单品覆盖）
+        markupOverridden: 0,
+        markupRate: product.markupRate,
+        categoryId: product.categoryId,
+        supplierId: primary?.supplierId ?? null,
+      },
+      configs,
+    )
+
+    const patch: any = { markupOverridden: 0, markupRate: resolved.rate }
+    if (primary) {
+      patch.salePrice = Math.round(Number(primary.supplyPrice) * (1 + resolved.rate) * 100) / 100
+    }
+
+    await this.prisma.product.update({ where: { id: BigInt(productId) }, data: patch })
+
+    const after = {
+      markupRate: resolved.rate,
+      salePrice: patch.salePrice ?? before.salePrice,
+      markupOverridden: 0,
+      source: resolved.source,
+    }
+
+    await this.audit.log({
+      operatorId,
+      action: 'MARKUP_RESET_OVERRIDE',
+      entity: 'product',
+      entityId: productId,
+      before,
+      after,
+    })
+
+    return { productId, ...after }
+  }
+
+  // ────────────────────────────────────────
   // 批量加价：范围 = 全部 / 按分类 / 按供应商，统一设置加价比例并写 markup_config
   // 卡BI：applyNow=false（默认）只影响以后新增（在售商品一律不动）；
   //       applyNow=true 同时重算在售商品（markupOverridden=1 的跳过）。

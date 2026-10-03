@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common'
 import { SupplierGoodsService } from './supplier-goods.service'
 import { ApplyGoodsDto } from './dto/apply-goods.dto'
+import { EditPendingApplyDto } from './dto/edit-pending-apply.dto'
 import { ChangeGoodsDto } from './dto/change-goods.dto'
 import { QuickStockDto } from './dto/quick-stock.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
@@ -31,6 +32,18 @@ export class SupplierGoodsController {
   @Roles(Role.SUPPLIER)
   async apply(@CurrentUser('userId') userId: bigint, @Body() dto: ApplyGoodsDto) {
     return this.service.apply(userId, dto)
+  }
+
+  /// ✏️ 就地编辑待审核/已驳回的新品申请（卡BQ：原地改不新增申请；已通过 → 业务错引导走变更申请）
+  /// ⚠️ 声明在 ':productId/...' 参数路由之前
+  @Put('apply/:applyId')
+  @Roles(Role.SUPPLIER)
+  async editPendingApply(
+    @CurrentUser('userId') userId: bigint,
+    @Param('applyId') applyId: string,
+    @Body() dto: EditPendingApplyDto,
+  ) {
+    return this.service.editPendingApply(userId, Number(applyId), dto)
   }
 
   /// 提交变更申请（走审核，原版本在售）

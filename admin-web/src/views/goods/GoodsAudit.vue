@@ -88,18 +88,33 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 新品通过弹窗 -->
+    <!-- 新品通过弹窗（卡BQ 2026-10-03：比例可留空 —— 留空=按 供应商>分类>全局 自动算（markupOverridden=0）；
+         手动填写=固定为「单品」比例（markupOverridden=1，之后调档位不影响它）。照原型屏2两种态） -->
     <el-dialog v-model="approveDialog" title="审核通过 · 上架商品" width="480px">
       <p style="color:#606266; margin-bottom:12px">
         「{{ currentApply?.name }}」供货价 ¥{{ currentApply?.supplyPrice }}，请设定加价比例生成销售价。
       </p>
       <el-form label-width="110px">
         <el-form-item label="加价比例">
-          <el-input-number v-model="markupRate" :min="0" :max="2" :step="0.05" />
+          <el-input
+            v-model="markupRateInput"
+            placeholder="留空则自动按档位计算"
+            style="width: 180px"
+            clearable
+          />
           <span class="tip">（如 0.3 = 加价 30%）</span>
+          <div v-if="!rateFilled" class="rate-hint">
+            留空 = 按 供应商 &gt; 分类 &gt; 全局 自动计算（当前会算出 {{ Math.round(defaultRate * 100) }}%）
+          </div>
+          <div v-else class="rate-hint orange">
+            手动填写会把此商品固定为「单品」比例，之后调整供应商/分类/全局比例不会影响它
+          </div>
         </el-form-item>
         <el-form-item label="销售价预览">
           <span class="preview">¥{{ previewSalePrice }}</span>
+          <span class="preview-src">
+            按「{{ rateFilled ? `单品 ${Math.round(rateNum * 100)}%` : `${defaultSource} ${Math.round(defaultRate * 100)}%` }}」实时算出
+          </span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -176,13 +191,40 @@ const rejectDialog = ref(false)
 const rejectChangeDialog = ref(false)
 const currentApply = ref(null)
 const currentChange = ref(null)
-const markupRate = ref(0.3)
+// 卡BQ（2026-10-03）：加价比例可留空 —— 留空=档位自动（不传 markupRate）；填了=固定单品
+const markupRateInput = ref('')
 const rejectReason = ref('')
 const rejectChangeComment = ref('')
 
+// 档位配置（供应商>分类>全局），供「当前会算出 X%」预览用；提交以后端 resolveDefaultMarkup 为准
+const markupCfg = ref(null)
+const defaultResolve = ref({ rate: 0.3, source: '全局默认' })
+
+const rateNum = computed(() => {
+  const v = parseFloat(markupRateInput.value)
+  return isNaN(v) ? null : v
+})
+const rateFilled = computed(() => rateNum.value !== null)
+const defaultRate = computed(() => defaultResolve.value.rate)
+const defaultSource = computed(() => defaultResolve.value.source)
+
+// 展示层近似解析（与后端 resolveMarkupFromConfigs 同口径）：供应商 > 分类 > 全局 > 0.30
+// pending 接口只回 supplierName，按档口名匹配配置（仅预览展示用，落库值由后端权威解析）
+function resolveDefaultFor(row) {
+  const cfg = markupCfg.value
+  if (!cfg || !row) return { rate: 0.3, source: '全局默认' }
+  const sup = (cfg.suppliers || []).find((s) => s.stallName === row.supplierName && s.rate != null)
+  if (sup) return { rate: sup.rate, source: '供应商' }
+  const cat = (cfg.categories || []).find((c) => c.categoryId === row.categoryId && c.rate != null)
+  if (cat) return { rate: cat.rate, source: '分类' }
+  if (cfg.global != null) return { rate: cfg.global, source: '全局默认' }
+  return { rate: 0.3, source: '全局默认' }
+}
+
 const previewSalePrice = computed(() => {
   if (!currentApply.value) return '0.00'
-  return ((currentApply.value.supplyPrice || 0) * (1 + markupRate.value)).toFixed(2)
+  const rate = rateFilled.value ? rateNum.value : defaultRate.value
+  return ((currentApply.value.supplyPrice || 0) * (1 + rate)).toFixed(2)
 })
 
 function fmtTime(iso) {
@@ -202,9 +244,17 @@ async function load() {
   }
 }
 
+// 卡BQ：档位配置加载（预览用；失败不阻断审核，回退 0.30）
+async function loadMarkupCfg() {
+  try {
+    markupCfg.value = await pricingAdminApi.getMarkupConfig()
+  } catch (e) { markupCfg.value = null }
+}
+
 function openApprove(row) {
   currentApply.value = row
-  markupRate.value = 0.3
+  markupRateInput.value = '' // 默认留空态（照原型屏2）
+  defaultResolve.value = resolveDefaultFor(row)
   approveDialog.value = true
 }
 
@@ -215,10 +265,26 @@ function openReject(row) {
 }
 
 async function submitApprove() {
+  if (rateFilled.value && (rateNum.value < 0 || rateNum.value > 2)) {
+    ElMessage.warning('加价比例需在 0 ~ 2 之间（如 0.3 = 加价 30%）')
+    return
+  }
   submitting.value = true
   try {
-    await goodsAdminApi.reviewGoodsApply(currentApply.value.applyId, { approved: true, markupRate: markupRate.value })
-    ElMessage.success('已通过并上架')
+    // 卡BQ：留空时**不传 markupRate**（后端收到 markupRate 才会把商品钉成单品覆盖）。
+    // 传按预览档位算出的 salePrice → 后端走 resolveDefaultMarkup（供应商>分类>全局>0.30）且 markupOverridden=0。
+    const payload = { approved: true }
+    if (rateFilled.value) {
+      payload.markupRate = rateNum.value
+    } else {
+      payload.salePrice = Number((((currentApply.value.supplyPrice || 0) * (1 + defaultRate.value)) ).toFixed(2))
+    }
+    await goodsAdminApi.reviewGoodsApply(currentApply.value.applyId, payload)
+    ElMessage.success(
+      rateFilled.value
+        ? `已通过。该商品已固定为「单品 ${Math.round(rateNum.value * 100)}%」`
+        : `已通过。该商品按「${defaultSource.value} ${Math.round(defaultRate.value * 100)}%」定价`,
+    )
     approveDialog.value = false
     load()
   } catch (e) { /* 已提示 */ } finally {
@@ -308,6 +374,7 @@ async function savePriority() {
 onMounted(() => {
   load()
   loadPriorityProducts()
+  loadMarkupCfg()
 })
 </script>
 
@@ -322,4 +389,8 @@ onMounted(() => {
 .diff-new { color: #f56c6c; font-weight: 600; }
 .tip { color: #909399; font-size: 12px; margin-left: 8px; }
 .preview { color: #00b96b; font-size: 18px; font-weight: 700; }
+/* 卡BQ：留空态灰字 / 手填态橙色警示 + 预览来源小字 */
+.rate-hint { color: #8a9099; font-size: 12px; line-height: 1.6; margin-top: 4px; }
+.rate-hint.orange { color: #ff8f1f; }
+.preview-src { color: #8a9099; font-size: 11px; margin-left: 6px; }
 </style>

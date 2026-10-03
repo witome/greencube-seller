@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { BizException, ErrorCode } from '../../common/constants/error-codes'
 import { ApplyGoodsDto } from './dto/apply-goods.dto'
+import { EditPendingApplyDto } from './dto/edit-pending-apply.dto'
 import { ChangeGoodsDto } from './dto/change-goods.dto'
 import { QuickStockDto } from './dto/quick-stock.dto'
 import { AuditService } from '../audit/audit.service'
@@ -65,7 +66,8 @@ export class SupplierGoodsService {
     const links = await this.prisma.productSupplierLink.findMany({
       where: { supplierId: supplier.id },
       include: {
-        product: { include: { applications: { orderBy: { createdAt: 'desc' } } } },
+        // 卡BQ：category 供列表行回显 categoryName（编辑待审商品弹层用）
+        product: { include: { category: true, applications: { orderBy: { createdAt: 'desc' } } } },
       },
       orderBy: { productId: 'desc' },
     })
@@ -99,6 +101,9 @@ export class SupplierGoodsService {
         id: Number(p.id),
         name: p.name,
         cover: p.cover ?? null,
+        // 卡BQ（2026-10-03）：编辑待审商品弹层要回显当前分类（仅授权分类里选）
+        categoryId: Number(p.categoryId),
+        categoryName: p.category.name,
         supplyPrice: Number(link.supplyPrice),
         dailySupply: Number(link.dailySupply),
         unit: p.unit,
@@ -258,6 +263,138 @@ export class SupplierGoodsService {
     })
 
     return { changeId: Number(application.id), status: 'changing' }
+  }
+
+  // ────────────────────────────────────────
+  // ✏️ 就地编辑待审核/已驳回的新品申请（卡BQ 2026-10-03）
+  // 为什么不能复用 change()：change() 硬拦「仅已上架商品可发起变更」（product.status!==ON_SALE 即拒），
+  // 待审商品 status=OFF_SHELF 进不去 —— 所以这里单独开方法。
+  // 口径：① 仅本人、仅 type=1（新品）；② 只允许 status=0 待审核 / 2 已驳回，
+  //      已通过(1) → 业务错（前端提示「该商品已审核通过，请用「变更申请」修改」）；
+  //      ③ 事务内同步 application.payload + product（名称/分类/计量/规格/封面/图片）+ link（供货价/日供/备注）；
+  //      ④ 原为已驳回 → status 置回 0（重新进待审队列，并清掉旧驳回原因）；
+  //      ⑤ 不新增第二条申请（原地改）；⑥ 写审计。
+  // ────────────────────────────────────────
+  async editPendingApply(userId: bigint, applyId: number, dto: EditPendingApplyDto) {
+    const supplier = await this.getSupplier(userId)
+
+    const apply = await this.prisma.productApplication.findUnique({ where: { id: BigInt(applyId) } })
+    if (!apply || apply.supplierId !== supplier.id) {
+      throw new BizException(ErrorCode.NOT_FOUND, '该申请不存在或不属于本供应商')
+    }
+    if (apply.type !== 1) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '仅新品申请支持就地编辑')
+    }
+    if (apply.status === 1) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该商品已审核通过，请用「变更申请」修改')
+    }
+    if (apply.status !== 0 && apply.status !== 2) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该申请当前状态不支持编辑')
+    }
+    if (!apply.productId) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '该申请缺少商品档案，无法就地编辑')
+    }
+
+    // 封面地址合法性（卡Z1 白名单，与 apply / updateCover 同一套）
+    if (dto.cover !== undefined && dto.cover !== null && !isValidCoverUrl(dto.cover)) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '封面地址不合法')
+    }
+
+    // 分类授权 + 存在性校验（口径同 apply()：先查再写，避免 FK 撞裸 5001）
+    const authorized = await this.prisma.supplierCategory.findFirst({
+      where: { supplierId: supplier.id, categoryId: BigInt(dto.categoryId) },
+    })
+    if (!authorized) {
+      throw new BizException(ErrorCode.FORBIDDEN, '该商品分类未被授权，请联系运营开通')
+    }
+    const category = await this.prisma.category.findUnique({ where: { id: BigInt(dto.categoryId) } })
+    if (!category) throw new BizException(ErrorCode.PARAM_ERROR, '商品分类不存在')
+
+    const productId = apply.productId
+    const beforeStatus = apply.status
+    const oldPayload = (apply.payload as any) || {}
+    const unit = dto.unit ?? oldPayload.unit ?? '斤'
+
+    // payload 整体替换：必填 7 项用新值；未传的可选字段保留原值（undefined 在 Prisma Json 里会被丢弃，必须条件展开）
+    const nextPayload: any = {
+      ...oldPayload,
+      name: dto.name,
+      categoryId: dto.categoryId,
+      weighType: dto.weighType,
+      unit,
+      supplyPrice: dto.supplyPrice,
+      dailySupply: dto.dailySupply,
+    }
+    if (dto.specText !== undefined) nextPayload.specText = dto.specText
+    if (dto.images !== undefined) nextPayload.images = dto.images
+    if (dto.qualification !== undefined) nextPayload.qualification = dto.qualification
+    if (dto.cover !== undefined) nextPayload.cover = dto.cover
+    if (dto.remark !== undefined) nextPayload.remark = dto.remark // 传空串 = 显式清空
+
+    await this.prisma.$transaction(async (tx) => {
+      // ⑤ 原地改申请：只更新 payload（+ 已驳回时置回待审），不 create 第二条
+      await tx.productApplication.update({
+        where: { id: apply.id },
+        data: {
+          payload: nextPayload,
+          // ④ 原为已驳回 → 重新进待审队列，旧驳回原因一并清掉
+          ...(beforeStatus === 2 ? { status: 0, rejectReason: null } : {}),
+        },
+      })
+      // ③ 同步商品档案（名称/分类/计量/规格/封面/图片）
+      await tx.product.update({
+        where: { id: productId },
+        data: {
+          name: dto.name,
+          categoryId: dto.categoryId,
+          weighType: dto.weighType,
+          unit,
+          ...(dto.specText !== undefined ? { specText: dto.specText } : {}),
+          ...(dto.images !== undefined ? { images: dto.images } : {}),
+          ...(dto.cover !== undefined ? { cover: dto.cover } : {}),
+        },
+      })
+      // ③ 同步供货关系（供货价/日供/备注；remark 挂 link，卡BP 口径）
+      await tx.productSupplierLink.updateMany({
+        where: { productId, supplierId: supplier.id },
+        data: {
+          supplyPrice: dto.supplyPrice,
+          dailySupply: dto.dailySupply,
+          ...(dto.remark !== undefined ? { remark: dto.remark } : {}),
+        },
+      })
+    })
+
+    // ⑥ 写审计（谁、哪条申请、改前改后关键字段、是否为驳回重提）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'SUPPLIER_EDIT_PENDING_APPLY',
+      entity: 'product_application',
+      entityId: Number(apply.id),
+      before: {
+        applyId: Number(apply.id),
+        applyStatus: beforeStatus,
+        productId: Number(productId),
+        supplierId: Number(supplier.id),
+        name: oldPayload.name,
+        categoryId: oldPayload.categoryId,
+        supplyPrice: oldPayload.supplyPrice,
+        dailySupply: oldPayload.dailySupply,
+      },
+      after: {
+        applyId: Number(apply.id),
+        applyStatus: beforeStatus === 2 ? 0 : beforeStatus,
+        productId: Number(productId),
+        supplierId: Number(supplier.id),
+        name: dto.name,
+        categoryId: dto.categoryId,
+        supplyPrice: dto.supplyPrice,
+        dailySupply: dto.dailySupply,
+        resubmitted: beforeStatus === 2,
+      },
+    })
+
+    return { applyId: Number(apply.id), productId: Number(productId), status: 'pending', resubmitted: beforeStatus === 2 }
   }
 
   // ────────────────────────────────────────

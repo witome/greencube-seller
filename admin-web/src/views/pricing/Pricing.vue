@@ -66,14 +66,15 @@
             <span v-else style="color:#c0c4cc;">无供应商</span>
           </template>
         </el-table-column>
-        <el-table-column label="加价比例" width="100" align="right">
-          <template #default="{ row }">
-            <span class="admin-pricing-rate">{{ (row.markupRate * 100).toFixed(0) }}%</span>
-          </template>
-        </el-table-column>
+        <!-- 卡BQ：列序照原型屏1 —— 比例来源在加价比例之前 -->
         <el-table-column label="比例来源" width="100">
           <template #default="{ row }">
             <el-tag :type="sourceTagType(row.markupSource)" size="small" effect="plain">{{ row.markupSource }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="加价比例" width="100" align="right">
+          <template #default="{ row }">
+            <span class="admin-pricing-rate">{{ (row.markupRate * 100).toFixed(0) }}%</span>
           </template>
         </el-table-column>
         <el-table-column label="销售价" width="110" align="right">
@@ -81,9 +82,11 @@
             <span class="admin-pricing-price">¥{{ row.salePrice }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="openEdit(row)">改价</el-button>
+            <!-- 卡BQ：仅「来源=单品」的行给恢复继承入口 -->
+            <el-button v-if="row.markupSource === '单品'" type="warning" link @click="askResetOverride(row)">恢复继承</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -171,23 +174,14 @@
       </template>
     </el-dialog>
 
-    <!-- 影响范围确认弹窗（加价设置卡片保存时必须明确选一次） -->
-    <el-dialog v-model="scopeDialog" title="选择影响范围" width="420px">
+    <!-- 影响范围确认弹窗（卡BQ 照原型屏1-3：「应用到现有商品」复选框**默认勾选**，这是"改了没反应"的根因之一） -->
+    <el-dialog v-model="scopeDialog" title="保存比例 · 影响范围" width="460px">
       <div class="admin-pricing-scope-tip">正在保存：{{ scopePending.label }}</div>
-      <el-radio-group v-model="scopeApplyNow" class="admin-pricing-scope-group">
-        <el-radio :value="false">只影响以后新增（在售商品价格不动）</el-radio>
-        <el-radio :value="true">同时重算在售商品</el-radio>
-      </el-radio-group>
-      <el-alert
-        v-if="scopeApplyNow"
-        type="warning"
-        :closable="false"
-        title="会重算在售商品售价（单品单独设过的跳过）"
-        style="margin-top:8px"
-      />
+      <el-checkbox v-model="scopeApplyNow">应用到现有商品</el-checkbox>
+      <div class="admin-pricing-scope-hint">勾上会按新比例重算在售商品销售价（单品单独设过的会跳过）</div>
       <template #footer>
         <el-button @click="scopeDialog = false">取消</el-button>
-        <el-button type="primary" :loading="scopeSaving" @click="doSaveConfig">确定保存</el-button>
+        <el-button type="primary" :loading="scopeSaving" @click="doSaveConfig">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -195,8 +189,9 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { pricingAdminApi } from '../../api/modules'
+import request from '../../api/request'
 
 const list = ref([])
 const loading = ref(false)
@@ -226,9 +221,9 @@ async function loadConfig() {
   } catch (e) { /* 已提示 */ }
 }
 
-// 影响范围弹窗：任何一处「保存」都必须让运营明确选一次（默认只影响以后新增）
+// 影响范围弹窗：卡BQ 照原型屏1-3，「应用到现有商品」**默认勾选**（原默认不勾导致"改了没反应"）
 const scopeDialog = ref(false)
-const scopeApplyNow = ref(false)
+const scopeApplyNow = ref(true)
 const scopeSaving = ref(false)
 const scopePending = reactive({ scope: 1, refId: null, rate: null, label: '' })
 
@@ -241,7 +236,7 @@ function askScope(scope, refId, label, ratePct) {
   scopePending.refId = refId
   scopePending.rate = ratePct / 100
   scopePending.label = label
-  scopeApplyNow.value = false
+  scopeApplyNow.value = true // 卡BQ：每次打开默认勾选「应用到现有商品」
   scopeDialog.value = true
 }
 
@@ -266,6 +261,27 @@ async function doSaveConfig() {
   }
 }
 
+// ── 恢复继承（卡BQ 2026-10-03）：仅「来源=单品」行可点，二次确认文案照原型屏1-2 ──
+async function askResetOverride(row) {
+  try {
+    await ElMessageBox.confirm(
+      '恢复后这个商品不再固定「单品」比例，改按 供应商 > 分类 > 全局 生效；销售价会随下次重算联动。',
+      `把「${row.name}」恢复为继承档位比例？`,
+      { confirmButtonText: '确认恢复', cancelButtonText: '再想想', type: 'info' },
+    )
+  } catch (e) {
+    return // 用户取消
+  }
+  try {
+    // 新接口走 request 直调（modules.js 不在本卡白名单内，同卡AA toggleSuspend 先例）；拦截器已解包信封
+    await request.post(`/admin/pricing/${row.productId}/reset-override`)
+    ElMessage.success(`已恢复为继承档位比例（按${row.name}当前档位重算）`)
+    load()
+  } catch (e) {
+    /* 失败已由 request 拦截器提示 */
+  }
+}
+
 // ── 商品定价列表 ──
 const editDialog = ref(false)
 const saving = ref(false)
@@ -282,9 +298,10 @@ const suggestPrice = computed(() => {
 })
 
 function sourceTagType(source) {
-  if (source === '单品') return 'danger'
-  if (source === '供应商') return 'warning'
-  if (source === '分类') return 'primary'
+  // 卡BQ：标签色照原型屏1 —— 单品=橙 / 供应商=蓝 / 全局默认=灰；分类原型未给出，用绿色保持可区分
+  if (source === '单品') return 'warning'
+  if (source === '供应商') return 'primary'
+  if (source === '分类') return 'success'
   return 'info'
 }
 
@@ -470,10 +487,11 @@ onMounted(() => {
   color: #303133;
   margin-bottom: 12px;
 }
-.admin-pricing-scope-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: flex-start;
+/* 卡BQ：影响范围弹窗的勾选说明小字（照原型屏1-3） */
+.admin-pricing-scope-hint {
+  font-size: 12px;
+  color: #8a9099;
+  line-height: 1.7;
+  margin-top: 4px;
 }
 </style>

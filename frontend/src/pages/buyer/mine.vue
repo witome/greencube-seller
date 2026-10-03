@@ -143,10 +143,11 @@ const payModeLine = computed(() => {
 })
 
 // 账号状态（提示条）
-const statusIcon = computed(() => ({ 1: '⏳', 2: '✅', 3: '❌', 4: '⛔', 5: '⏸' }[accountStatus.value] || '🏪'))
+// 卡BQ（2026-10-03）：补 7=已忽略映射（缺了被忽略的人会看到「账号状态异常」）；最小改动，只补映射
+const statusIcon = computed(() => ({ 1: '⏳', 2: '✅', 3: '❌', 4: '⛔', 5: '⏸', 7: '🚫' }[accountStatus.value] || '🏪'))
 const statusTitle = computed(() => {
   if (accountStatus.value === null) return '尚未注册餐馆账号'
-  return { 1: '账号审核中', 2: '账号已激活', 3: '账号未通过审核', 4: '账号已冻结', 5: '账号已停用' }[accountStatus.value] || '账号状态异常'
+  return { 1: '账号审核中', 2: '账号已激活', 3: '账号未通过审核', 4: '账号已冻结', 5: '账号已停用', 7: '账号已被忽略' }[accountStatus.value] || '账号状态异常'
 })
 const statusSub = computed(() => {
   if (accountStatus.value === null) return '注册后即可在线下单采购'
@@ -156,11 +157,12 @@ const statusSub = computed(() => {
     3: '可提交申诉重新审核',
     4: '账号已冻结，请联系运营处理',
     5: '账号已停用，请联系运营处理',
+    7: '该账号未通过注册核实，无法下单',
   }[accountStatus.value] || ''
 })
 const statusClass = computed(() => {
   if (accountStatus.value === null) return 'warn'
-  return { 1: 'warn', 2: 'ok', 3: 'err', 4: 'err', 5: 'warn' }[accountStatus.value] || 'warn'
+  return { 1: 'warn', 2: 'ok', 3: 'err', 4: 'err', 5: 'warn', 7: 'warn' }[accountStatus.value] || 'warn'
 })
 
 const fmtMoney = (n) => {

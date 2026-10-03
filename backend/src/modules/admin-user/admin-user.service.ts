@@ -23,6 +23,7 @@ export class AdminUserService {
     const status = query.status ? parseInt(query.status) : undefined
 
     // 采购方管理：默认返回全部（待审核/已驳回/已开通），传 status 则按状态筛选
+    // 卡BQ（2026-10-03）：status 支持 7（已忽略，回看页签）；待审计数口径仍只算 1（下方 overdueCount 不变）
     const where: any = status ? { accountStatus: status } : {}
 
     const now = Date.now()
@@ -369,6 +370,45 @@ export class AdminUserService {
   }
 
   // ────────────────────────────────────────
+  // 忽略待审核采购方（卡BQ 2026-10-03：对付恶意注册）
+  // 仅允许对 accountStatus=1 待审核 的记录忽略 → 置为 7 已忽略：
+  // 不再出现在待审核列表、无法下单（assertActivePurchaser 只放行 2）、不给申诉入口。
+  // 铁律 3：准入状态变更写审计（IGNORE_BUYER），与状态更新同事务（要么都成、要么都不成）。
+  // ────────────────────────────────────────
+  async ignoreBuyer(id: number, operatorId: bigint) {
+    const p = await this.prisma.purchaser.findUnique({ where: { id: BigInt(id) } })
+    if (!p) throw new BizException(ErrorCode.NOT_FOUND, '采购方不存在')
+
+    // 仅待审核(1)可忽略：已激活走停用(5)、驳回走核实接口，各走各的口子
+    if (p.accountStatus !== AccountStatus.PENDING) {
+      throw new BizException(
+        ErrorCode.ORDER_STATUS_INVALID,
+        `当前状态为「${this.statusText(p.accountStatus)}」，仅待审核的注册可忽略`,
+      )
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.purchaser.update({
+        where: { id: p.id },
+        data: { accountStatus: AccountStatus.IGNORED },
+      })
+      await this.audit.log(
+        {
+          operatorId,
+          action: 'IGNORE_BUYER',
+          entity: 'purchaser',
+          entityId: p.id,
+          before: { accountStatus: p.accountStatus, shopName: p.shopName },
+          after: { accountStatus: AccountStatus.IGNORED, shopName: p.shopName },
+        },
+        tx,
+      )
+    })
+
+    return { purchaserId: Number(p.id), accountStatus: AccountStatus.IGNORED, statusText: this.statusText(AccountStatus.IGNORED) }
+  }
+
+  // ────────────────────────────────────────
   // 供应商列表（管理页）
   // ────────────────────────────────────────
   async suppliers() {
@@ -703,6 +743,8 @@ export class AdminUserService {
       [AccountStatus.REJECTED]: '已驳回（可申诉）',
       [AccountStatus.REJECTED_FINAL]: '终态驳回',
       [AccountStatus.SUSPENDED]: '运营停用',
+      // 卡BQ（2026-10-03）：7=已忽略（缺了会显示「未知」）
+      [AccountStatus.IGNORED]: '已忽略',
     }
     return map[status] ?? '未知'
   }
