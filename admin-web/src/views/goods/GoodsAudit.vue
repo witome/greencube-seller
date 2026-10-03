@@ -271,13 +271,12 @@ async function submitApprove() {
   }
   submitting.value = true
   try {
-    // 卡BQ：留空时**不传 markupRate**（后端收到 markupRate 才会把商品钉成单品覆盖）。
-    // 传按预览档位算出的 salePrice → 后端走 resolveDefaultMarkup（供应商>分类>全局>0.30）且 markupOverridden=0。
+    // 卡BQ：留空时**只传 approved** —— 比例与销售价一律由后端 resolveDefaultMarkup 权威解析
+    // （前端预览仅展示用）。卡BQ 复核建议（2026-10-03）：原先前端还传一个按预览档位算出的
+    // salePrice，等于把定价权交给前端的档口名匹配逻辑，预览与落库有分叉风险，故不再传。
     const payload = { approved: true }
     if (rateFilled.value) {
       payload.markupRate = rateNum.value
-    } else {
-      payload.salePrice = Number((((currentApply.value.supplyPrice || 0) * (1 + defaultRate.value)) ).toFixed(2))
     }
     await goodsAdminApi.reviewGoodsApply(currentApply.value.applyId, payload)
     ElMessage.success(

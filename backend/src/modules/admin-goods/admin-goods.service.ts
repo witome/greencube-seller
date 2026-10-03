@@ -75,11 +75,11 @@ export class AdminGoodsService {
     const supplyPrice = Number(payload.supplyPrice)
 
     if (dto.approved) {
-      if (!dto.markupRate && dto.salePrice === undefined) {
-        throw new BizException(ErrorCode.PARAM_ERROR, '通过新品需提供加价比例或直接指定销售价')
-      }
+      // 卡BQ 复核建议（2026-10-03 Hermes 三黑）：既未给比例也未给售价不再是错误 ——
+      // 一律走 resolveDefaultMarkup（供应商 > 分类 > 全局 > 0.30）并据此算销售价，
+      // 让「留空通过」的定价权完全落在后端（前端不再传近似 salePrice，杜绝预览/落库分叉）。
       // 卡BI：运营显式给比例 = 单品单独设过（markupOverridden=1）；
-      // 未给（只指定销售价）→ 按配置解析默认比例（供应商 > 分类 > 全局 > 0.30），markupOverridden=0
+      // 未给（只指定销售价，或两者都不给）→ 按配置解析默认比例，markupOverridden=0
       let markupRate: number
       let markupOverridden: number
       if (dto.markupRate) {
