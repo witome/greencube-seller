@@ -31,6 +31,27 @@
     </view>
     <view v-if="showForm" class="card">
       <view class="card-title">🆕 提交新商品</view>
+      <view class="form-row form-top">
+        <view class="fr-l">封面图</view>
+        <view class="fr-r">
+          <view v-if="!formCover && !coverPicking" class="cover-empty" @tap="pickFormCover">📷 点击选封面图<small>建议实拍：光线好、菜新鲜、别带包装袋</small></view>
+          <view v-else class="cover-picked" @tap="pickFormCover">
+            <view class="cover-thumb">
+              <image v-if="formCover" :src="fullUrl(formCover)" mode="aspectFill" class="cover-thumb-img" />
+              <view v-else class="cover-thumb-img cover-loading"></view>
+              <view class="cam-badge lg">📷</view>
+            </view>
+            <view class="cover-meta">
+              <view class="cover-meta-t">{{ coverPicking ? '上传中…' : '已选 1 张 · 点击可重选' }}</view>
+              <view class="cover-meta-d">随申请一起提交，走运营审核</view>
+            </view>
+          </view>
+          <!-- 卡BP：拍照后 AI 自动识别（loading/成功/失败三态，失败不阻断、留空手填） -->
+          <view v-if="aiState === 'loading'" class="ai-flash"><view class="ai-spin"></view>AI 正在识别照片，约 2~3 秒…</view>
+          <view v-else-if="aiState === 'done'" class="ai-flash"><text>✨</text> AI 已识别，已帮你填好下面 3 项，请核对</view>
+          <view v-else-if="aiState === 'fail'" class="muted" style="margin-top:6px;">AI 没认出这张照片，手动填写也一样能提交</view>
+        </view>
+      </view>
       <!-- 卡BP：名称 AI 绿底可改；识别后自动预填 -->
       <view class="form-row"><view class="fr-l">商品名称</view><view class="fr-r"><input v-model="form.name" class="ipt" :class="{ 'ipt-ai': aiFilled.name }" placeholder="如：山东大姜（老姜）" @input="aiFilled.name = false" /></view></view>
       <view class="form-row">
@@ -70,27 +91,6 @@
       <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="form.supplyPrice" class="ipt" type="digit" placeholder="如 2.20（元/斤，提交后审核）" /></view></view>
       <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="form.dailySupply" class="ipt" type="digit" placeholder="如 200（斤）" /></view></view>
       <!-- 卡Z1：封面图（一期一张，点选可重选）+ 资质证明（真上传，上限5张） -->
-      <view class="form-row form-top">
-        <view class="fr-l">封面图</view>
-        <view class="fr-r">
-          <view v-if="!formCover && !coverPicking" class="cover-empty" @tap="pickFormCover">📷 点击选封面图<small>建议实拍：光线好、菜新鲜、别带包装袋</small></view>
-          <view v-else class="cover-picked" @tap="pickFormCover">
-            <view class="cover-thumb">
-              <image v-if="formCover" :src="fullUrl(formCover)" mode="aspectFill" class="cover-thumb-img" />
-              <view v-else class="cover-thumb-img cover-loading"></view>
-              <view class="cam-badge lg">📷</view>
-            </view>
-            <view class="cover-meta">
-              <view class="cover-meta-t">{{ coverPicking ? '上传中…' : '已选 1 张 · 点击可重选' }}</view>
-              <view class="cover-meta-d">随申请一起提交，走运营审核</view>
-            </view>
-          </view>
-          <!-- 卡BP：拍照后 AI 自动识别（loading/成功/失败三态，失败不阻断、留空手填） -->
-          <view v-if="aiState === 'loading'" class="ai-flash"><view class="ai-spin"></view>AI 正在识别照片，约 2~3 秒…</view>
-          <view v-else-if="aiState === 'done'" class="ai-flash"><text>✨</text> AI 已识别，已帮你填好下面 3 项，请核对</view>
-          <view v-else-if="aiState === 'fail'" class="muted" style="margin-top:6px;">AI 没认出这张照片，手动填写也一样能提交</view>
-        </view>
-      </view>
       <view class="form-row form-top">
         <view class="fr-l">资质证明</view>
         <view class="fr-r">
