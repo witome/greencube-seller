@@ -13,6 +13,8 @@ const routes = [
       { path: 'appeals', name: 'appeals', component: () => import('../views/buyers/Appeals.vue'), meta: { title: '申诉处理' } },
       { path: 'goods', name: 'goods', component: () => import('../views/goods/GoodsAudit.vue'), meta: { title: '商品审核' } },
       { path: 'goods-manage', name: 'goods-manage', component: () => import('../views/goods/GoodsManage.vue'), meta: { title: '商品管理' } },
+      // 卡BV-2（2026-10-03）：计量单位维护（挂在「商品管理」分组下；只停用不删除）
+      { path: 'units', name: 'units', component: () => import('../views/goods/Units.vue'), meta: { title: '计量单位' } },
       { path: 'demand', name: 'demand', component: () => import('../views/goods/PurchaseDemand.vue'), meta: { title: '采购需求' } },
       { path: 'categories', name: 'categories', component: () => import('../views/goods/Categories.vue'), meta: { title: '分类管理' } },
       { path: 'suppliers', name: 'suppliers', component: () => import('../views/dispatch/Suppliers.vue'), meta: { title: '供应商管理' } },

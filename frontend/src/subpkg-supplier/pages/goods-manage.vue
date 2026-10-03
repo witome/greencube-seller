@@ -89,9 +89,27 @@
         <view class="fr-l">计量方式</view>
         <view class="fr-r">
           <view class="chip-group">
-            <view class="chip" :class="{ on: form.weighType === 1 }" @tap="form.weighType = 1; aiFilled.weigh = false">称重（斤）</view>
+            <!-- 卡BV-2（大辉 2026-10-03 拍板 ①B 版）：去掉写死的「斤」—— 计量方式只管怎么卖，单位另起一行选 -->
+            <view class="chip" :class="{ on: form.weighType === 1 }" @tap="form.weighType = 1; aiFilled.weigh = false">称重</view>
             <view class="chip" :class="{ on: form.weighType === 2 }" @tap="form.weighType = 2; aiFilled.weigh = false">固定规格</view>
           </view>
+        </view>
+      </view>
+      <!-- 卡BV-2（2026-10-03）：单位（平铺 chip，照「商品分类 / 计量方式」同款样式；
+           禁止下拉、禁止 picker、无「其他/手填」—— 单位由后台「计量单位」页维护） -->
+      <view class="form-row form-top">
+        <view class="fr-l">单位</view>
+        <view class="fr-r">
+          <view class="chip-group">
+            <view
+              v-for="u in unitOptions"
+              :key="u.name"
+              class="chip"
+              :class="{ on: form.unit === u.name }"
+              @tap="form.unit = u.name"
+            >{{ u.name }}<text v-if="u.off" class="chip-off">（已停用）</text></view>
+          </view>
+          <view class="muted">单位由平台维护，只能从上面选；选好后下面的价格与日供量按单位填</view>
         </view>
       </view>
       <!-- 卡BU：商品备注（≤12 字，随申请走运营审核，显示在买家商品名下方灰字位，与规格说明抢同一行） -->
@@ -102,8 +120,9 @@
           <view class="muted remark-meta">会显示在采购方商品名下方（灰字），可不填；最多 12 字<text class="remark-count">{{ (form.remark || '').length }}/12</text></view>
         </view>
       </view>
-      <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="form.supplyPrice" class="ipt" type="digit" placeholder="如 2.20（元/斤，提交后审核）" /></view></view>
-      <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="form.dailySupply" class="ipt" type="digit" placeholder="如 200（斤）" /></view></view>
+      <!-- 卡BV-2：placeholder 随单位联动（示例值：瓶 → 120 / 50，其余沿用 2.20 / 200） -->
+      <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="form.supplyPrice" class="ipt" type="digit" :placeholder="pricePh" /></view></view>
+      <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="form.dailySupply" class="ipt" type="digit" :placeholder="supplyPh" /></view></view>
       <!-- 卡Z1：封面图（一期一张，点选可重选）+ 资质证明（真上传，上限5张） -->
       <view class="form-row form-top">
         <view class="fr-l">资质证明</view>
@@ -207,6 +226,22 @@
         <view class="card-title">✏️ 编辑商品（提交后走运营审核）</view>
         <view class="muted" style="margin-bottom:12px;">{{ editTarget.name }}（变更审核期间原信息继续在售）</view>
         <view class="form-row"><view class="fr-l">商品名称</view><view class="fr-r"><input v-model="editForm.name" class="ipt" placeholder="不改则留空" /></view></view>
+        <!-- 卡BV-2：单位（同一套平铺 chip，打开时回显当前值；改了随变更走运营审核） -->
+        <view class="form-row form-top">
+          <view class="fr-l">单位</view>
+          <view class="fr-r">
+            <view class="chip-group">
+              <view
+                v-for="u in editUnitOptions"
+                :key="u.name"
+                class="chip"
+                :class="{ on: editForm.unit === u.name }"
+                @tap="editForm.unit = u.name"
+              >{{ u.name }}<text v-if="u.off" class="chip-off">（已停用）</text></view>
+            </view>
+            <view class="muted">不改单位就不用动</view>
+          </view>
+        </view>
         <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="editForm.supplyPrice" class="ipt" type="digit" placeholder="不改则留空" /></view></view>
         <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="editForm.dailySupply" class="ipt" type="digit" placeholder="不改则留空（也可用⚡改库存）" /></view></view>
         <!-- 卡BP：商品备注可改（随变更走运营审核） -->
@@ -250,13 +285,30 @@
           <view class="fr-l">计量方式</view>
           <view class="fr-r">
             <view class="chip-group">
-              <view class="chip" :class="{ on: pendingEditForm.weighType === 1 }" @tap="pendingEditForm.weighType = 1">称重（斤）</view>
+              <!-- 卡BV-2（拍板① B 版）：同主表单，去掉写死的「斤」 -->
+              <view class="chip" :class="{ on: pendingEditForm.weighType === 1 }" @tap="pendingEditForm.weighType = 1">称重</view>
               <view class="chip" :class="{ on: pendingEditForm.weighType === 2 }" @tap="pendingEditForm.weighType = 2">固定规格</view>
             </view>
           </view>
         </view>
-        <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="pendingEditForm.supplyPrice" class="ipt" type="digit" placeholder="元/斤，提交后审核" /></view></view>
-        <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="pendingEditForm.dailySupply" class="ipt" type="digit" placeholder="斤" /></view></view>
+        <!-- 卡BV-2：单位（同一套平铺 chip，打开时回显当前值） -->
+        <view class="form-row form-top">
+          <view class="fr-l">单位</view>
+          <view class="fr-r">
+            <view class="chip-group">
+              <view
+                v-for="u in pendingUnitOptions"
+                :key="u.name"
+                class="chip"
+                :class="{ on: pendingEditForm.unit === u.name }"
+                @tap="pendingEditForm.unit = u.name"
+              >{{ u.name }}<text v-if="u.off" class="chip-off">（已停用）</text></view>
+            </view>
+          </view>
+        </view>
+        <!-- 卡BV-2：placeholder 随单位联动 -->
+        <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="pendingEditForm.supplyPrice" class="ipt" type="digit" :placeholder="'元/' + pendingEditForm.unit + '，提交后审核'" /></view></view>
+        <view class="form-row"><view class="fr-l">日可供量</view><view class="fr-r"><input v-model="pendingEditForm.dailySupply" class="ipt" type="digit" :placeholder="pendingEditForm.unit" /></view></view>
         <view class="form-row form-top">
           <view class="fr-l">商品备注</view>
           <view class="fr-r">
@@ -344,9 +396,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
-import { supplierApi } from '@/api/modules'
+import { supplierApi, unitApi } from '@/api/modules'
 import { post, put, del, fullUrl } from '@/api/request'
 import { pickPhotos, uploadPhoto, previewPhotos } from '@/utils/photo-upload'
 import { createVoiceHold } from '@/utils/voice-record'
@@ -369,7 +421,39 @@ const filters = [
 // 分类（提交新品用）
 const cats = ref([])
 const catNames = ref([])
-const form = ref({ name: '', categoryId: null, categoryName: '', weighType: 1, supplyPrice: '', dailySupply: '', remark: '' })
+const form = ref({ name: '', categoryId: null, categoryName: '', weighType: 1, unit: '斤', supplyPrice: '', dailySupply: '', remark: '' })
+
+// ── 卡BV-2（2026-10-03）：计量单位（GET /units，只启用中，按 sort） ──
+// 单位由后台「计量单位」页维护，供应商端只能从 chip 里选：**没有「其他 / 手填」入口**。
+const units = ref([])
+
+/// 三个表单各自的 chip 选项。老商品的单位若已被停用：GET /units 里已没有它，
+/// 这里**保留该项并标注「（已停用）」** —— 否则编辑页一打开单位就是空白，保存会把单位洗掉。
+function unitOptionsFor(current) {
+  const list = units.value.map((u) => ({ name: u.name, off: false }))
+  if (current && !list.some((u) => u.name === current)) {
+    list.push({ name: current, off: units.value.length > 0 })
+  }
+  return list
+}
+const unitOptions = computed(() => unitOptionsFor(form.value.unit))
+const editUnitOptions = computed(() => unitOptionsFor(editForm.value.unit))
+const pendingUnitOptions = computed(() => unitOptionsFor(pendingEditForm.value.unit))
+
+/// placeholder 示例值（原型口径：瓶 → 120 / 50，其余沿用现状 2.20 / 200）
+const UNIT_EXAMPLE = { 瓶: { price: '120', supply: '50' } }
+const pricePh = computed(() => `如 ${(UNIT_EXAMPLE[form.value.unit] || {}).price || '2.20'}（元/${form.value.unit}，提交后审核）`)
+const supplyPh = computed(() => `如 ${(UNIT_EXAMPLE[form.value.unit] || {}).supply || '200'}（${form.value.unit}）`)
+
+async function loadUnits() {
+  try {
+    units.value = (await unitApi.listEnabled()) || []
+  } catch (e) {
+    units.value = [] // 取不到就只留当前值兜底项，不阻塞表单
+  }
+  // 单位表里有数据、而当前值是空的（首次进入）→ 默认选中第一个启用单位（预置首项＝斤）
+  if (units.value.length && !form.value.unit) form.value.unit = units.value[0].name
+}
 
 const showForm = ref(false)
 
@@ -412,7 +496,7 @@ const stockValue = ref('')
 
 // 编辑（变更审核）
 const editTarget = ref(null)
-const editForm = ref({ name: '', supplyPrice: '', dailySupply: '', remark: '' })
+const editForm = ref({ name: '', unit: '', supplyPrice: '', dailySupply: '', remark: '' })
 
 // ── 换封面（卡Z1：免审即时生效，走 PUT /supplier-goods/:id/cover）──
 const coverUploadingId = ref(null) // 正在上传的商品 id：盖转圈 + 防重复点击
@@ -500,7 +584,7 @@ function tapStock(g) {
 
 // ── 卡BQ（2026-10-03）：编辑待审/已驳回商品（PUT /supplier-goods/apply/:applyId，原地改不新增申请） ──
 const pendingEditTarget = ref(null)
-const pendingEditForm = ref({ name: '', categoryId: null, weighType: 1, supplyPrice: '', dailySupply: '', remark: '' })
+const pendingEditForm = ref({ name: '', categoryId: null, weighType: 1, unit: '斤', supplyPrice: '', dailySupply: '', remark: '' })
 const pendingEditCover = ref('')
 const pendingCoverPicking = ref(false)
 const pendingEditBusy = ref(false)
@@ -511,6 +595,7 @@ function openPendingEdit(g) {
     name: g.name || '',
     categoryId: g.categoryId ?? null,
     weighType: g.weighType || 1,
+    unit: g.unit || '斤', // 卡BV-2：回显当前单位（已停用的也会保留在 chip 里并标注）
     supplyPrice: String(g.supplyPrice ?? ''),
     dailySupply: String(g.dailySupply ?? ''),
     remark: g.remark || '',
@@ -552,6 +637,7 @@ async function submitPendingEdit() {
       name: f.name.trim(),
       categoryId: f.categoryId,
       weighType: f.weighType,
+      unit: f.unit, // 卡BV-2：单位随申请一起提交（后端按「启用 ∪ 当前值」校验）
       supplyPrice: price,
       dailySupply: supply,
       remark: (f.remark || '').trim(), // 传空串 = 显式清空备注
@@ -751,6 +837,7 @@ async function submit() {
     name: form.value.name,
     categoryId: form.value.categoryId,
     weighType: form.value.weighType,
+    unit: form.value.unit, // 卡BV-2：提交带上单位（后端不再兜底写死「斤」）
     supplyPrice: price,
     dailySupply: supply,
     // 卡Z1：封面 + 资质证明（资质照片走 apply 已有的 images 字段，原型⑦屏口径）一并提交
@@ -761,7 +848,7 @@ async function submit() {
   })
   uni.showToast({ title: '已提交，等待运营审核', icon: 'none' })
   showForm.value = false
-  form.value = { name: '', categoryId: null, categoryName: '', weighType: 1, supplyPrice: '', dailySupply: '', remark: '' }
+  form.value = { name: '', categoryId: null, categoryName: '', weighType: 1, unit: '斤', supplyPrice: '', dailySupply: '', remark: '' }
   formCover.value = ''
   formQual.value = []
   aiState.value = 'idle'
@@ -786,7 +873,8 @@ async function saveStock() {
 function openEdit(g) {
   editTarget.value = g
   // 卡BP：备注回显当前生效值，可改（留空=清空备注）；改名/价/量仍走「不改则留空」
-  editForm.value = { name: '', supplyPrice: '', dailySupply: '', remark: g.remark || '' }
+  // 卡BV-2：单位回显当前值（改了才随变更走审核，不改就留着当前值，不会变成空白）
+  editForm.value = { name: '', unit: g.unit || '斤', supplyPrice: '', dailySupply: '', remark: g.remark || '' }
 }
 
 async function submitEdit() {
@@ -801,6 +889,8 @@ async function submitEdit() {
   // 卡BP：备注有变化才进变更（含「清空」），随变更走运营审核
   const remarkNew = (editForm.value.remark || '').trim()
   if (remarkNew !== (editTarget.value.remark || '')) changes.remark = remarkNew
+  // 卡BV-2：单位改了才进变更（与 name/价/量同一口径：不改就不带）
+  if (editForm.value.unit && editForm.value.unit !== editTarget.value.unit) changes.unit = editForm.value.unit
 
   if (!Object.keys(changes).length) { uni.showToast({ title: '未填写任何变更内容', icon: 'none' }); return }
 
@@ -812,12 +902,15 @@ async function submitEdit() {
 
 onMounted(() => {
   loadCats()
+  loadUnits() // 卡BV-2：单位 chip（只读字典，失败不阻塞表单）
   load()
 })
 </script>
 
 <style lang="scss" scoped>
 .filter-chips { margin-top: 8px; }
+/* 卡BV-2：已停用单位的兜底标注（老商品当前单位被停用 → chip 保留该项 + 灰字「（已停用）」） */
+.chip-off { color: #C0C4CC; font-size: 10px; margin-left: 1px; }
 .act-link { display: inline; color: $brand-deep; font-size: 12px; font-weight: 600; margin-left: 8px; }
 .act-stock { display: inline; color: $info; font-size: 12px; font-weight: 600; margin-left: 8px; }
 /* 卡Z2：下架/重新上架 / 删除 / 置灰 */

@@ -95,6 +95,14 @@ export const demandApi = {
   mine: () => get('/buyer/demand/mine'),
 }
 
+/* ── 计量单位字典（卡BV-2 2026-10-03）──
+ * 只读：只返回**启用中**的单位，按 sort asc, id asc。
+ * 供应商端「单位」chip 与后台商品表单下拉共用（后台另有 /admin/units 含停用项）。
+ */
+export const unitApi = {
+  listEnabled: () => get('/units'),
+}
+
 /* ── 运营端 ── */
 export const adminApi = {
   // 采购方管理（含注册-审核）

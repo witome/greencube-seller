@@ -88,8 +88,18 @@
             <el-radio :value="2">固定规格</el-radio>
           </el-radio-group>
         </el-form-item>
+        <!-- 卡BV-2（大辉 2026-10-03 拍板 ②A 方案）：自由输入 → 下拉（自由输入会造出表外脏值，
+             供应商端 chip 里永远选不到）。老商品的单位若已被停用 → 保留该项并标「（已停用）」 -->
         <el-form-item label="单位">
-          <el-input v-model="form.unit" placeholder="斤 / 份 / 箱" style="width: 120px" />
+          <el-select v-model="form.unit" placeholder="选择单位" style="width: 160px">
+            <el-option
+              v-for="u in unitOptions"
+              :key="u.name"
+              :label="u.label"
+              :value="u.name"
+            />
+          </el-select>
+          <div class="gm-tip block">没有想要的单位？到『计量单位』页添加</div>
         </el-form-item>
         <el-form-item label="规格说明">
           <el-input v-model="form.specText" placeholder="如：约 0.8 斤/块（选填）" />
@@ -125,7 +135,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { goodsAdminApi, categoryAdminApi, userAdminApi } from '../../api/modules'
+import { goodsAdminApi, categoryAdminApi, userAdminApi, unitAdminApi } from '../../api/modules'
 
 const list = ref([])
 const total = ref(0)
@@ -149,11 +159,39 @@ const form = ref({
 })
 const markupPercent = ref(30)
 
+// ── 卡BV-2（2026-10-03）：计量单位下拉（GET /units，只启用中，按 sort） ──
+const units = ref([])
+/// 老商品的单位若已被停用：/units 里已没有它 → **保留该项并标注「（已停用）」**，
+/// 否则编辑页一打开单位就是空白，保存会把商品单位洗掉。
+const unitOptions = computed(() => {
+  const opts = units.value.map((u) => ({ name: u.name, label: u.name }))
+  const cur = form.value.unit
+  if (cur && units.value.length && !opts.some((o) => o.name === cur)) {
+    opts.push({ name: cur, label: `${cur}（已停用）` })
+  }
+  return opts
+})
+
+async function loadUnits() {
+  try {
+    units.value = (await unitAdminApi.listEnabled()) || []
+  } catch (e) {
+    units.value = []
+  }
+}
+
 const statusText = (s) => ({ 0: '下架', 1: '在售', 2: '变更审核中' }[s] || '未知')
 const statusType = (s) => ({ 0: 'info', 1: 'success', 2: 'warning' }[s] || 'info')
 
 const markupRate = computed(() => markupPercent.value / 100)
 const autoSalePrice = computed(() => ((form.value.supplyPrice || 0) * (1 + markupRate.value)).toFixed(2))
+
+/// 打开弹窗时记下「库里的销售价」原值。编辑页仍然照常显示它（不改 UX），
+/// 但只有运营真的动过销售价输入框（值与原值不同）才把它写进 payload；
+/// 否则整个省略 → 后端进入 供货价/加价比例 → 销售价 的重算分支。
+/// 否则运营只改供货价或加价比例时，DB 里的旧销售价会覆盖掉重算出来的正确值。
+const initialSalePrice = ref(null)
+const salePriceDirty = computed(() => form.value.salePrice !== initialSalePrice.value)
 
 async function load() {
   loading.value = true
@@ -176,6 +214,7 @@ function openCreate() {
   editing.value = false
   currentId.value = null
   form.value = { name: '', categoryId: null, weighType: 1, unit: '斤', specText: '', supplierId: null, supplyPrice: 0, dailySupply: 0, salePrice: null }
+  initialSalePrice.value = null
   markupPercent.value = 30
   dialog.value = true
 }
@@ -192,8 +231,10 @@ function openEdit(row) {
     supplierId: row.primarySupplier?.supplierId ?? null,
     supplyPrice: row.primarySupplier?.supplyPrice ?? 0,
     dailySupply: row.primarySupplier?.dailySupply ?? 0,
-    salePrice: row.salePrice,
+    salePrice: row.salePrice ?? null,
   }
+  // 记下原值作为脏标记基线：不动销售价框 → save() 不发这个字段 → 后端重算
+  initialSalePrice.value = row.salePrice ?? null
   markupPercent.value = Math.round((row.markupRate || 0) * 100)
   dialog.value = true
 }
@@ -222,7 +263,9 @@ async function save() {
       dailySupply: form.value.dailySupply,
       markupRate: markupRate.value,
     }
-    if (form.value.salePrice !== null && form.value.salePrice !== undefined) {
+    // 只有运营真的改过销售价才发这个字段；没改就整个省略，
+    // 让后端按 供货价 × (1 + 加价比例) 重算，避免旧销售价把重算结果覆盖掉。
+    if (salePriceDirty.value && form.value.salePrice !== null && form.value.salePrice !== undefined) {
       payload.salePrice = form.value.salePrice
     }
     if (editing.value) {
@@ -242,6 +285,7 @@ async function save() {
 
 onMounted(async () => {
   load()
+  loadUnits() // 卡BV-2：单位下拉（只读字典，失败不阻塞）
   try {
     categories.value = await categoryAdminApi.getCategories()
   } catch (e) { /* 忽略 */ }
@@ -292,5 +336,12 @@ onMounted(async () => {
   color: #909399;
   font-size: 12px;
   margin-left: 8px;
+}
+/* 卡BV-2：单位下拉下方的灰字提示（整行，不跟在控件右侧） */
+.el-form-item .gm-tip.block {
+  display: block;
+  margin-left: 0;
+  margin-top: 4px;
+  line-height: 1.7;
 }
 </style>

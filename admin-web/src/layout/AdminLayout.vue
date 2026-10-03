@@ -32,6 +32,10 @@
         <el-menu-item index="/goods-manage">
           <el-icon><Box /></el-icon><span>商品管理</span>
         </el-menu-item>
+        <!-- 卡BV-2（2026-10-03）：计量单位（挂在「商品管理」下，缩进二级项） -->
+        <el-menu-item index="/units" class="sub-item">
+          <el-icon><ScaleToOriginal /></el-icon><span>计量单位</span>
+        </el-menu-item>
         <el-menu-item index="/demand">
           <el-icon><Bell /></el-icon><span>采购需求</span>
         </el-menu-item>
@@ -135,6 +139,11 @@ function logout() {
 }
 .aside :deep(.el-menu) {
   border-right: none;
+}
+/* 卡BV-2：二级项（计量单位挂在「商品管理」下）缩进 + 略小字号，视觉成组 */
+.aside :deep(.el-menu-item.sub-item) {
+  padding-left: 44px !important;
+  font-size: 13px;
 }
 .header {
   height: 56px;

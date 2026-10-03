@@ -38,6 +38,21 @@ export const goodsAdminApi = {
   updateProduct: (id, data) => request.put(`/admin/goods/${id}`, data),
 }
 
+/* ── 计量单位（卡BV-2 2026-10-03：后台「商品管理 / 计量单位」维护页）──
+ * ⚠️ 口径（大辉拍板）：单位**只停用不删除** —— 用过的单位一旦删掉，老商品与历史订单
+ *    就会显示成空白。后端压根没提供 DELETE，这里也**不许有 deleteUnit**。
+ */
+export const unitAdminApi = {
+  // 只读：全部（含停用），按 sort asc, id asc
+  listAll: () => request.get('/admin/units'),
+  // 启用中的（后台商品表单下拉用；含停用项的老商品兼容在前端兜底追加）
+  listEnabled: () => request.get('/units'),
+  // 新增（重名 → 后端 1001「该单位已存在，请换一个」）
+  create: (data) => request.post('/admin/units', data),
+  // 改名 / 改排序 / 启停
+  update: (id, data) => request.patch(`/admin/units/${id}`, data),
+}
+
 /* ── 供应商/配送员管理 ── */
 export const userAdminApi = {
   getSuppliers: () => request.get('/admin/suppliers'),
