@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>卡BT-商品单位与计量方式-独立原型-20261003</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  body { background: #EEF1F4; color: #1F2329; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .page { padding: 24px; }
+  h1 { font-size: 19px; }
+  h1 span { font-size: 13px; color: #C87000; font-weight: 400; }
+  .sub { font-size: 13px; color: #6B7280; margin-top: 8px; line-height: 1.85; max-width: 1180px; }
+  .sub b { color: #1F2329; }
+  .sub code, .note code, .foot code, pre code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+
+  #shots { background: #EEF1F4; padding: 4px 18px 18px; width: fit-content; }
+  .row { display: flex; gap: 22px; align-items: flex-start; margin-top: 34px; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 18px; }
+
+  .fig { display: flex; flex-direction: column; flex: 0 0 auto; width: 356px; }
+  .fig:has(.browser[style*="1120px"]) { width: 1120px; }
+  .fig:has(.browser[style*="600px"]) { width: 600px; }
+  .fig:has(.browser[style*="460px"]) { width: 460px; }
+  .fig-cap { font-size: 13px; font-weight: 700; margin: 0 0 8px; line-height: 1.55; }
+  .fig-cap span { font-weight: 400; color: #8A9099; font-size: 11px; display: block; margin-top: 2px; }
+  .fig-cap em { font-style: normal; color: #C87000; }
+
+  .note { font-size: 11px; color: #6B7280; line-height: 1.8; margin-top: 10px; }
+  .note .t { font-size: 12px; font-weight: 700; color: #1F2329; margin-bottom: 3px; display: block; }
+  .note b { color: #1F2329; }
+
+  /* ============ 运营后台（PC 浏览器框 + 深色侧栏 + 面包屑） ============ */
+  .browser { background: #fff; border-radius: 12px; border: 1px solid #D9DEE4; box-shadow: 0 10px 26px rgba(0,0,0,.10); overflow: hidden; flex: 0 0 auto; }
+  .browser-top { height: 36px; background: #EEF1F4; display: flex; align-items: center; gap: 6px; padding: 0 12px; }
+  .browser-top i { display: block; width: 10px; height: 10px; border-radius: 50%; background: #D5DAE0; }
+  .browser-url { margin-left: 10px; flex: 1; background: #fff; border-radius: 10px; height: 22px; line-height: 22px; font-size: 11px; color: #8A9099; padding: 0 12px; }
+
+  .admin { display: flex; align-items: stretch; background: #F5F6F8; }
+  .aside { width: 176px; flex: 0 0 auto; background: #1f2d3d; padding: 0 0 14px; }
+  .logo { color: #fff; font-size: 13px; font-weight: 600; padding: 14px 16px 12px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .mi { display: flex; align-items: center; gap: 8px; padding: 9px 16px; font-size: 12px; color: #bfcbd9; position: relative; }
+  .mi .ico { font-size: 13px; width: 16px; text-align: center; filter: grayscale(1) brightness(1.6); opacity: .8; }
+  .mi.on { color: #00B96B; background: rgba(0,185,107,.10); border-right: 2px solid #00B96B; }
+  .mi.on .ico { filter: none; opacity: 1; }
+  .mi.sub { padding-left: 34px; font-size: 11.5px; }
+  .mi-grp { padding: 10px 16px 4px; font-size: 10.5px; color: #7b8794; letter-spacing: .5px; }
+
+  .main { flex: 1; min-width: 0; padding: 12px 16px 18px; }
+  .crumb { font-size: 12px; color: #8A9099; margin-bottom: 10px; }
+  .crumb b { color: #1F2329; font-weight: 600; }
+
+  .el-card { background: #fff; border-radius: 12px; border: 1px solid #E5E8EB; margin-bottom: 12px; }
+  .ec-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #E5E8EB; font-size: 14px; font-weight: 600; }
+  .ec-head .tip { font-size: 11px; color: #8A9099; font-weight: 400; }
+  .ec-body { padding: 12px 16px 14px; }
+  table.el-tb { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .el-tb th { background: #F5F7FA; color: #606266; font-weight: 600; font-size: 12px; text-align: left; padding: 9px 10px; border-bottom: 1px solid #E5E8EB; }
+  .el-tb td { padding: 8px 10px; border-bottom: 1px solid #E5E8EB; color: #1F2329; vertical-align: middle; }
+  .el-tb tr:last-child td { border-bottom: none; }
+  .el-tb .c { text-align: center; }
+  .lbtn { display: inline-block; font-size: 12px; margin-right: 10px; cursor: pointer; }
+  .lbtn.pri { color: #00B96B; }
+  .lbtn.neu { color: #6B7280; }
+  .lbtn.warn { color: #FF8F1F; }
+  .lbtn.dis { color: #C0C4CC; cursor: default; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid transparent; line-height: 1.6; }
+  .tag.ok { color: #00A05C; background: #E6F9F0; border-color: #B6E4CF; }
+  .tag.off { color: #8A9099; background: #F2F4F6; border-color: #E5E8EB; }
+  .btn { display: inline-block; font-size: 12px; border-radius: 4px; padding: 6px 14px; border: 1px solid #DCDFE6; color: #606266; background: #fff; cursor: pointer; }
+  .btn.pri { background: #00B96B; border-color: #00B96B; color: #fff; font-weight: 600; }
+  .btn.sm { padding: 4px 12px; font-size: 11.5px; }
+  .tipbar { font-size: 11.5px; color: #8A9099; line-height: 1.75; margin-top: 10px; }
+  .tipbar b { color: #4E5969; }
+  .warnbar { display: flex; align-items: center; gap: 8px; background: #FFF9E8; border: 1px solid #FFE0A3; color: #8A6D1A; font-size: 11.5px; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; }
+
+  /* 弹窗（Element dialog 风格） */
+  .dim-body { background: rgba(0,0,0,.45); padding: 26px 0 30px; display: flex; justify-content: center; }
+  .dlg { width: 520px; background: #fff; border-radius: 8px; overflow: hidden; }
+  .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 4px; font-size: 15px; font-weight: 700; }
+  .dlg-x { color: #909399; font-size: 15px; }
+  .dlg-body { padding: 12px 18px 6px; font-size: 13px; color: #1F2329; }
+  .dlg-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px 16px; }
+  .dlg-row { display: flex; align-items: flex-start; margin-bottom: 12px; }
+  .dlg-l { width: 88px; flex: 0 0 auto; text-align: right; padding-right: 12px; font-size: 13px; color: #606266; line-height: 30px; }
+  .dlg-row.top .dlg-l { line-height: 20px; padding-top: 6px; }
+  .dlg-r { flex: 1; min-width: 0; }
+  .d-ipt { width: 100%; border: 1px solid #DCDFE6; border-radius: 4px; padding: 6px 10px; font-size: 13px; }
+  .d-ipt.ph { color: #B3B9C2; }
+  .d-hint { font-size: 11.5px; color: #8A9099; line-height: 1.7; margin-top: 5px; }
+  .d-err { font-size: 11.5px; color: #FA5151; line-height: 1.7; margin-top: 5px; }
+  .d-grey { font-size: 11.5px; color: #8A9099; line-height: 1.7; margin-top: 6px; }
+
+  /* el-select 假下拉 */
+  .sel { position: relative; width: 160px; }
+  /* 展开态示意：给下拉留出菜单高度，菜单浮层铺在留白上，不遮挡下面的灰字提示与其它字段 */
+  .sel.spaced { margin-bottom: 224px; }
+  .sel-box { border: 1px solid #DCDFE6; border-radius: 4px; padding: 6px 10px; font-size: 13px; color: #606266; display: flex; align-items: center; justify-content: space-between; background: #fff; cursor: pointer; }
+  .sel-box.focus { border-color: #00B96B; }
+  .sel-box .arw { color: #C0C4CC; font-size: 11px; transition: transform .15s; }
+  .sel.open .sel-box .arw { transform: rotate(180deg); }
+  .sel-menu { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: #fff; border: 1px solid #E4E7EB; border-radius: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.12); z-index: 5; max-height: 214px; overflow: auto; }
+  .sel.open .sel-menu { display: block; }
+  .sel-opt { padding: 7px 12px; font-size: 13px; color: #606266; cursor: pointer; }
+  .sel-opt:hover { background: #F5F7FA; }
+  .sel-opt.on { color: #00B96B; font-weight: 600; background: #F0FAF5; }
+  .sel-opt .off { color: #C0C4CC; }
+  .sel-opt.dis { color: #C0C4CC; }
+
+  /* ============ 手机壳（336×648） ============ */
+  .phone { width: 336px; height: 648px; background: #fff; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 6px 24px rgba(0,0,0,.10); flex: 0 0 auto; }
+  .phone.h1120 { height: 1120px; }
+  .phone.h760 { height: 760px; }
+  .phone.h860 { height: 860px; }
+  .phone.h700 { height: 700px; }
+  .phone-title { height: 42px; background: #fff; padding: 0 12px; font-size: 15px; font-weight: 600; display: flex; align-items: center; border-bottom: 1px solid #F0F1F3; flex: 0 0 auto; }
+  .phone-title .back { color: #00B96B; font-weight: 400; font-size: 14px; margin-right: 6px; }
+  .phone-body { flex: 1; overflow: hidden; background: #F5F6F8; position: relative; display: flex; flex-direction: column; }
+  .phone-body.scroll { overflow-y: auto; }
+  .home-ind { flex: 0 0 auto; height: 14px; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .home-ind i { display: block; width: 96px; height: 4px; border-radius: 3px; background: #D5DAE0; }
+
+  .m-notice { background: #FFF9E8; color: #8A6D1A; font-size: 10px; line-height: 1.6; border-radius: 8px; padding: 7px 9px; margin: 6px 10px 0; }
+  .m-sec { font-size: 12px; font-weight: 600; margin: 10px 12px 6px; color: #1F2329; }
+
+  /* 表单卡（照 goods-manage.vue：.form-row / .fr-l / .fr-r / .ipt / .muted） */
+  .s-card { background: #fff; border-radius: 12px; padding: 4px 12px; margin: 8px 10px; }
+  .card-title { font-size: 14px; font-weight: 700; padding: 10px 12px 6px; }
+  .f-row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #F5F6F8; font-size: 14px; }
+  .f-row:last-child { border-bottom: none; }
+  .f-row.top { align-items: flex-start; }
+  .f-l { width: 76px; color: #8A9099; flex: 0 0 auto; font-size: 12.5px; flex-shrink: 0; }
+  .f-row.top .f-l { padding-top: 10px; }
+  .f-r { flex: 1; margin-left: 12px; min-width: 0; }
+  .s-ipt { width: 100%; min-height: 38px; height: 38px; line-height: 38px; border: 1px solid #E5E8EB; border-radius: 8px; padding: 0 9px; font-size: 14px; color: #4A5261; background: #fff; font-family: inherit; }
+  .s-ipt::placeholder { color: #9AA1AB; }
+  .s-ipt.hi { border-color: #00B96B; background: #F2FBF7; }
+  .s-muted { font-size: 12px; color: #9AA1AB; line-height: 1.6; margin-top: 4px; }
+  .s-muted.org { color: #FF8F1F; }
+  .pbtn { text-align: center; border-radius: 10px; padding: 10px 0; font-size: 14px; font-weight: 600; background: #00B96B; color: #fff; margin: 4px 10px 10px; }
+  .pbtn.ghost { background: #fff; color: #4E5969; border: 1px solid #E5E8EB; }
+
+  /* chip（照 common.scss .chip-group / .chip / .chip.on 原值） */
+  .chip-g { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-size: 12px; padding: 4px 12px; border-radius: 999px; background: #F7F9FA; color: #8A9099; border: 1px solid #E4E7EB; cursor: pointer; user-select: none; line-height: 1.5; }
+  .chip.on { background: #E6F9F0; color: #00B578; border-color: #00B578; font-weight: 600; }
+  .chip.sm { font-size: 11px; padding: 3px 10px; }
+
+  /* 资质证明小图位（照现状 pic-grid） */
+  .pic-grid { display: flex; gap: 6px; }
+  .pic-add { width: 46px; height: 46px; border-radius: 8px; border: 1px dashed #D5DAE0; color: #9AA1AB; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+
+  /* 居中弹层（照 goods-manage.vue .mask / .modal） */
+  .m-mask { position: absolute; inset: 0; background: rgba(17,17,17,.45); z-index: 3; display: flex; align-items: center; justify-content: center; }
+  .modal { width: 86%; background: #fff; border-radius: 12px; padding: 16px; max-height: 96%; overflow: hidden; }
+  .modal .pending-sub { font-size: 11px; color: #FF8F1F; margin-bottom: 12px; line-height: 1.5; }
+  .modal .f-l { width: 64px; }
+  .modal .s-ipt { min-height: 38px; height: 38px; line-height: 38px; }
+  .modal .chip { font-size: 11px; padding: 3px 10px; }
+  .modal .chip-g { gap: 6px; }
+  .row-btns2 { display: flex; gap: 10px; margin-top: 12px; }
+  .row-btns2 .pbtn { flex: 1; margin: 0; }
+  .ta { width: 100%; min-height: 48px; border: 1px solid #E5E8EB; border-radius: 8px; padding: 7px 9px; font-size: 12px; color: #4A5261; resize: none; font-family: inherit; }
+  .remark-count { float: right; color: #9AA1AB; }
+
+  /* 买家端商品卡（照 buyer/goods.vue .gc-*） */
+  .gc { display: flex; gap: 10px; background: #fff; border-radius: 12px; margin: 0 10px 8px; padding: 10px 12px; }
+  .gc-cover { width: 64px; height: 64px; border-radius: 8px; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; overflow: hidden; }
+  .gc-main { flex: 1; min-width: 0; }
+  .gc-name { font-size: 15px; font-weight: 600; color: #1A1A1A; }
+  .gc-spec { font-size: 11px; color: #8A9099; margin: 4px 0 8px; }
+  .gc-bottom { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .gc-price { color: #fa5151; font-size: 16px; font-weight: 700; flex-shrink: 0; }
+  .gc-unit { font-size: 11px; color: #8A9099; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
+  .gc-add { width: 26px; height: 26px; border-radius: 50%; background: #00B96B; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+
+  /* 买家端商品详情（照 buyer/goods-detail.vue .gd-*） */
+  .gd-cover { position: relative; width: 100%; padding-top: 62%; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 64px; border-radius: 8px; overflow: hidden; }
+  .gd-cover text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .gd-name { font-size: 18px; font-weight: 700; color: #1A1A1A; margin-top: 10px; }
+  .gd-price { color: #fa5151; font-size: 22px; font-weight: 700; margin: 8px 0; }
+  .gd-unit { font-size: 13px; font-weight: 400; color: #8A9099; }
+  .gd-spec { font-size: 13px; color: #8A9099; }
+  .gd-supply { font-size: 12px; color: #00B96B; margin-top: 6px; }
+  .gd-bar { display: flex; align-items: center; gap: 10px; padding: 12px; border-top: 1px solid #F0F1F3; background: #fff; flex: 0 0 auto; }
+  .gd-btn { flex: 1; text-align: center; padding: 10px 0; border-radius: 22px; border: 1px solid #00B96B; color: #00B96B; font-size: 14px; font-weight: 600; }
+  .gd-btn.primary { background: #00B96B; color: #fff; border: none; }
+
+  .foot { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.06); width: 1180px; margin-top: 34px; }
+  .foot .t { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+  .foot .t2 { font-size: 14px; font-weight: 700; margin: 14px 0 6px; }
+  .foot .d { font-size: 12.5px; color: #6B7280; line-height: 1.95; }
+  .foot .d b { color: #1F2329; }
+  pre.code { background: #F7F9FA; border: 1px solid #E5E8EB; border-radius: 8px; padding: 10px 12px; font-size: 11px; line-height: 1.7; color: #4E5969; overflow-x: auto; font-family: Consolas, "Courier New", monospace; }
+  pre.code code { background: none; padding: 0; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>📏 卡BT · 商品「单位」全链路（后台自建单位 · 供应商可选 · 买家端显示）<span>2026-10-03 · 只出原型 · 不动任何工程文件</span></h1>
+  <div class="sub">
+    一句话：单位<b>由运营后台自己维护</b>（新增「计量单位」页），<b>供应商端用平铺可点标签（chip）选</b>（不再写死「斤」），<b>买家端零改动</b>——因为商品卡 / 详情 / 购物车 / 订单 / 售后 / 供应商单据本来就都读同一个 <code>unit</code> 字段。<br>
+    共 <b>4 块画面</b>：① 供应商端「提交新商品」表单（新增「单位」chip 行 + 选「瓶」后 placeholder 变化 + 两个编辑弹层）· ② 运营后台「计量单位」维护页（新增，放商品管理分组下）· ③ 运营后台 新增/编辑商品 单位栏（下拉，兼容已停用单位）· ④ 买家端显示对照。<br>
+    可点：单位 / 计量方式 chip 点了会切换并联动 placeholder；后台维护页的<b>上移 / 下移 / 停用 / 启用 / ＋新增单位</b>均可点（重名会拦）。<br>
+    ⚠️ 留了 <b>两处对照</b> 给大辉拍板：<b>①</b> 供应商端「计量方式」chip 文案 <code>称重（斤）</code> vs <code>称重</code>；<b>②</b> 后台商品编辑单位栏 <code>下拉</code> vs <code>自由输入</code>。原始 HTML 片段在页尾。
+  </div>
+</div>
+
+<div id="shots">
+
+<!-- ================================================================
+     画面 1：供应商端「提交新商品」表单（A/B 对照 + 选中「瓶」后）
+================================================================ -->
+<div class="row">
+  <div class="fig">
+    <div class="fig-cap">画面1-①· 供应商端「提交新商品」<em>A 版：计量方式维持现状「称重（斤）」</em><span>新增的「单位」行在计量方式下面，18 个平铺 chip，默认选中「斤」；无下拉、无 picker、无「其他/手填」</span></div>
+    <div class="phone h1120" data-uscope>
+      <div class="phone-title"><span class="back">‹</span>商品管理</div>
+      <div class="phone-body">
+        <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+        <div class="s-card">
+          <div class="card-title">🆕 提交新商品</div>
+
+          <div class="f-row top"><div class="f-l">封面图</div><div class="f-r">
+            <div class="chip-g"><div class="chip" data-weigh="0">📷 直接拍</div><div class="chip" data-weigh="0">🖼 从相册选</div></div>
+            <div class="s-muted">建议实拍：光线好、菜新鲜、别带包装袋</div>
+          </div></div>
+
+          <div class="f-row"><div class="f-l">商品名称</div><div class="f-r">
+            <input class="s-ipt" value="鲁花 5S 压榨一级花生油" />
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip on" data-cat>粮油</div><div class="chip" data-cat>蔬菜</div><div class="chip" data-cat>肉禽</div><div class="chip" data-cat>水产</div><div class="chip" data-cat>调料</div>
+            </div>
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip on" data-weigh="1">称重（斤）</div>
+              <div class="chip" data-weigh="2">固定规格</div>
+            </div>
+          </div></div>
+
+          <!-- ★ 卡BT 新增：单位行（平铺 chip，照「商品分类 / 计量方式」同款样式） -->
+          <div class="f-row top"><div class="f-l">单位</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip on" data-unit="斤">斤</div>
+              <div class="chip" data-unit="公斤">公斤</div>
+              <div class="chip" data-unit="袋">袋</div>
+              <div class="chip" data-unit="桶">桶</div>
+              <div class="chip" data-unit="箱">箱</div>
+              <div class="chip" data-unit="瓶">瓶</div>
+              <div class="chip" data-unit="件">件</div>
+              <div class="chip" data-unit="把">把</div>
+              <div class="chip" data-unit="个">个</div>
+              <div class="chip" data-unit="块">块</div>
+              <div class="chip" data-unit="板">板</div>
+              <div class="chip" data-unit="盒">盒</div>
+              <div class="chip" data-unit="包">包</div>
+              <div class="chip" data-unit="罐">罐</div>
+              <div class="chip" data-unit="扎">扎</div>
+              <div class="chip" data-unit="提">提</div>
+              <div class="chip" data-unit="捆">捆</div>
+              <div class="chip" data-unit="筐">筐</div>
+            </div>
+            <div class="s-muted">单位由平台维护，只能从上面选；选好后下面的价格与日供量按单位填</div>
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r">
+            <textarea class="ta">今早新到的一批</textarea>
+            <div class="s-muted">会显示在采购方商品名下方（灰字），可不填；最多 12 字<span class="remark-count">7/12</span></div>
+          </div></div>
+
+          <div class="f-row"><div class="f-l">供货价</div><div class="f-r">
+            <input class="s-ipt" data-ph="price" placeholder="如 2.20（元/斤，提交后审核）" />
+          </div></div>
+          <div class="f-row"><div class="f-l">日可供量</div><div class="f-r">
+            <input class="s-ipt" data-ph="supply" placeholder="如 200（斤）" />
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">资质证明</div><div class="f-r">
+            <div class="pic-grid"><div class="pic-add">＋</div></div>
+            <div class="s-muted" style="font-size:11px;">营业执照、检疫合格证等（肉类/水产必填，最多 5 张，点图可查看）</div>
+          </div></div>
+        </div>
+        <div class="pbtn">提交申请</div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">A 版 · 维持现状</span>「计量方式」两个 chip 原文不动：<code>称重（斤）</code> / <code>固定规格</code>。单位另起一行选 —— 会出现「称重（斤）+ 瓶」这种<b>自相矛盾</b>的组合。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面1-②· A 版 · 点选「<b>瓶</b>」之后<em>（供货价 / 日可供量 placeholder 跟着变）</em><span>供货价：如 120（元/瓶，提交后审核）；日可供量：如 50（瓶）</span></div>
+    <div class="phone h1120" data-uscope>
+      <div class="phone-title"><span class="back">‹</span>商品管理</div>
+      <div class="phone-body">
+        <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+        <div class="s-card">
+          <div class="card-title">🆕 提交新商品</div>
+
+          <div class="f-row top"><div class="f-l">封面图</div><div class="f-r">
+            <div class="chip-g"><div class="chip" data-weigh="0">📷 直接拍</div><div class="chip" data-weigh="0">🖼 从相册选</div></div>
+            <div class="s-muted">建议实拍：光线好、菜新鲜、别带包装袋</div>
+          </div></div>
+
+          <div class="f-row"><div class="f-l">商品名称</div><div class="f-r">
+            <input class="s-ipt" value="鲁花 5S 压榨一级花生油" />
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip on" data-cat>粮油</div><div class="chip" data-cat>蔬菜</div><div class="chip" data-cat>肉禽</div><div class="chip" data-cat>水产</div><div class="chip" data-cat>调料</div>
+            </div>
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip on" data-weigh="1">称重（斤）</div>
+              <div class="chip" data-weigh="2">固定规格</div>
+            </div>
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">单位</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip" data-unit="斤">斤</div>
+              <div class="chip" data-unit="公斤">公斤</div>
+              <div class="chip" data-unit="袋">袋</div>
+              <div class="chip" data-unit="桶">桶</div>
+              <div class="chip" data-unit="箱">箱</div>
+              <div class="chip on" data-unit="瓶">瓶</div>
+              <div class="chip" data-unit="件">件</div>
+              <div class="chip" data-unit="把">把</div>
+              <div class="chip" data-unit="个">个</div>
+              <div class="chip" data-unit="块">块</div>
+              <div class="chip" data-unit="板">板</div>
+              <div class="chip" data-unit="盒">盒</div>
+              <div class="chip" data-unit="包">包</div>
+              <div class="chip" data-unit="罐">罐</div>
+              <div class="chip" data-unit="扎">扎</div>
+              <div class="chip" data-unit="提">提</div>
+              <div class="chip" data-unit="捆">捆</div>
+              <div class="chip" data-unit="筐">筐</div>
+            </div>
+            <div class="s-muted">单位由平台维护，只能从上面选；选好后下面的价格与日供量按单位填</div>
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r">
+            <textarea class="ta">今早新到的一批</textarea>
+            <div class="s-muted">会显示在采购方商品名下方（灰字），可不填；最多 12 字<span class="remark-count">7/12</span></div>
+          </div></div>
+
+          <div class="f-row"><div class="f-l">供货价</div><div class="f-r">
+            <input class="s-ipt hi" data-ph="price" placeholder="如 120（元/瓶，提交后审核）" />
+          </div></div>
+          <div class="f-row"><div class="f-l">日可供量</div><div class="f-r">
+            <input class="s-ipt hi" data-ph="supply" placeholder="如 50（瓶）" />
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">资质证明</div><div class="f-r">
+            <div class="pic-grid"><div class="pic-add">＋</div></div>
+            <div class="s-muted" style="font-size:11px;">营业执照、检疫合格证等（肉类/水产必填，最多 5 张，点图可查看）</div>
+          </div></div>
+        </div>
+        <div class="pbtn">提交申请</div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">placeholder 联动口径</span>供货价 = <code>如 {示例}（元/{单位}，提交后审核）</code>；日可供量 = <code>如 {示例}（{单位}）</code>。示例值：瓶 → 120 / 50，其余沿用现状默认的 2.20 / 200。<br><b>没有「其他 / 手填」入口</b>：供应商不允许自己加单位，要加就找运营。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面1-③· <em>B 版：改成「称重」/「固定规格」，把写死的「斤」去掉</em><span>与 ② 同一状态（选中「瓶」），只有计量方式 chip 文案不同 —— 两版并排给大辉拍板（对照①）</span></div>
+    <div class="phone h1120" data-uscope>
+      <div class="phone-title"><span class="back">‹</span>商品管理</div>
+      <div class="phone-body">
+        <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+        <div class="s-card">
+          <div class="card-title">🆕 提交新商品</div>
+
+          <div class="f-row top"><div class="f-l">封面图</div><div class="f-r">
+            <div class="chip-g"><div class="chip" data-weigh="0">📷 直接拍</div><div class="chip" data-weigh="0">🖼 从相册选</div></div>
+            <div class="s-muted">建议实拍：光线好、菜新鲜、别带包装袋</div>
+          </div></div>
+
+          <div class="f-row"><div class="f-l">商品名称</div><div class="f-r">
+            <input class="s-ipt" value="鲁花 5S 压榨一级花生油" />
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip on" data-cat>粮油</div><div class="chip" data-cat>蔬菜</div><div class="chip" data-cat>肉禽</div><div class="chip" data-cat>水产</div><div class="chip" data-cat>调料</div>
+            </div>
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip on" data-weigh="1">称重</div>
+              <div class="chip" data-weigh="2">固定规格</div>
+            </div>
+            <div class="s-muted org">B 版：去掉写死的「斤」</div>
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">单位</div><div class="f-r">
+            <div class="chip-g">
+              <div class="chip" data-unit="斤">斤</div>
+              <div class="chip" data-unit="公斤">公斤</div>
+              <div class="chip" data-unit="袋">袋</div>
+              <div class="chip" data-unit="桶">桶</div>
+              <div class="chip" data-unit="箱">箱</div>
+              <div class="chip on" data-unit="瓶">瓶</div>
+              <div class="chip" data-unit="件">件</div>
+              <div class="chip" data-unit="把">把</div>
+              <div class="chip" data-unit="个">个</div>
+              <div class="chip" data-unit="块">块</div>
+              <div class="chip" data-unit="板">板</div>
+              <div class="chip" data-unit="盒">盒</div>
+              <div class="chip" data-unit="包">包</div>
+              <div class="chip" data-unit="罐">罐</div>
+              <div class="chip" data-unit="扎">扎</div>
+              <div class="chip" data-unit="提">提</div>
+              <div class="chip" data-unit="捆">捆</div>
+              <div class="chip" data-unit="筐">筐</div>
+            </div>
+            <div class="s-muted">单位由平台维护，只能从上面选；选好后下面的价格与日供量按单位填</div>
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r">
+            <textarea class="ta">今早新到的一批</textarea>
+            <div class="s-muted">会显示在采购方商品名下方（灰字），可不填；最多 12 字<span class="remark-count">7/12</span></div>
+          </div></div>
+
+          <div class="f-row"><div class="f-l">供货价</div><div class="f-r">
+            <input class="s-ipt hi" data-ph="price" placeholder="如 120（元/瓶，提交后审核）" />
+          </div></div>
+          <div class="f-row"><div class="f-l">日可供量</div><div class="f-r">
+            <input class="s-ipt hi" data-ph="supply" placeholder="如 50（瓶）" />
+          </div></div>
+
+          <div class="f-row top"><div class="f-l">资质证明</div><div class="f-r">
+            <div class="pic-grid"><div class="pic-add">＋</div></div>
+            <div class="s-muted" style="font-size:11px;">营业执照、检疫合格证等（肉类/水产必填，最多 5 张，点图可查看）</div>
+          </div></div>
+        </div>
+        <div class="pbtn">提交申请</div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">B 版 · 建议采纳</span>「计量方式」只表达<b>怎么卖</b>（称重 / 固定规格），「单位」表达<b>按什么计价</b>。两行各管一件事，不会再出现「称重（斤）+ 瓶」。<br>⚠️ 改文案只动 chip 显示文案，<b>不动 <code>weighType</code> 取值（1/2 不变）</b>，后端与 AI 语音换算口径都不受影响。</div>
+  </div>
+</div>
+
+<!-- ================================================================
+     画面 1b：两个编辑弹层各出一版（带单位行）
+================================================================ -->
+<div class="row">
+  <div class="fig">
+    <div class="fig-cap">画面1-④· 编辑商品弹层（走变更审核）<em>新增「单位」行</em><span>照 goods-manage.vue .mask/.modal 居中弹层；单位 chip 与提交表单同一套，默认带回当前单位「斤」</span></div>
+    <div class="phone h860" data-uscope>
+      <div class="phone-title"><span class="back">‹</span>商品管理</div>
+      <div class="phone-body">
+        <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+        <div class="m-sec">我的商品（3）</div>
+        <div class="m-mask">
+          <div class="modal">
+            <div class="card-title" style="padding:0 0 2px;">✏️ 编辑商品（提交后走运营审核）</div>
+            <div class="s-muted" style="margin-bottom:12px;">山东大姜（老姜）（变更审核期间原信息继续在售）</div>
+
+            <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt" placeholder="不改则留空" /></div></div>
+
+            <!-- ★ 卡BT 新增 -->
+            <div class="f-row top"><div class="f-l">单位</div><div class="f-r">
+              <div class="chip-g">
+                <div class="chip on" data-unit="斤">斤</div>
+                <div class="chip" data-unit="公斤">公斤</div>
+                <div class="chip" data-unit="袋">袋</div>
+                <div class="chip" data-unit="桶">桶</div>
+                <div class="chip" data-unit="箱">箱</div>
+                <div class="chip" data-unit="瓶">瓶</div>
+                <div class="chip" data-unit="件">件</div>
+                <div class="chip" data-unit="把">把</div>
+                <div class="chip" data-unit="个">个</div>
+                <div class="chip" data-unit="块">块</div>
+                <div class="chip" data-unit="板">板</div>
+                <div class="chip" data-unit="盒">盒</div>
+                <div class="chip" data-unit="包">包</div>
+                <div class="chip" data-unit="罐">罐</div>
+                <div class="chip" data-unit="扎">扎</div>
+                <div class="chip" data-unit="提">提</div>
+                <div class="chip" data-unit="捆">捆</div>
+                <div class="chip" data-unit="筐">筐</div>
+              </div>
+              <div class="s-muted">不改单位就不用动</div>
+            </div></div>
+
+            <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt" data-ph="price" placeholder="不改则留空" /></div></div>
+            <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt" data-ph="supply" placeholder="不改则留空（也可用⚡改库存）" /></div></div>
+            <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r">
+              <textarea class="ta" placeholder="最多 12 字，显示在买家商品名下方（灰字）">今天刚到的老姜</textarea>
+              <div class="s-muted">改动后随变更一起走运营审核<span class="remark-count">7/12</span></div>
+            </div></div>
+            <div class="row-btns2">
+              <div class="pbtn ghost">取消</div>
+              <div class="pbtn">提交变更</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">单位进变更</span>改了单位 → 随变更一起走运营审核；不改就留着当前值，<b>不会变成空白</b>。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面1-⑤· 编辑待审商品弹层（卡BQ）<em>新增「单位」行</em><span>原地改申请本体；单位 chip 同一套，供货价 placeholder「元/斤」随单位变</span></div>
+    <div class="phone h860" data-uscope>
+      <div class="phone-title"><span class="back">‹</span>商品管理</div>
+      <div class="phone-body">
+        <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+        <div class="m-sec">我的商品（3）</div>
+        <div class="m-mask">
+          <div class="modal">
+            <div class="card-title" style="padding:0 0 2px;">✏️ 编辑待审商品</div>
+            <div class="pending-sub">还没审核通过，改完仍是这一条，不会多出一条待审</div>
+
+            <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt" value="鲁花 5S 压榨一级花生油" placeholder="商品名称" /></div></div>
+
+            <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+              <div class="chip-g">
+                <div class="chip on" data-cat>粮油</div><div class="chip" data-cat>蔬菜</div><div class="chip" data-cat>肉禽</div><div class="chip" data-cat>水产</div><div class="chip" data-cat>调料</div>
+              </div>
+              <div class="s-muted">只能选已授权分类</div>
+            </div></div>
+
+            <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r">
+              <div class="chip-g">
+                <div class="chip" data-weigh="1">称重（斤）</div>
+                <div class="chip on" data-weigh="2">固定规格</div>
+              </div>
+            </div></div>
+
+            <!-- ★ 卡BT 新增 -->
+            <div class="f-row top"><div class="f-l">单位</div><div class="f-r">
+              <div class="chip-g">
+                <div class="chip" data-unit="斤">斤</div>
+                <div class="chip" data-unit="公斤">公斤</div>
+                <div class="chip" data-unit="袋">袋</div>
+                <div class="chip" data-unit="桶">桶</div>
+                <div class="chip" data-unit="箱">箱</div>
+                <div class="chip on" data-unit="瓶">瓶</div>
+                <div class="chip" data-unit="件">件</div>
+                <div class="chip" data-unit="把">把</div>
+                <div class="chip" data-unit="个">个</div>
+                <div class="chip" data-unit="块">块</div>
+                <div class="chip" data-unit="板">板</div>
+                <div class="chip" data-unit="盒">盒</div>
+                <div class="chip" data-unit="包">包</div>
+                <div class="chip" data-unit="罐">罐</div>
+                <div class="chip" data-unit="扎">扎</div>
+                <div class="chip" data-unit="提">提</div>
+                <div class="chip" data-unit="捆">捆</div>
+                <div class="chip" data-unit="筐">筐</div>
+              </div>
+            </div></div>
+
+            <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt hi" data-ph="price2" placeholder="元/瓶，提交后审核" /></div></div>
+            <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt hi" data-ph="supply2" placeholder="瓶" /></div></div>
+            <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r">
+              <textarea class="ta" placeholder="如：今早现摘，带花带刺（可不填）"></textarea>
+              <div class="s-muted">会显示在采购方商品名下方（灰字），可不填；最多 12 字<span class="remark-count">0/12</span></div>
+            </div></div>
+            <div class="row-btns2">
+              <div class="pbtn ghost">取消</div>
+              <div class="pbtn">保存</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">三处表单同一套 chip</span>「提交新商品」「编辑商品（变更审核）」「编辑待审商品」<b>三处都带单位</b>，数据来自同一个只读接口 <code>GET /units</code>（只返回启用中、按 sort）。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面1-⑥· 供应商端列表行（单位跟着变，零改动）<span>现状 <code>goods-manage.vue:158</code> 就是 <code>¥{{g.supplyPrice}}/{{g.unit}} · 日供 {{g.dailySupply}}{{g.unit}}</code></span></div>
+    <div class="phone h700">
+      <div class="phone-title"><span class="back">‹</span>商品管理</div>
+      <div class="phone-body">
+        <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+        <div class="m-sec">我的商品（3）</div>
+
+        <div class="gc" style="margin-top:0;">
+          <div class="gc-cover">🛢️</div>
+          <div class="gc-main">
+            <div class="gc-name">鲁花 5S 压榨一级花生油</div>
+            <div class="gc-spec">今早新到的一批</div>
+            <div class="gc-bottom"><span class="gc-price">¥96.00</span><span class="gc-unit">/瓶</span></div>
+            <div class="s-muted">日供 50 瓶</div>
+          </div>
+        </div>
+
+        <div class="gc">
+          <div class="gc-cover">🌾</div>
+          <div class="gc-main">
+            <div class="gc-name">金龙鱼 东北大米</div>
+            <div class="gc-spec">25kg/袋</div>
+            <div class="gc-bottom"><span class="gc-price">¥96.00</span><span class="gc-unit">/袋</span></div>
+            <div class="s-muted">日供 20 袋</div>
+          </div>
+        </div>
+
+        <div class="gc">
+          <div class="gc-cover">🫚</div>
+          <div class="gc-main">
+            <div class="gc-name">山东大姜（老姜）</div>
+            <div class="gc-spec">今天刚到的老姜</div>
+            <div class="gc-bottom"><span class="gc-price">¥2.50</span><span class="gc-unit">/斤</span></div>
+            <div class="s-muted">日供 200 斤</div>
+          </div>
+        </div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">零改动证据</span>供应商端列表本来就读 <code>g.unit</code>，单位一变这行自动跟着变 —— <b>不用改代码</b>。</div>
+  </div>
+</div>
+
+<!-- ================================================================
+     画面 2：运营后台「计量单位」维护页（新增页面）
+================================================================ -->
+<div class="row">
+  <div class="fig">
+    <div class="fig-cap">画面2-①· 运营后台「商品管理 / 计量单位」<em>新增页面</em><span>侧栏挂在「商品管理」分组下；四列：单位名称 / 排序 / 状态 / 操作；顶部「＋ 新增单位」；每行 上移·下移·停用，<b>无删除</b></span></div>
+    <div class="browser" style="width: 1120px;">
+      <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品管理 / 计量单位</span></div>
+      <div class="admin">
+        <div class="aside">
+          <div class="logo">🌿 辉崧鲜配运营后台</div>
+          <div class="mi"><span class="ico">📊</span>工作台</div>
+          <div class="mi"><span class="ico">👤</span>采购方管理</div>
+          <div class="mi"><span class="ico">💬</span>申诉处理</div>
+          <div class="mi"><span class="ico">🏪</span>供应商管理</div>
+          <div class="mi"><span class="ico">🚲</span>配送员管理</div>
+          <div class="mi"><span class="ico">🥬</span>商品审核</div>
+          <div class="mi on"><span class="ico">📦</span>商品管理</div>
+          <div class="mi sub on"><span class="ico">📏</span>计量单位</div>
+          <div class="mi"><span class="ico">🔔</span>采购需求</div>
+          <div class="mi"><span class="ico">☰</span>分类管理</div>
+          <div class="mi"><span class="ico">🏷️</span>价格与加价</div>
+          <div class="mi"><span class="ico">🧾</span>订单履约</div>
+          <div class="mi"><span class="ico">📞</span>催单台</div>
+          <div class="mi"><span class="ico">🛠️</span>售后管理</div>
+          <div class="mi"><span class="ico">🚚</span>派送调度</div>
+          <div class="mi"><span class="ico">💰</span>资金结算</div>
+          <div class="mi"><span class="ico">💳</span>支付流水</div>
+          <div class="mi"><span class="ico">📅</span>每日对账</div>
+          <div class="mi"><span class="ico">📄</span>审计日志</div>
+          <div class="mi"><span class="ico">📈</span>报表</div>
+          <div class="mi"><span class="ico">⚙️</span>系统设置</div>
+        </div>
+        <div class="main">
+          <div class="crumb">商品管理 / <b>计量单位</b></div>
+
+          <div class="el-card">
+            <div class="ec-head">
+              <span>计量单位 <span class="tip">共 18 条 · 停用后不再出现在新建商品与供应商端，老商品与历史订单照常显示原单位</span></span>
+              <span class="btn pri" data-act="open-add">＋ 新增单位</span>
+            </div>
+            <div class="ec-body" style="padding:0;">
+              <table class="el-tb" data-unit-tb>
+                <thead><tr>
+                  <th style="width:56px;">排序</th><th>单位名称</th><th style="width:96px;">状态</th><th style="width:190px;">操作</th>
+                </tr></thead>
+                <tbody>
+                  <tr><td class="c">1</td><td>斤</td><td><span class="tag ok">启用</span></td><td><span class="lbtn dis">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">2</td><td>公斤</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">3</td><td>袋</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">4</td><td>桶</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">5</td><td>箱</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">6</td><td>瓶</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">7</td><td>件</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">8</td><td>把</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">9</td><td>个</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">10</td><td>块</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">11</td><td>板</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">12</td><td>盒</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">13</td><td>包</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">14</td><td>罐</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">15</td><td>扎</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">16</td><td>提</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">17</td><td>捆</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">18</td><td>筐</td><td><span class="tag ok">启用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn pri" data-act="down">下移</span><span class="lbtn neu" data-act="toggle">停用</span></td></tr>
+                  <tr><td class="c">19</td><td>颗</td><td><span class="tag off">停用</span></td><td><span class="lbtn pri" data-act="up">上移</span><span class="lbtn dis">下移</span><span class="lbtn warn" data-act="toggle">启用</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tipbar">
+            <b>口径：</b>① 单位只<b>停用不删除</b> —— 用过的单位一旦删掉，老商品与历史订单就会显示成空白。<br>
+            ② 停用后：<b>新建商品与供应商端不再出现</b>该单位；<b>老商品与历史订单照常显示原单位</b>，不受影响。<br>
+            ③ 排序决定供应商端 chip 的<b>平铺顺序</b>；预置的 18 个是<b>新表初始化数据，不动任何现有商品</b>。
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><span class="t">不提供删除</span>操作列只有 <b>上移 / 下移 / 停用（启用）</b>，卡片口径：单位用过就停用，不真删。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面2-②· 「＋ 新增单位」弹窗 + <em>重名拦截</em><span>输入已存在的单位名（如「瓶」）→ 红字「该单位已存在」，不许重复添加</span></div>
+    <div class="browser" style="width: 460px;">
+      <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品管理 / 计量单位 · 新增</span></div>
+      <div class="dim-body" style="padding:22px 0 26px;">
+        <div class="dlg" style="width:400px;">
+          <div class="dlg-head">新增单位<span class="dlg-x">✕</span></div>
+          <div class="dlg-body">
+            <div class="dlg-row">
+              <div class="dlg-l">单位名称</div>
+              <div class="dlg-r">
+                <input class="d-ipt" data-new-unit value="瓶" placeholder="如：瓶" />
+                <div class="d-err" data-dup-err>该单位已存在，请换一个</div>
+                <div class="d-grey" data-dup-ok style="display:none;">保存后按当前排序追加到列表末尾，供应商端立即可选</div>
+              </div>
+            </div>
+            <div class="dlg-row">
+              <div class="dlg-l">排序</div>
+              <div class="dlg-r">
+                <input class="d-ipt" value="20" style="width:88px;" />
+                <div class="d-grey">数字越小越靠前；留空则追加到末尾</div>
+              </div>
+            </div>
+            <div class="dlg-row">
+              <div class="dlg-l">状态</div>
+              <div class="dlg-r"><span class="tag ok">启用</span></div>
+            </div>
+          </div>
+          <div class="dlg-foot">
+            <span class="btn">取消</span>
+            <span class="btn pri" data-act="save-unit">保存</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><span class="t">重名拦截</span>同名（含已停用的）一律拦：提示 <b>「该单位已存在」</b>，不重复插入。<br>点上面「保存」可以试：输入框里是「瓶」→ 报错；改成「颗」→ 也报错；改成「扇」→ 通过（红字消失、出现灰字说明）。</div>
+  </div>
+</div>
+
+<!-- ================================================================
+     画面 3：运营后台 新增/编辑商品 → 单位栏（下拉 vs 自由输入）
+================================================================ -->
+<div class="row">
+  <div class="fig">
+    <div class="fig-cap">画面3-①· <em>方案 A（建议）：下拉，从「计量单位」维护表取</em><span>菜单已展开，选中「瓶」；下方灰字「没有想要的单位？到『计量单位』页添加」</span></div>
+    <div class="browser" style="width: 600px;">
+      <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品管理 · 新增商品</span></div>
+      <div class="dim-body">
+        <div class="dlg">
+          <div class="dlg-head">新增商品<span class="dlg-x">✕</span></div>
+          <div class="dlg-body">
+            <div class="dlg-row"><div class="dlg-l">商品名称</div><div class="dlg-r"><input class="d-ipt" value="鲁花 5S 压榨一级花生油" /></div></div>
+            <div class="dlg-row top"><div class="dlg-l">分类</div><div class="dlg-r">
+              <div class="chip-g"><div class="chip on">粮油</div><div class="chip">蔬菜</div><div class="chip">肉禽</div><div class="chip">水产</div></div>
+            </div></div>
+            <div class="dlg-row"><div class="dlg-l">计量方式</div><div class="dlg-r">
+              <span style="font-size:13px;color:#606266;">○ 称重&nbsp;&nbsp;● 固定规格</span>
+            </div></div>
+            <div class="dlg-row top" style="position:relative;z-index:6;">
+              <div class="dlg-l">单位</div>
+              <div class="dlg-r">
+                <div class="sel open spaced" data-sel>
+                  <div class="sel-box focus"><span data-sel-val>瓶</span><span class="arw">▾</span></div>
+                  <div class="sel-menu" data-sel-menu>
+                    <div class="sel-opt">斤</div>
+                    <div class="sel-opt">公斤</div>
+                    <div class="sel-opt">袋</div>
+                    <div class="sel-opt">桶</div>
+                    <div class="sel-opt">箱</div>
+                    <div class="sel-opt on">瓶</div>
+                    <div class="sel-opt">件</div>
+                    <div class="sel-opt">把</div>
+                    <div class="sel-opt">个</div>
+                    <div class="sel-opt">块</div>
+                    <div class="sel-opt">板</div>
+                    <div class="sel-opt">盒</div>
+                    <div class="sel-opt">包</div>
+                    <div class="sel-opt">罐</div>
+                    <div class="sel-opt">扎</div>
+                    <div class="sel-opt">提</div>
+                    <div class="sel-opt">捆</div>
+                    <div class="sel-opt">筐</div>
+                  </div>
+                </div>
+                <div class="d-grey">没有想要的单位？到『计量单位』页添加</div>
+              </div>
+            </div>
+            <div class="dlg-row"><div class="dlg-l">规格说明</div><div class="dlg-r"><input class="d-ipt" value="5L/瓶" placeholder="如：约 0.8 斤/块（选填）" /></div></div>
+            <div class="dlg-row"><div class="dlg-l">供货价</div><div class="dlg-r"><input class="d-ipt" value="96.00" style="width:120px;" /></div></div>
+            <div class="dlg-row"><div class="dlg-l">日可供量</div><div class="dlg-r"><input class="d-ipt" value="50" style="width:120px;" /></div></div>
+          </div>
+          <div class="dlg-foot"><span class="btn">取消</span><span class="btn pri">保存</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><span class="t">为什么改成下拉</span>自由输入会造出<b>表外的脏值</b>（如「斤 」「jīn」「公斤装」），供应商端 chip 里永远选不到，买家端也就跟着显示脏值。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面3-②· 方案 A · 编辑<b>老商品</b>且它的单位已被停用<em>→ 下拉保留该项并标注「（已停用）」</em><span>不许显示成空白；灰字说明停用后果</span></div>
+    <div class="browser" style="width: 600px;">
+      <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品管理 · 编辑商品（老商品「本地小土豆」）</span></div>
+      <div class="dim-body">
+        <div class="dlg">
+          <div class="dlg-head">编辑商品<span class="dlg-x">✕</span></div>
+          <div class="dlg-body">
+            <div class="dlg-row"><div class="dlg-l">商品名称</div><div class="dlg-r"><input class="d-ipt" value="本地小土豆" /></div></div>
+            <div class="dlg-row top"><div class="dlg-l">分类</div><div class="dlg-r">
+              <div class="chip-g"><div class="chip">粮油</div><div class="chip on">蔬菜</div><div class="chip">肉禽</div><div class="chip">水产</div></div>
+            </div></div>
+            <div class="dlg-row"><div class="dlg-l">计量方式</div><div class="dlg-r">
+              <span style="font-size:13px;color:#606266;">● 称重&nbsp;&nbsp;○ 固定规格</span>
+            </div></div>
+            <div class="dlg-row top" style="position:relative;z-index:6;">
+              <div class="dlg-l">单位</div>
+              <div class="dlg-r">
+                <div class="sel open spaced" data-sel>
+                  <div class="sel-box focus"><span data-sel-val>颗<b style="font-weight:400;color:#C0C4CC;">（已停用）</b></span><span class="arw">▾</span></div>
+                  <div class="sel-menu" data-sel-menu>
+                    <div class="sel-opt">斤</div>
+                    <div class="sel-opt">公斤</div>
+                    <div class="sel-opt">袋</div>
+                    <div class="sel-opt">桶</div>
+                    <div class="sel-opt">箱</div>
+                    <div class="sel-opt">瓶</div>
+                    <div class="sel-opt">件</div>
+                    <div class="sel-opt">把</div>
+                    <div class="sel-opt">个</div>
+                    <div class="sel-opt">块</div>
+                    <div class="sel-opt">板</div>
+                    <div class="sel-opt">盒</div>
+                    <div class="sel-opt">包</div>
+                    <div class="sel-opt">罐</div>
+                    <div class="sel-opt">扎</div>
+                    <div class="sel-opt">提</div>
+                    <div class="sel-opt">捆</div>
+                    <div class="sel-opt">筐</div>
+                    <div class="sel-opt on dis">颗<span class="off">（已停用）</span></div>
+                  </div>
+                </div>
+                <div class="d-grey">没有想要的单位？到『计量单位』页添加</div>
+              </div>
+            </div>
+            <div class="dlg-row"><div class="dlg-l">规格说明</div><div class="dlg-r"><input class="d-ipt" value="约 0.1 斤/颗（选填）" /></div></div>
+            <div class="dlg-row"><div class="dlg-l">供货价</div><div class="dlg-r"><input class="d-ipt" value="0.80" style="width:120px;" /></div></div>
+            <div class="dlg-row"><div class="dlg-l">日可供量</div><div class="dlg-r"><input class="d-ipt" value="300" style="width:120px;" /></div></div>
+            <div class="d-grey" style="margin:2px 0 6px;">该单位已停用：<b>新建商品与供应商端不再出现</b>；本商品与历史订单<b>照常显示「颗」</b>，不会变空白。<br>单位一旦用过就<b>只停用不删除</b>，所以下拉里永远保留该项 —— 上面下拉已滚动到最后一项。</div>
+          </div>
+          <div class="dlg-foot"><span class="btn">取消</span><span class="btn pri">保存</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><span class="t">兼容细节（必须）</span>老商品的单位若已被停用，下拉里<b>必须保留该项</b>并在文案后加 <code>（已停用）</code> —— 否则编辑页一打开单位就是<b>空白</b>，保存后会把商品单位洗掉。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面3-③· <em>方案 B：维持现状自由输入（对照②的参照面）</em><span>现状 GoodsManage.vue:91-93：<code>el-input</code> + placeholder「斤 / 份 / 箱」，默认「斤」</span></div>
+    <div class="browser" style="width: 600px;">
+      <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品管理 · 新增商品（现状，未改动）</span></div>
+      <div class="dim-body">
+        <div class="dlg">
+          <div class="dlg-head">新增商品<span class="dlg-x">✕</span></div>
+          <div class="dlg-body">
+            <div class="dlg-row"><div class="dlg-l">商品名称</div><div class="dlg-r"><input class="d-ipt" value="鲁花 5S 压榨一级花生油" /></div></div>
+            <div class="dlg-row top"><div class="dlg-l">分类</div><div class="dlg-r">
+              <div class="chip-g"><div class="chip on">粮油</div><div class="chip">蔬菜</div><div class="chip">肉禽</div><div class="chip">水产</div></div>
+            </div></div>
+            <div class="dlg-row"><div class="dlg-l">计量方式</div><div class="dlg-r">
+              <span style="font-size:13px;color:#606266;">○ 称重&nbsp;&nbsp;● 固定规格</span>
+            </div></div>
+            <div class="dlg-row" style="position:relative;z-index:6;">
+              <div class="dlg-l">单位</div>
+              <div class="dlg-r">
+                <span class="sel" style="width:120px;display:inline-block;">
+                  <span class="sel-box" style="padding:6px 10px;display:flex;"><span class="d-ipt ph" style="border:none;padding:0;color:#B3B9C2;">斤 / 份 / 箱</span></span>
+                </span>
+                <div class="d-grey" style="margin-top:8px;">现状：想写什么写什么 —— 会造出表外的脏值</div>
+              </div>
+            </div>
+            <div class="dlg-row"><div class="dlg-l">规格说明</div><div class="dlg-r"><input class="d-ipt" value="5L/瓶" placeholder="如：约 0.8 斤/块（选填）" /></div></div>
+            <div class="dlg-row"><div class="dlg-l">供货价</div><div class="dlg-r"><input class="d-ipt" value="96.00" style="width:120px;" /></div></div>
+            <div class="dlg-row"><div class="dlg-l">日可供量</div><div class="dlg-r"><input class="d-ipt" value="50" style="width:120px;" /></div></div>
+          </div>
+          <div class="dlg-foot"><span class="btn">取消</span><span class="btn pri">保存</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><span class="t">对照② · 建议选 A（下拉）</span>选 B 的话，供应商端 chip 表与后台手填值会对不上，<b>「后台能填瓶、供应商选不到」</b>的老问题会换个形式继续存在。</div>
+  </div>
+</div>
+
+<!-- ================================================================
+     画面 4：买家端显示对照（改值即生效）
+================================================================ -->
+<div class="row">
+  <div class="fig">
+    <div class="fig-cap">画面4-①· 买家端商品卡 <em>¥120 /瓶</em><span>照 buyer/goods.vue：<code>.gc-price</code> + <code>.gc-unit</code>（/{{unit}}）</span></div>
+    <div class="phone h700">
+      <div class="phone-title"><span class="back">‹</span>粮油调味</div>
+      <div class="phone-body">
+        <div class="gc" style="margin-top:8px;">
+          <div class="gc-cover">🛢️</div>
+          <div class="gc-main">
+            <div class="gc-name">鲁花 5S 压榨一级花生油</div>
+            <div class="gc-spec">5L/瓶</div>
+            <div class="gc-bottom"><span class="gc-price">¥120</span><span class="gc-unit">/瓶</span><span class="gc-add">＋</span></div>
+          </div>
+        </div>
+        <div class="gc">
+          <div class="gc-cover">🥫</div>
+          <div class="gc-main">
+            <div class="gc-name">海天 金标生抽</div>
+            <div class="gc-spec">1.9L/瓶</div>
+            <div class="gc-bottom"><span class="gc-price">¥18.5</span><span class="gc-unit">/瓶</span><span class="gc-add">＋</span></div>
+          </div>
+        </div>
+        <div class="gc">
+          <div class="gc-cover">🧂</div>
+          <div class="gc-main">
+            <div class="gc-name">中盐 精制食用盐</div>
+            <div class="gc-spec">400g/袋</div>
+            <div class="gc-bottom"><span class="gc-price">¥2.5</span><span class="gc-unit">/袋</span><span class="gc-add">＋</span></div>
+          </div>
+        </div>
+        <div class="m-sec">同页对照（单位各是各的）</div>
+        <div class="gc">
+          <div class="gc-cover">🥬</div>
+          <div class="gc-main">
+            <div class="gc-name">本地小白菜</div>
+            <div class="gc-spec">今早现摘，带花带刺</div>
+            <div class="gc-bottom"><span class="gc-price">¥2.5</span><span class="gc-unit">/斤</span><span class="gc-add">＋</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">零改动</span>商品卡的 <code>/瓶</code> 就是 <code>{{g.unit}}</code> 渲染出来的 —— <b>不用改一行买家端代码</b>。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面4-②· 买家端商品详情 <em>¥120 /瓶 + 今日可售 50 瓶</em><span>照 buyer/goods-detail.vue：<code>.gd-price</code> / <code>.gd-unit</code> / <code>.gd-supply</code></span></div>
+    <div class="phone h700">
+      <div class="phone-title"><span class="back">‹</span>商品详情</div>
+      <div class="phone-body">
+        <div style="margin:8px 10px 0;">
+          <div class="gd-cover"><text>🛢️</text></div>
+          <div class="gd-name">鲁花 5S 压榨一级花生油</div>
+          <div class="gd-price">¥120 <span class="gd-unit">/瓶</span></div>
+          <div class="gd-spec">5L/瓶</div>
+          <div class="gd-supply">今日可售 50 瓶</div>
+        </div>
+        <div class="m-sec">称重说明</div>
+        <div class="s-card">
+          <div style="font-size:13px;color:#4A5261;padding:10px 0;line-height:1.6;">称重商品按实际重量结算，多退少补</div>
+        </div>
+      </div>
+      <div class="gd-bar">
+        <div class="gd-btn">加入购物车</div>
+        <div class="gd-btn primary">立即下单</div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">今日可售</span><code>gd-supply</code> = <code>今日可售 {{dailySupply}} {{unit}}</code> —— 单位一改，这句自动变成「50 瓶」。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fig-cap">画面4-③· 一袋米（单位「<b>袋</b>」、规格「<b>25kg/袋</b>」）的卡片对照<span>同一张卡模板，只换 <code>unit</code> 与 <code>specText</code></span></div>
+    <div class="phone h760">
+      <div class="phone-title"><span class="back">‹</span>粮油调味</div>
+      <div class="phone-body">
+        <div class="gc" style="margin-top:8px;">
+          <div class="gc-cover">🌾</div>
+          <div class="gc-main">
+            <div class="gc-name">金龙鱼 东北大米</div>
+            <div class="gc-spec">25kg/袋</div>
+            <div class="gc-bottom"><span class="gc-price">¥118</span><span class="gc-unit">/袋</span><span class="gc-add">＋</span></div>
+          </div>
+        </div>
+        <div class="m-sec">点进详情（同一个 unit 通到哪）</div>
+        <div style="margin:0 10px;">
+          <div class="gd-cover" style="font-size:56px;"><text>🌾</text></div>
+          <div class="gd-name" style="font-size:16px;">金龙鱼 东北大米</div>
+          <div class="gd-price" style="font-size:19px;">¥118 <span class="gd-unit">/袋</span></div>
+          <div class="gd-spec">25kg/袋</div>
+          <div class="gd-supply">今日可售 20 袋</div>
+        </div>
+        <div class="m-sec">购物车 / 订单 / 售后 / 供应商单据（同一字段）</div>
+        <div class="s-card">
+          <div class="f-row"><div class="f-l">购物车行</div><div class="f-r"><span style="font-size:13px;color:#4A5261;">金龙鱼 东北大米 · ¥118/袋 × 2</span></div></div>
+          <div class="f-row"><div class="f-l">订单详情</div><div class="f-r"><span style="font-size:13px;color:#4A5261;">订 2 袋 · 交 2 袋 · 验 2 袋</span></div></div>
+          <div class="f-row"><div class="f-l">供应商单</div><div class="f-r"><span style="font-size:13px;color:#4A5261;">订 2袋 · 实交 2袋</span></div></div>
+        </div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+    <div class="note"><span class="t">全链路通</span>购物车 / 订单详情 / 售后 / AI 语音确认卡 / 供应商端单据 <b>全都读同一个 <code>unit</code></b> —— 单位一改，全站自动跟着变，<b>不用逐页改</b>。<br>⚠️ 唯一要冒烟的是 <b>AI 语音</b>：<code>parser.util.ts</code> 的「份数单位 → 斤」只在 <code>weighType=1</code> 生效，验收时要试一句「来五瓶油」，确认没被算成斤（本卡只出原型，验收不在原型里）。</div>
+  </div>
+</div>
+
+<!-- ================================================================
+     页尾：两处对照的原始 HTML 片段
+================================================================ -->
+<div class="foot">
+  <div class="t">⚖️ 留给大辉拍板的两处对照（原始 HTML 片段）</div>
+  <div class="d">两处都在上面的画面里并排画出来了；这里是实现时要落到代码里的<b>原始片段</b>，拍板后直接照抄即可。</div>
+
+  <div class="t2">对照① · 供应商端「计量方式」chip 文案（<code>frontend/src/subpkg-supplier/pages/goods-manage.vue</code>）</div>
+  <pre class="code"><code>&lt;!-- A 版：维持现状 —— 称重（斤）/ 固定规格 --&gt;
+&lt;view class="form-row"&gt;
+  &lt;view class="fr-l"&gt;计量方式&lt;/view&gt;
+  &lt;view class="fr-r"&gt;
+    &lt;view class="chip-group"&gt;
+      &lt;view class="chip" :class="{ on: form.weighType === 1 }" @tap="form.weighType = 1; aiFilled.weigh = false"&gt;称重（斤）&lt;/view&gt;
+      &lt;view class="chip" :class="{ on: form.weighType === 2 }" @tap="form.weighType = 2; aiFilled.weigh = false"&gt;固定规格&lt;/view&gt;
+    &lt;/view&gt;
+  &lt;/view&gt;
+&lt;/view&gt;
+
+&lt;!-- B 版（建议）：去掉写死的「斤」 —— 称重 / 固定规格 --&gt;
+&lt;view class="form-row"&gt;
+  &lt;view class="fr-l"&gt;计量方式&lt;/view&gt;
+  &lt;view class="fr-r"&gt;
+    &lt;view class="chip-group"&gt;
+      &lt;view class="chip" :class="{ on: form.weighType === 1 }" @tap="form.weighType = 1; aiFilled.weigh = false"&gt;称重&lt;/view&gt;
+      &lt;view class="chip" :class="{ on: form.weighType === 2 }" @tap="form.weighType = 2; aiFilled.weigh = false"&gt;固定规格&lt;/view&gt;
+    &lt;/view&gt;
+  &lt;/view&gt;
+&lt;/view&gt;</code></pre>
+  <div class="d" style="margin-top:6px;">新增的「单位」行（两版共用，放在计量方式下面）：</div>
+  <pre class="code"><code>&lt;!-- 卡BT 新增：单位（平铺 chip，照「商品分类 / 计量方式」同款样式；无下拉、无 picker、无手填） --&gt;
+&lt;view class="form-row form-top"&gt;
+  &lt;view class="fr-l"&gt;单位&lt;/view&gt;
+  &lt;view class="fr-r"&gt;
+    &lt;view class="chip-group"&gt;
+      &lt;view
+        v-for="u in units"
+        :key="u.id"
+        class="chip"
+        :class="{ on: form.unit === u.name }"
+        @tap="form.unit = u.name"
+      &gt;{{ u.name }}&lt;/view&gt;
+    &lt;/view&gt;
+    &lt;view class="muted"&gt;单位由平台维护，只能从上面选；选好后下面的价格与日供量按单位填&lt;/view&gt;
+  &lt;/view&gt;
+&lt;/view&gt;
+
+&lt;!-- 供货价 / 日可供量 placeholder 随单位联动 --&gt;
+&lt;input v-model="form.supplyPrice" class="ipt" type="digit"
+       :placeholder="'如 ' + (form.unit === '瓶' ? '120' : '2.20') + '（元/' + form.unit + '，提交后审核）'" /&gt;
+&lt;input v-model="form.dailySupply" class="ipt" type="digit"
+       :placeholder="'如 ' + (form.unit === '瓶' ? '50' : '200') + '（' + form.unit + '）'" /&gt;</code></pre>
+
+  <div class="t2">对照② · 运营后台 新增/编辑商品 的单位栏（<code>admin-web/src/views/goods/GoodsManage.vue</code>）</div>
+  <pre class="code"><code>&lt;!-- 方案 A（建议）：下拉，从「计量单位」维护表取 --&gt;
+&lt;el-form-item label="单位"&gt;
+  &lt;el-select v-model="form.unit" placeholder="选择单位" style="width: 160px"&gt;
+    &lt;el-option
+      v-for="u in units"
+      :key="u.id"
+      :label="u.status === 1 ? u.name : u.name + '（已停用）'"
+      :value="u.name"
+    /&gt;
+  &lt;/el-select&gt;
+  &lt;div class="gm-tip"&gt;没有想要的单位？到『计量单位』页添加&lt;/div&gt;
+&lt;/el-form-item&gt;
+
+&lt;!-- 方案 B：维持现状自由输入（会造出表外脏值，不建议） --&gt;
+&lt;el-form-item label="单位"&gt;
+  &lt;el-input v-model="form.unit" placeholder="斤 / 份 / 箱" style="width: 120px" /&gt;
+&lt;/el-form-item&gt;</code></pre>
+  <div class="d" style="margin-top:6px;">
+    配套：<code>units</code> 取 <code>GET /admin/units</code>（后台用，含停用项，供老商品兼容）；供应商端与后台商品表单另用只读 <code>GET /units</code>（只返回启用中、按 sort）。
+    后端 <code>supplier-goods.service.ts:161</code> 的 <code>unit: dto.unit ?? '斤'</code> <b>要去掉写死</b>，改成「传什么存什么 + 必填 + 校验必须命中启用中的单位」。
+  </div>
+</div>
+
+</div>
+
+<script>
+(function () {
+  var EX = { '瓶': { p: '120', s: '50' } };
+  function ex(u, k) { return (EX[u] && EX[u][k]) || (k === 'p' ? '2.20' : '200'); }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+
+    /* 单位 chip：切换选中 + 联动 placeholder */
+    var uc = t.closest ? t.closest('.chip[data-unit]') : null;
+    if (uc) {
+      var scope = uc.closest('[data-uscope]');
+      if (scope) {
+        scope.querySelectorAll('.chip[data-unit]').forEach(function (c) { c.classList.remove('on'); });
+        uc.classList.add('on');
+        var u = uc.getAttribute('data-unit');
+        scope.querySelectorAll('[data-ph="price"]').forEach(function (el) {
+          el.placeholder = '如 ' + ex(u, 'p') + '（元/' + u + '，提交后审核）';
+          el.classList.add('hi');
+        });
+        scope.querySelectorAll('[data-ph="supply"]').forEach(function (el) {
+          el.placeholder = '如 ' + ex(u, 's') + '（' + u + '）';
+          el.classList.add('hi');
+        });
+        scope.querySelectorAll('[data-ph="price2"]').forEach(function (el) {
+          el.placeholder = '元/' + u + '，提交后审核';
+        });
+        scope.querySelectorAll('[data-ph="supply2"]').forEach(function (el) {
+          el.placeholder = u;
+        });
+      }
+    }
+
+    /* 计量方式 chip / 分类 chip：同组内单选 */
+    var wc = t.closest ? t.closest('.chip[data-weigh]') : null;
+    if (wc && wc.getAttribute('data-weigh') !== '0') {
+      var s2 = wc.closest('.chip-g') || wc;
+      Array.prototype.forEach.call(s2.parentNode.querySelectorAll('.chip[data-weigh]'), function (c) {
+        if (c.getAttribute('data-weigh') !== '0') c.classList.remove('on');
+      });
+      wc.classList.add('on');
+    }
+    var cc = t.closest ? t.closest('.chip[data-cat]') : null;
+    if (cc) {
+      var s3 = cc.closest('.chip-g') || cc;
+      Array.prototype.forEach.call(s3.querySelectorAll('.chip[data-cat]'), function (c) { c.classList.remove('on'); });
+      cc.classList.add('on');
+    }
+
+    /* 后台：假下拉展开/收起 */
+    var box = t.closest ? t.closest('[data-sel] .sel-box') : null;
+    if (box) { box.parentNode.classList.toggle('open'); }
+    var opt = t.closest ? t.closest('[data-sel-menu] .sel-opt') : null;
+    if (opt) {
+      var sel = opt.closest('[data-sel]');
+      var menu = sel.querySelector('[data-sel-menu]');
+      Array.prototype.forEach.call(menu.querySelectorAll('.sel-opt'), function (o) { o.classList.remove('on'); });
+      opt.classList.add('on');
+      var val = sel.querySelector('[data-sel-val]');
+      var off = opt.querySelector('.off');
+      val.innerHTML = off ? opt.textContent.replace('（已停用）', '') + '<b style="font-weight:400;color:#C0C4CC;">（已停用）</b>' : opt.textContent;
+      sel.classList.remove('open');
+    }
+
+    /* 后台维护页：上移 / 下移 / 停用-启用 */
+    var act = t.closest ? t.closest('[data-act]') : null;
+    if (act) {
+      var a = act.getAttribute('data-act');
+      var tr = act.closest('tr');
+      var tb = tr && tr.parentNode;
+      if (a === 'up' || a === 'down') {
+        var sib = a === 'up' ? tr.previousElementSibling : tr.nextElementSibling;
+        if (sib) {
+          if (a === 'up') { tb.insertBefore(tr, sib); } else { tb.insertBefore(sib, tr); }
+          renumber(tb);
+        }
+      } else if (a === 'toggle') {
+        var tdStatus = tr.children[2];
+        var on = tdStatus.querySelector('.tag').classList.contains('ok');
+        tdStatus.innerHTML = on ? '<span class="tag off">停用</span>' : '<span class="tag ok">启用</span>';
+        act.textContent = on ? '启用' : '停用';
+        act.className = 'lbtn ' + (on ? 'warn' : 'neu');
+        renumber(tb);
+      } else if (a === 'save-unit') {
+        var ipt = document.querySelector('[data-new-unit]');
+        var err = document.querySelector('[data-dup-err]');
+        var ok = document.querySelector('[data-dup-ok]');
+        var name = (ipt.value || '').trim();
+        var dup = false;
+        document.querySelectorAll('[data-unit-tb] tbody tr').forEach(function (r) {
+          if (r.children[1].textContent.trim() === name) { dup = true; }
+        });
+        if (!name) { err.textContent = '请填写单位名称'; err.style.display = ''; ok.style.display = 'none'; return; }
+        if (dup) { err.textContent = '该单位已存在，请换一个'; err.style.display = ''; ok.style.display = 'none'; return; }
+        err.style.display = 'none'; ok.style.display = '';
+      } else if (a === 'open-add') {
+        var inp = document.querySelector('[data-new-unit]');
+        if (inp) { inp.focus(); inp.scrollIntoView({ block: 'center' }); }
+      }
+    }
+  });
+
+  /* 含「（已停用）」项的下拉：初始滚动到最后一项，让该项在截图里可见 */
+  document.querySelectorAll('[data-sel-menu]').forEach(function (m) {
+    if (m.querySelector('.sel-opt.dis')) m.scrollTop = m.scrollHeight;
+  });
+
+  function renumber(tb) {
+    if (!tb) return;
+    var rows = tb.querySelectorAll('tr');
+    Array.prototype.forEach.call(rows, function (r, i) {
+      r.children[0].textContent = i + 1;
+      var cells = r.children[3];
+      var up = cells.querySelector('[data-act="up"]');
+      var dn = cells.querySelector('[data-act="down"]');
+      if (up) { up.className = 'lbtn ' + (i === 0 ? 'dis' : 'pri'); }
+      if (dn) { dn.className = 'lbtn ' + (i === rows.length - 1 ? 'dis' : 'pri'); }
+    });
+  }
+})();
+</script>
+</body>
+</html>
