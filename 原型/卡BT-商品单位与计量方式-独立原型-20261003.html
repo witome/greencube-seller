@@ -212,7 +212,7 @@
 ================================================================ -->
 <div class="row">
   <div class="fig">
-    <div class="fig-cap">画面1-①· 供应商端「提交新商品」<em>A 版：计量方式维持现状「称重（斤）」</em><span>新增的「单位」行在计量方式下面，18 个平铺 chip，默认选中「斤」；无下拉、无 picker、无「其他/手填」</span></div>
+    <div class="fig-cap">画面1-①· 供应商端「提交新商品」<em>A 版：计量方式维持现状「称重（斤）」<b style="color:#B45309">（大辉 2026-10-03 已否决，留档对照）</b></em><span>新增的「单位」行在计量方式下面，18 个平铺 chip，默认选中「斤」；无下拉、无 picker、无「其他/手填」</span></div>
     <div class="phone h1120" data-uscope>
       <div class="phone-title"><span class="back">‹</span>商品管理</div>
       <div class="phone-body">
@@ -371,7 +371,7 @@
   </div>
 
   <div class="fig">
-    <div class="fig-cap">画面1-③· <em>B 版：改成「称重」/「固定规格」，把写死的「斤」去掉</em><span>与 ② 同一状态（选中「瓶」），只有计量方式 chip 文案不同 —— 两版并排给大辉拍板（对照①）</span></div>
+    <div class="fig-cap">画面1-③· <em>B 版：改成「称重」/「固定规格」，把写死的「斤」去掉</em><span><b style="color:#047857">✅ 对照① 定稿：大辉 2026-10-03 选 B 版 —— 实现时「计量方式」chip 文案去掉写死的「斤」</b></span></div>
     <div class="phone h1120" data-uscope>
       <div class="phone-title"><span class="back">‹</span>商品管理</div>
       <div class="phone-body">
@@ -752,7 +752,7 @@
 ================================================================ -->
 <div class="row">
   <div class="fig">
-    <div class="fig-cap">画面3-①· <em>方案 A（建议）：下拉，从「计量单位」维护表取</em><span>菜单已展开，选中「瓶」；下方灰字「没有想要的单位？到『计量单位』页添加」</span></div>
+    <div class="fig-cap">画面3-①· <em>方案 A（建议）：下拉，从「计量单位」维护表取</em><b style="color:#047857"> ✅ 对照② 定稿（大辉 2026-10-03 选 A）</b><span>菜单已展开，选中「瓶」；下方灰字「没有想要的单位？到『计量单位』页添加」</span></div>
     <div class="browser" style="width: 600px;">
       <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品管理 · 新增商品</span></div>
       <div class="dim-body">
@@ -864,7 +864,7 @@
   </div>
 
   <div class="fig">
-    <div class="fig-cap">画面3-③· <em>方案 B：维持现状自由输入（对照②的参照面）</em><span>现状 GoodsManage.vue:91-93：<code>el-input</code> + placeholder「斤 / 份 / 箱」，默认「斤」</span></div>
+    <div class="fig-cap">画面3-③· <em>方案 B：维持现状自由输入（对照②的参照面）</em><b style="color:#B45309">（已否决，留档对照）</b><span>现状 GoodsManage.vue:91-93：<code>el-input</code> + placeholder「斤 / 份 / 箱」，默认「斤」</span></div>
     <div class="browser" style="width: 600px;">
       <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品管理 · 新增商品（现状，未改动）</span></div>
       <div class="dim-body">
@@ -895,7 +895,7 @@
         </div>
       </div>
     </div>
-    <div class="note"><span class="t">对照② · 建议选 A（下拉）</span>选 B 的话，供应商端 chip 表与后台手填值会对不上，<b>「后台能填瓶、供应商选不到」</b>的老问题会换个形式继续存在。</div>
+    <div class="note"><span class="t">对照② · 定稿选 A（下拉）</span>选 B 的话，供应商端 chip 表与后台手填值会对不上，<b>「后台能填瓶、供应商选不到」</b>的老问题会换个形式继续存在。</div>
   </div>
 </div>
 
@@ -1014,7 +1014,7 @@
   <div class="t">⚖️ 留给大辉拍板的两处对照（原始 HTML 片段）</div>
   <div class="d">两处都在上面的画面里并排画出来了；这里是实现时要落到代码里的<b>原始片段</b>，拍板后直接照抄即可。</div>
 
-  <div class="t2">对照① · 供应商端「计量方式」chip 文案（<code>frontend/src/subpkg-supplier/pages/goods-manage.vue</code>）</div>
+  <div class="t2">对照① · <b>定稿 B 版</b> · 供应商端「计量方式」chip 文案（<code>frontend/src/subpkg-supplier/pages/goods-manage.vue</code>）</div>
   <pre class="code"><code>&lt;!-- A 版：维持现状 —— 称重（斤）/ 固定规格 --&gt;
 &lt;view class="form-row"&gt;
   &lt;view class="fr-l"&gt;计量方式&lt;/view&gt;
@@ -1060,8 +1060,8 @@
 &lt;input v-model="form.dailySupply" class="ipt" type="digit"
        :placeholder="'如 ' + (form.unit === '瓶' ? '50' : '200') + '（' + form.unit + '）'" /&gt;</code></pre>
 
-  <div class="t2">对照② · 运营后台 新增/编辑商品 的单位栏（<code>admin-web/src/views/goods/GoodsManage.vue</code>）</div>
-  <pre class="code"><code>&lt;!-- 方案 A（建议）：下拉，从「计量单位」维护表取 --&gt;
+  <div class="t2">对照② · <b>定稿 A 方案（下拉）</b> · 运营后台 新增/编辑商品 的单位栏（<code>admin-web/src/views/goods/GoodsManage.vue</code>）</div>
+  <pre class="code"><code>&lt;!-- 方案 A（✅ 对照② 定稿，大辉 2026-10-03 选 A）：下拉，从「计量单位」维护表取 --&gt;
 &lt;el-form-item label="单位"&gt;
   &lt;el-select v-model="form.unit" placeholder="选择单位" style="width: 160px"&gt;
     &lt;el-option
@@ -1074,7 +1074,7 @@
   &lt;div class="gm-tip"&gt;没有想要的单位？到『计量单位』页添加&lt;/div&gt;
 &lt;/el-form-item&gt;
 
-&lt;!-- 方案 B：维持现状自由输入（会造出表外脏值，不建议） --&gt;
+&lt;!-- 方案 B（已否决，留档对照）：维持现状自由输入（会造出表外脏值） --&gt;
 &lt;el-form-item label="单位"&gt;
   &lt;el-input v-model="form.unit" placeholder="斤 / 份 / 箱" style="width: 120px" /&gt;
 &lt;/el-form-item&gt;</code></pre>
