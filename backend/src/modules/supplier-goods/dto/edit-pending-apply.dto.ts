@@ -48,9 +48,9 @@ export class EditPendingApplyDto {
   @MaxLength(255, { message: '封面地址过长' })
   cover?: string
 
-  /// 商品备注：可选，≤30 字（与 ApplyGoodsDto 同口径）；传空串 = 清空备注
+  /// 商品备注：可选，≤12 字（卡BU 2026-10-03，与 ApplyGoodsDto 同口径）；传空串 = 清空备注
   @IsOptional()
   @IsString()
-  @MaxLength(30, { message: '商品备注最多 30 字' })
+  @MaxLength(12, { message: '商品备注最多 12 字' })
   remark?: string
 }

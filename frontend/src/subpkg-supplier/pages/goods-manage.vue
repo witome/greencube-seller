@@ -34,16 +34,30 @@
       <view class="form-row form-top">
         <view class="fr-l">封面图</view>
         <view class="fr-r">
-          <view v-if="!formCover && !coverPicking" class="cover-empty" @tap="pickFormCover">📷 点击选封面图<small>建议实拍：光线好、菜新鲜、别带包装袋</small></view>
-          <view v-else class="cover-picked" @tap="pickFormCover">
-            <view class="cover-thumb">
-              <image v-if="formCover" :src="fullUrl(formCover)" mode="aspectFill" class="cover-thumb-img" />
-              <view v-else class="cover-thumb-img cover-loading"></view>
-              <view class="cam-badge lg">📷</view>
+          <!-- 卡BU：空态拆成两个按钮，来源各自写死（直接拍进相机 / 直接进相册），省掉"选来源"一步 -->
+          <view v-if="!formCover && !coverPicking" class="cover-empty">
+            <view class="chip-group">
+              <view class="chip" @tap="pickFormCover(['camera'])">📷 直接拍</view>
+              <view class="chip" @tap="pickFormCover(['album'])">🖼 从相册选</view>
             </view>
-            <view class="cover-meta">
-              <view class="cover-meta-t">{{ coverPicking ? '上传中…' : '已选 1 张 · 点击可重选' }}</view>
-              <view class="cover-meta-d">随申请一起提交，走运营审核</view>
+            <small>建议实拍：光线好、菜新鲜、别带包装袋</small>
+          </view>
+          <view v-else>
+            <view class="cover-picked">
+              <view class="cover-thumb">
+                <image v-if="formCover" :src="fullUrl(formCover)" mode="aspectFill" class="cover-thumb-img" />
+                <view v-else class="cover-thumb-img cover-loading"></view>
+                <view class="cam-badge lg">📷</view>
+              </view>
+              <view class="cover-meta">
+                <view class="cover-meta-t">{{ coverPicking ? '上传中…' : '已选 1 张' }}</view>
+                <view class="cover-meta-d">随申请一起提交，走运营审核</view>
+              </view>
+            </view>
+            <!-- 卡BU：已有封面图时，缩略图下方两个入口（重拍=camera / 换一张=album），不再点整块 -->
+            <view class="chip-group" style="margin-top: 8px;">
+              <view class="chip" @tap="pickFormCover(['camera'])">📷 重拍</view>
+              <view class="chip" @tap="pickFormCover(['album'])">🖼 换一张</view>
             </view>
           </view>
           <!-- 卡BP：拍照后 AI 自动识别（loading/成功/失败三态，失败不阻断、留空手填） -->
@@ -80,12 +94,12 @@
           </view>
         </view>
       </view>
-      <!-- 卡BP：商品备注（≤30 字，随申请走运营审核，显示在买家商品名下方灰字位） -->
+      <!-- 卡BU：商品备注（≤12 字，随申请走运营审核，显示在买家商品名下方灰字位，与规格说明抢同一行） -->
       <view class="form-row form-top">
         <view class="fr-l">商品备注</view>
         <view class="fr-r">
-          <textarea v-model="form.remark" class="ipt ta-remark" :maxlength="30" placeholder="如：今天刚到的老姜，辣味足（可不填）" />
-          <view class="muted remark-meta">会显示在采购方商品名下方（灰字），可不填；最多 30 字<text class="remark-count">{{ (form.remark || '').length }}/30</text></view>
+          <textarea v-model="form.remark" class="ipt ta-remark" :maxlength="12" placeholder="如：今天刚到的老姜，辣味足（可不填）" />
+          <view class="muted remark-meta">会显示在采购方商品名下方（灰字），可不填；最多 12 字<text class="remark-count">{{ (form.remark || '').length }}/12</text></view>
         </view>
       </view>
       <view class="form-row"><view class="fr-l">供货价</view><view class="fr-r"><input v-model="form.supplyPrice" class="ipt" type="digit" placeholder="如 2.20（元/斤，提交后审核）" /></view></view>
@@ -199,8 +213,8 @@
         <view class="form-row form-top">
           <view class="fr-l">商品备注</view>
           <view class="fr-r">
-            <textarea v-model="editForm.remark" class="ipt ta-remark" :maxlength="30" placeholder="最多 30 字，显示在买家商品名下方（灰字）" />
-            <view class="muted remark-meta">改动后随变更一起走运营审核<text class="remark-count">{{ (editForm.remark || '').length }}/30</text></view>
+            <textarea v-model="editForm.remark" class="ipt ta-remark" :maxlength="12" placeholder="最多 12 字，显示在买家商品名下方（灰字）" />
+            <view class="muted remark-meta">改动后随变更一起走运营审核<text class="remark-count">{{ (editForm.remark || '').length }}/12</text></view>
           </view>
         </view>
         <view class="row-btns">
@@ -246,8 +260,8 @@
         <view class="form-row form-top">
           <view class="fr-l">商品备注</view>
           <view class="fr-r">
-            <textarea v-model="pendingEditForm.remark" class="ipt ta-remark" :maxlength="30" placeholder="如：今早现摘，带花带刺（可不填）" />
-            <view class="muted remark-meta">会显示在采购方商品名下方（灰字），可不填；最多 30 字<text class="remark-count">{{ (pendingEditForm.remark || '').length }}/30</text></view>
+            <textarea v-model="pendingEditForm.remark" class="ipt ta-remark" :maxlength="12" placeholder="如：今早现摘，带花带刺（可不填）" />
+            <view class="muted remark-meta">会显示在采购方商品名下方（灰字），可不填；最多 12 字<text class="remark-count">{{ (pendingEditForm.remark || '').length }}/12</text></view>
           </view>
         </view>
         <view class="form-row form-top">
@@ -566,10 +580,12 @@ const formQual = ref([])
 const coverPicking = ref(false)
 const qualUploading = ref(false)
 
-async function pickFormCover() {
+/// 卡BU：sourceType 由按钮写死传入（['camera'] 直接拍 / ['album'] 从相册选），
+/// 省掉微信「先选来源、再点完成」两步；其余（上传 → aiRecognize 触发 → 三态 → 绿底预填）一字不动
+async function pickFormCover(sourceType = ['camera', 'album']) {
   if (coverPicking.value) return
   try {
-    const paths = await pickPhotos({ count: 1 })
+    const paths = await pickPhotos({ count: 1, sourceType })
     if (!paths || !paths[0]) return
     coverPicking.value = true
     try {
@@ -740,7 +756,7 @@ async function submit() {
     // 卡Z1：封面 + 资质证明（资质照片走 apply 已有的 images 字段，原型⑦屏口径）一并提交
     cover: formCover.value || undefined,
     images: formQual.value.length ? formQual.value : undefined,
-    // 卡BP：商品备注（≤30 字，随申请走运营审核）
+    // 卡BU：商品备注（≤12 字，随申请走运营审核）
     remark: (form.value.remark || '').trim() || undefined,
   })
   uni.showToast({ title: '已提交，等待运营审核', icon: 'none' })

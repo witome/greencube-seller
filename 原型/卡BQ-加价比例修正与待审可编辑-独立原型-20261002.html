@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>卡BQ-加价比例修正与待审可编辑-独立原型-20261002</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  body { background: #EEF1F4; color: #1F2329; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .page { padding: 24px; }
+  h1 { font-size: 19px; }
+  h1 span { font-size: 13px; color: #C87000; font-weight: 400; }
+  .sub { font-size: 13px; color: #6B7280; margin-top: 8px; line-height: 1.85; max-width: 1180px; }
+  .sub b { color: #1F2329; }
+  .sub code, .note code, .foot code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+
+  #shots { background: #EEF1F4; padding: 4px 18px 18px; width: fit-content; }
+  .row { display: flex; gap: 22px; align-items: flex-start; margin-top: 34px; }
+  .col { display: flex; flex-direction: column; gap: 18px; }
+
+  .fig { display: flex; flex-direction: column; flex: 0 0 auto; }
+  .fig-cap { font-size: 13px; font-weight: 700; margin: 0 0 8px; line-height: 1.55; }
+  .fig-cap span { font-weight: 400; color: #8A9099; font-size: 11px; display: block; margin-top: 2px; }
+
+  .note { font-size: 11px; color: #6B7280; line-height: 1.8; margin-top: 10px; }
+  .note .t { font-size: 12px; font-weight: 700; color: #1F2329; margin-bottom: 3px; display: block; }
+  .note b { color: #1F2329; }
+
+  /* ============ 运营后台（PC 浏览器框 + 深色侧栏 + 面包屑） ============ */
+  .browser { background: #fff; border-radius: 12px; border: 1px solid #D9DEE4; box-shadow: 0 10px 26px rgba(0,0,0,.10); overflow: hidden; flex: 0 0 auto; }
+  .browser-top { height: 36px; background: #EEF1F4; display: flex; align-items: center; gap: 6px; padding: 0 12px; }
+  .browser-top i { display: block; width: 10px; height: 10px; border-radius: 50%; background: #D5DAE0; }
+  .browser-url { margin-left: 10px; flex: 1; background: #fff; border-radius: 10px; height: 22px; line-height: 22px; font-size: 11px; color: #8A9099; padding: 0 12px; }
+
+  .admin { display: flex; align-items: stretch; background: #F5F6F8; }
+  .aside { width: 176px; flex: 0 0 auto; background: #1f2d3d; padding: 0 0 14px; }
+  .logo { color: #fff; font-size: 13px; font-weight: 600; padding: 14px 16px 12px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .mi { display: flex; align-items: center; gap: 8px; padding: 9px 16px; font-size: 12px; color: #bfcbd9; position: relative; }
+  .mi .ico { font-size: 13px; width: 16px; text-align: center; filter: grayscale(1) brightness(1.6); opacity: .8; }
+  .mi.on { color: #00B96B; background: rgba(0,185,107,.10); border-right: 2px solid #00B96B; }
+  .mi.on .ico { filter: none; opacity: 1; }
+  .mi .badge { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: #FA5151; color: #fff; font-size: 9px; min-width: 16px; height: 15px; line-height: 15px; text-align: center; border-radius: 8px; padding: 0 4px; }
+
+  .main { flex: 1; min-width: 0; padding: 12px 16px 18px; }
+  .crumb { font-size: 12px; color: #8A9099; margin-bottom: 10px; }
+  .crumb b { color: #1F2329; font-weight: 600; }
+
+  /* Element 风格卡片 / 表格 */
+  .el-card { background: #fff; border-radius: 12px; border: 1px solid #E5E8EB; margin-bottom: 12px; }
+  .ec-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #E5E8EB; font-size: 14px; font-weight: 600; }
+  .ec-head .tip { font-size: 11px; color: #8A9099; font-weight: 400; }
+  .ec-body { padding: 12px 16px 14px; }
+  table.el-tb { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .el-tb th { background: #F5F7FA; color: #606266; font-weight: 600; font-size: 12px; text-align: left; padding: 9px 10px; border-bottom: 1px solid #E5E8EB; }
+  .el-tb td { padding: 10px; border-bottom: 1px solid #E5E8EB; color: #1F2329; vertical-align: middle; }
+  .el-tb tr:last-child td { border-bottom: none; }
+  .el-tb .r { text-align: right; }
+  .el-tb .sub2 { font-size: 11px; color: #8A9099; margin-top: 2px; }
+  .lbtn { display: inline-block; font-size: 12px; margin-right: 10px; cursor: pointer; }
+  .lbtn.pri { color: #00B96B; }
+  .lbtn.warn { color: #FF8F1F; }
+  .lbtn.dgr { color: #FA5151; }
+  .lbtn.neu { color: #6B7280; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid transparent; line-height: 1.6; }
+  .tag.single { color: #FF8F1F; background: #FFF3E6; border-color: #FFD9AE; }
+  .tag.supplier { color: #3B7CFF; background: #ECF2FF; border-color: #C4D6FF; }
+  .tag.global { color: #8A9099; background: #F2F4F6; border-color: #E5E8EB; }
+  .tag.ok { color: #00A05C; background: #E6F9F0; border-color: #B6E4CF; }
+  .tag.pend { color: #FF8F1F; background: #FFF3E6; border-color: #FFD9AE; }
+  .tag.rej { color: #FA5151; background: #FFEBEB; border-color: #FFC9C9; }
+  .tag.ignored { color: #8A9099; background: #F2F4F6; border-color: #E5E8EB; }
+
+  .numbox { display: inline-flex; align-items: center; border: 1px solid #DCDFE6; border-radius: 4px; overflow: hidden; height: 26px; }
+  .numbox i { font-style: normal; width: 24px; text-align: center; color: #909399; font-size: 12px; background: #F5F7FA; align-self: stretch; line-height: 24px; }
+  .numbox b { font-weight: 600; min-width: 40px; text-align: center; font-size: 12.5px; }
+  .numbox.empty b { color: #B3B9C2; font-weight: 400; }
+  .unit { color: #8A9099; font-size: 12px; margin: 0 8px 0 4px; }
+  .inh { font-size: 10.5px; color: #8A9099; margin-left: 6px; }
+  .btn { display: inline-block; font-size: 12px; border-radius: 4px; padding: 6px 14px; border: 1px solid #DCDFE6; color: #606266; background: #fff; cursor: pointer; }
+  .btn.pri { background: #00B96B; border-color: #00B96B; color: #fff; font-weight: 600; }
+  .btn.neu { background: #6B7280; border-color: #6B7280; color: #fff; font-weight: 600; }
+  .btn.sm { padding: 4px 12px; font-size: 11.5px; }
+
+  .cfg-grid { display: flex; gap: 24px; }
+  .cfg-block { flex: 1; min-width: 0; border: 1px solid #E5E8EB; border-radius: 8px; padding: 10px 12px; }
+  .cfg-title { font-size: 12.5px; font-weight: 600; margin-bottom: 8px; color: #1F2329; }
+  .cfg-row { display: flex; align-items: center; padding: 6px 0; }
+  .cfg-name { flex: 1; min-width: 0; font-size: 12.5px; color: #1F2329; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cfg-empty { font-size: 12px; color: #B3B9C2; text-align: center; padding: 22px 0; }
+
+  /* toast（重算完成反馈） */
+  .toast { display: flex; align-items: center; gap: 8px; background: #E6F9F0; border: 1px solid #B6E4CF; color: #00A05C; font-size: 12.5px; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; }
+
+  /* 弹窗（Element dialog 风格） */
+  .dim-body { background: rgba(0,0,0,.45); padding: 26px 0 30px; display: flex; justify-content: center; }
+  .dlg { width: 520px; background: #fff; border-radius: 8px; overflow: hidden; }
+  .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 4px; font-size: 15px; font-weight: 700; }
+  .dlg-x { color: #909399; font-size: 15px; }
+  .dlg-body { padding: 12px 18px 6px; font-size: 13px; color: #1F2329; }
+  .dlg-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px 16px; }
+  .dlg-row { display: flex; align-items: flex-start; margin-bottom: 12px; }
+  .dlg-l { width: 88px; flex: 0 0 auto; text-align: right; padding-right: 12px; font-size: 13px; color: #606266; line-height: 30px; }
+  .dlg-row.top .dlg-l { line-height: 20px; padding-top: 6px; }
+  .dlg-r { flex: 1; min-width: 0; }
+  .d-ipt { width: 100%; border: 1px solid #DCDFE6; border-radius: 4px; padding: 6px 10px; font-size: 13px; }
+  .d-ipt.ph { color: #B3B9C2; }
+  .d-hint { font-size: 11.5px; color: #8A9099; line-height: 1.7; margin-top: 5px; }
+  .d-hint.orange { color: #FF8F1F; }
+  .cb-row { display: flex; align-items: flex-start; gap: 8px; }
+  .cb { width: 15px; height: 15px; border-radius: 3px; background: #00B96B; color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; margin-top: 1px; }
+  .cb-row .txt { font-size: 13px; }
+  .price-prev { font-size: 20px; font-weight: 700; color: #00B96B; }
+  .price-prev small { font-size: 11px; color: #8A9099; font-weight: 400; margin-left: 6px; }
+
+  /* 结果反馈 toast 注释条 */
+  .fb { display: inline-flex; align-items: center; gap: 8px; background: #E6F9F0; border: 1px solid #B6E4CF; color: #00A05C; font-size: 12px; border-radius: 6px; padding: 7px 12px; }
+  .fb.warn { background: #FFF3E6; border-color: #FFD9AE; color: #FF8F1F; }
+  .fb-lab { font-size: 10.5px; color: #8A9099; margin-top: 5px; }
+
+  /* 页签（采购商审核） */
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid #E5E8EB; }
+  .tab { font-size: 13px; color: #606266; padding: 9px 16px; cursor: pointer; position: relative; }
+  .tab.on { color: #00B96B; font-weight: 600; }
+  .tab.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: #00B96B; }
+  .overdue { color: #FA5151; font-size: 11px; margin-top: 3px; }
+
+  /* 空态 / 小样 */
+  .mini-panel { background: #fff; border: 1px dashed #C9D2DA; border-radius: 12px; padding: 12px 14px; width: 520px; }
+  .mini-panel .t { font-size: 11px; font-weight: 700; color: #6B7280; margin-bottom: 8px; }
+  .empty-box { text-align: center; color: #B3B9C2; font-size: 12.5px; padding: 26px 0; }
+
+  /* ============ 手机壳（336×648） ============ */
+  .phone { width: 336px; height: 648px; background: #fff; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 6px 24px rgba(0,0,0,.10); flex: 0 0 auto; }
+  .phone-bar { height: 34px; background: #00B96B; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; position: relative; flex: 0 0 auto; }
+  .capsule { position: absolute; right: 14px; top: 9px; width: 58px; height: 17px; border: 1px solid rgba(255,255,255,.7); border-radius: 10px; display: flex; align-items: center; justify-content: space-around; }
+  .capsule span { width: 5px; height: 5px; border-radius: 50%; background: #fff; display: block; }
+  .phone-title { height: 42px; background: #fff; padding: 0 12px; font-size: 15px; font-weight: 600; display: flex; align-items: center; border-bottom: 1px solid #F0F1F3; flex: 0 0 auto; }
+  .phone-title .back { color: #00B96B; font-weight: 400; font-size: 14px; margin-right: 6px; }
+  .phone-body { flex: 1; overflow: hidden; background: #F5F6F8; position: relative; display: flex; flex-direction: column; }
+  .home-ind { flex: 0 0 auto; height: 14px; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .home-ind i { display: block; width: 96px; height: 4px; border-radius: 3px; background: #D5DAE0; }
+
+  .m-notice { background: #FFF9E8; color: #8A6D1A; font-size: 10px; line-height: 1.6; border-radius: 8px; padding: 7px 9px; margin: 8px 10px 0; }
+  .m-sec { font-size: 12px; font-weight: 600; margin: 10px 12px 6px; color: #1F2329; }
+  .m-item { background: #fff; border-radius: 12px; margin: 0 10px 8px; padding: 10px 12px; display: flex; gap: 10px; }
+  .m-thumb { width: 52px; height: 52px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 26px; flex: 0 0 auto; }
+  .bg-a { background: #E6F9F0; } .bg-b { background: #FFF3E6; } .bg-c { background: #ECF2FF; }
+  .m-main { flex: 1; min-width: 0; }
+  .m-name { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .m-desc { font-size: 10.5px; color: #8A9099; margin-top: 4px; line-height: 1.6; }
+  .m-desc .rej { color: #FA5151; }
+  .m-tag { align-self: flex-start; font-size: 10px; padding: 2px 7px; border-radius: 4px; flex: 0 0 auto; }
+  .mt-ok { color: #00A05C; background: #E6F9F0; }
+  .mt-pend { color: #FF8F1F; background: #FFF3E6; }
+  .mt-rej { color: #FA5151; background: #FFEBEB; }
+  .act-link { display: inline-block; font-size: 11px; color: #00B96B; font-weight: 600; background: #F2FBF7; border: 1px solid #B6E4CF; border-radius: 6px; padding: 2px 8px; }
+  .act-link.lit { box-shadow: 0 0 0 1.5px rgba(0,185,107,.35); }
+  .act-link.off { color: #B3B9C2; background: #F5F6F8; border-color: #E5E8EB; font-weight: 400; }
+  .act-stock { display: inline-block; font-size: 11px; color: #3B7CFF; background: #F5F8FF; border: 1px solid #C4D6FF; border-radius: 6px; padding: 2px 8px; }
+  .act-down { display: inline-block; font-size: 11px; color: #FF8F1F; background: #FFF9F2; border: 1px solid #FFD9AE; border-radius: 6px; padding: 2px 8px; }
+  .act-del { display: inline-block; font-size: 11px; color: #FA5151; background: #FFF5F5; border: 1px solid #FFC9C9; border-radius: 6px; padding: 2px 8px; }
+  .m-acts { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+
+  /* 语音报量入口（照现状） */
+  .voice-dock { margin-top: auto; flex: 0 0 auto; background: #fff; border-top: 1px solid #EDEEF0; padding: 9px 12px 10px; }
+  .voice-btn { background: #00B96B; color: #fff; text-align: center; border-radius: 22px; padding: 10px 0; font-size: 13px; font-weight: 600; }
+  .voice-swap { text-align: center; font-size: 11px; color: #00A05C; margin-top: 6px; }
+
+  /* 编辑弹层（底部抽屉） */
+  .m-mask { position: absolute; inset: 0; background: rgba(17,17,17,.45); z-index: 3; display: flex; flex-direction: column; justify-content: flex-end; }
+  .m-sheet { background: #F5F6F8; border-radius: 16px 16px 0 0; max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+  .sheet-head { background: #fff; padding: 12px 14px 8px; border-radius: 16px 16px 0 0; }
+  .sheet-title { font-size: 15px; font-weight: 700; }
+  .sheet-sub { font-size: 10.5px; color: #FF8F1F; margin-top: 4px; line-height: 1.5; }
+  .sheet-body { padding: 4px 10px 8px; overflow: hidden; }
+  .s-card { background: #fff; border-radius: 12px; padding: 4px 12px; margin-bottom: 8px; }
+  .f-row { display: flex; align-items: center; padding: 7px 0; border-bottom: 1px solid #F5F6F8; font-size: 12px; }
+  .f-row:last-child { border-bottom: none; }
+  .f-row.top { align-items: flex-start; }
+  .f-l { width: 58px; color: #6B7280; flex: 0 0 auto; font-size: 11.5px; padding-top: 3px; }
+  .f-row.top .f-l { padding-top: 5px; }
+  .f-r { flex: 1; min-width: 0; }
+  .s-ipt { width: 100%; border: 1px solid #E5E8EB; border-radius: 8px; padding: 6px 9px; font-size: 12px; background: #fff; }
+  .chip-g { display: flex; flex-wrap: wrap; gap: 5px; }
+  .s-chip { font-size: 10.5px; padding: 3px 9px; border-radius: 999px; background: #F2F4F6; color: #4E5969; }
+  .s-chip.on { background: #E6F9F0; color: #00995A; font-weight: 600; }
+  .s-muted { font-size: 10px; color: #8A9099; line-height: 1.6; margin-top: 4px; }
+  .cover-picked { display: flex; align-items: center; gap: 8px; }
+  .cover-th { width: 40px; height: 40px; border-radius: 8px; background: radial-gradient(circle at 35% 30%, #d9f2e3, #8fd4ae 60%, #4d9e70); position: relative; }
+  .cover-th .cam { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; background: rgba(17,17,17,.72); border-radius: 50%; color: #fff; font-size: 9px; display: flex; align-items: center; justify-content: center; }
+  .cover-meta .a { font-size: 11px; color: #1F2329; }
+  .cover-meta .b { font-size: 10px; color: #8A9099; margin-top: 2px; }
+  .sheet-foot { display: flex; gap: 8px; padding: 8px 12px 12px; }
+  .s-btn { flex: 1; text-align: center; border-radius: 10px; padding: 10px 0; font-size: 13px; font-weight: 600; background: #fff; color: #4E5969; border: 1px solid #E5E8EB; }
+  .s-btn.pri { background: #00B96B; color: #fff; border-color: #00B96B; }
+
+  .foot { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.06); width: 1180px; margin-top: 34px; }
+  .foot .t { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+  .foot .t2 { font-size: 14px; font-weight: 700; margin: 14px 0 6px; }
+  .foot .d { font-size: 12.5px; color: #6B7280; line-height: 1.95; }
+  .foot .d b { color: #1F2329; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>🥬 卡BQ · 加价比例修正 + 采购商忽略 + 待审商品可编辑（原型）<span>2026-10-02 · 只出原型 · 不动任何工程文件</span></h1>
+  <div class="sub">
+    一句话：修三个复核实测问题——<b>①加价比例"改不动"（审核通过默认传 0.3 把商品钉死成「单品」比例，且无恢复继承入口）</b>、<b>②采购商恶意注册只能通过/驳回、缺「忽略」</b>、<b>③供应商待审核/已驳回商品编辑被灰掉</b>。<br>
+    共 <b>4 屏</b>：屏1 运营后台·加价设置（比例来源三态 + 恢复继承确认 + 保存影响范围 + 重算反馈） · 屏2 商品审核通过弹窗（留空态/手动填写态） · 屏3 采购商审核（待审/已忽略页签 + 忽略确认 + 空态） · 屏4 供应商端商品管理（待审/已驳回/在售三行 + 编辑弹层 + 三种提交反馈）。<br>
+    静态稿，无跳转；仅表现 hover/禁用等状态区分。
+  </div>
+</div>
+
+<div id="shots">
+
+  <!-- ==================== 屏1 运营后台 · 加价设置 ==================== -->
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">屏1 · 运营后台「基础资料 / 价格与加价」：比例来源三态 + 恢复继承 + 重算反馈<span>对应代码 admin-web/src/views/pricing/Pricing.vue；上方绿条 = 状态C 重算完成反馈</span></div>
+      <div class="browser" style="width: 1180px;">
+        <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 基础资料 / 价格与加价</span></div>
+        <div class="admin">
+          <!-- 左侧一级菜单 -->
+          <div class="aside">
+            <div class="logo">🌿 辉崧鲜配运营后台</div>
+            <div class="mi"><span class="ico">📊</span>工作台</div>
+            <div class="mi"><span class="ico">👤</span>采购方管理<span class="badge">3</span></div>
+            <div class="mi"><span class="ico">💬</span>申诉处理</div>
+            <div class="mi"><span class="ico">🏪</span>供应商管理</div>
+            <div class="mi"><span class="ico">🚲</span>配送员管理</div>
+            <div class="mi"><span class="ico">🥬</span>商品审核</div>
+            <div class="mi"><span class="ico">📦</span>商品管理</div>
+            <div class="mi"><span class="ico">🔔</span>采购需求</div>
+            <div class="mi"><span class="ico">☰</span>分类管理</div>
+            <div class="mi on"><span class="ico">🏷️</span>价格与加价</div>
+            <div class="mi"><span class="ico">🧾</span>订单履约</div>
+            <div class="mi"><span class="ico">📞</span>催单台</div>
+            <div class="mi"><span class="ico">🛠</span>售后管理</div>
+            <div class="mi"><span class="ico">🚚</span>派送调度</div>
+            <div class="mi"><span class="ico">💰</span>资金结算</div>
+            <div class="mi"><span class="ico">💳</span>支付流水</div>
+            <div class="mi"><span class="ico">📅</span>每日对账</div>
+            <div class="mi"><span class="ico">📄</span>审计日志</div>
+            <div class="mi"><span class="ico">📈</span>报表</div>
+            <div class="mi"><span class="ico">⚙️</span>系统设置</div>
+          </div>
+          <div class="main">
+            <div class="crumb">基础资料 / <b>价格与加价</b></div>
+
+            <!-- 状态C：重算完成反馈 toast -->
+            <div class="toast">✓ 已保存配置；重算在售商品 46 件，跳过单品 1 件</div>
+
+            <!-- 加价设置 -->
+            <div class="el-card">
+              <div class="ec-head"><span>⚙️ 加价设置</span><span class="tip">生效优先级：单品 &gt; 供应商 &gt; 分类 &gt; 全局默认；新建商品按此取默认比例</span></div>
+              <div class="ec-body">
+                <div class="cfg-row" style="padding: 0 0 10px;">
+                  <span style="width:96px; font-size: 12.5px; color:#606266;">全局默认比例</span>
+                  <span class="numbox"><i>−</i><b>30</b><i>＋</i></span><span class="unit">%</span>
+                  <span class="inh">继承生效中</span>
+                  <span class="btn pri sm" style="margin-left: 12px;">保存</span>
+                </div>
+                <div class="cfg-grid">
+                  <div class="cfg-block">
+                    <div class="cfg-title">按分类</div>
+                    <div class="cfg-row">
+                      <span class="cfg-name">时令蔬菜</span>
+                      <span class="numbox empty"><i>−</i><b>未设置</b><i>＋</i></span><span class="unit">%</span>
+                      <span class="lbtn pri">保存</span>
+                    </div>
+                    <div class="cfg-row">
+                      <span class="cfg-name">猪肉</span>
+                      <span class="numbox"><i>−</i><b>35</b><i>＋</i></span><span class="unit">%</span>
+                      <span class="inh">继承生效中</span>
+                      <span class="lbtn pri">保存</span>
+                    </div>
+                    <div class="cfg-row">
+                      <span class="cfg-name">冻品</span>
+                      <span class="numbox empty"><i>−</i><b>未设置</b><i>＋</i></span><span class="unit">%</span>
+                      <span class="lbtn pri">保存</span>
+                    </div>
+                  </div>
+                  <div class="cfg-block">
+                    <div class="cfg-title">按供应商</div>
+                    <div class="cfg-empty">暂无供应商</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 在售商品定价 -->
+            <div class="el-card" style="margin-bottom: 0;">
+              <div class="ec-head">
+                <span>🏷️ 在售商品定价</span>
+                <span class="tip">销售价 = 供货价 × (1 + 加价比例)　　<span class="btn warn" style="background:#FF8F1F;border-color:#FF8F1F;color:#fff;font-weight:600;">批量加价</span></span>
+              </div>
+              <div class="ec-body">
+                <table class="el-tb">
+                  <tr><th style="min-width:170px;">商品名</th><th class="r" style="width:90px;">供货价</th><th style="width:100px;">比例来源</th><th class="r" style="width:90px;">加价比例</th><th class="r" style="width:90px;">销售价</th><th style="width:150px;">操作</th></tr>
+                  <tr>
+                    <td>大白菜<div class="sub2">叶菜类 · 按斤</div></td>
+                    <td class="r">¥1.00</td>
+                    <td><span class="tag single">单品</span></td>
+                    <td class="r">50%</td>
+                    <td class="r" style="font-weight:700;">¥1.50</td>
+                    <td><span class="lbtn pri">改价</span><span class="lbtn warn">恢复继承</span></td>
+                  </tr>
+                  <tr>
+                    <td>西红柿（粉果）<div class="sub2">时令蔬菜 · 按斤</div></td>
+                    <td class="r">¥2.20</td>
+                    <td><span class="tag supplier">供应商</span></td>
+                    <td class="r">25%</td>
+                    <td class="r" style="font-weight:700;">¥2.75</td>
+                    <td><span class="lbtn pri">改价</span></td>
+                  </tr>
+                  <tr>
+                    <td>土豆<div class="sub2">时令蔬菜 · 按斤</div></td>
+                    <td class="r">¥2.00</td>
+                    <td><span class="tag global">全局默认</span></td>
+                    <td class="r">30%</td>
+                    <td class="r" style="font-weight:700;">¥2.60</td>
+                    <td><span class="lbtn pri">改价</span></td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="width: 1180px;">
+        <span class="t">本屏状态对照</span>
+        配置区：<b>状态A 未配置</b> =「未设置」灰字（时令蔬菜 / 冻品，即当前真实库状态）；<b>状态B 已配置</b> = 数值 + 小字「继承生效中」（全局默认 30% / 猪肉 35%）。「按供应商」列表为空 → <b>暂无供应商</b> 空态。<br>
+        商品表：「比例来源」三取值各一行——<b>单品</b>（橙标签，操作列多一个「恢复继承」）/ <b>供应商</b> / <b>全局默认</b>（灰标签）。顶部绿条 = <b>状态C 重算完成反馈</b>。侧栏「采购方管理」角标只算待审核数。
+      </div>
+    </div>
+  </div>
+
+  <!-- 屏1 的两个弹窗 -->
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">屏1-2 · 「恢复继承」二次确认弹窗<span>点单品行的「恢复继承」弹出；确认后该行比例来源变为继承档位，销售价随下次重算联动</span></div>
+      <div class="browser" style="width: 580px;">
+        <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 基础资料 / 价格与加价</span></div>
+        <div class="dim-body">
+          <div class="dlg" style="width: 460px;">
+            <div class="dlg-head"><span>把「大白菜」恢复为继承档位比例？</span><span class="dlg-x">✕</span></div>
+            <div class="dlg-body">
+              <div style="color:#6B7280; line-height:1.8;">恢复后这个商品不再固定「单品」比例，改按 供应商 &gt; 分类 &gt; 全局 生效；销售价会随下次重算联动。</div>
+            </div>
+            <div class="dlg-foot"><span class="btn">再想想</span><span class="btn pri">确认恢复</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fig">
+      <div class="fig-cap">屏1-3 · 保存比例 · 影响范围弹窗<span>保存任意档位比例时弹出；「应用到现有商品」默认勾选</span></div>
+      <div class="browser" style="width: 580px;">
+        <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 基础资料 / 价格与加价</span></div>
+        <div class="dim-body">
+          <div class="dlg" style="width: 460px;">
+            <div class="dlg-head"><span>保存比例 · 影响范围</span><span class="dlg-x">✕</span></div>
+            <div class="dlg-body">
+              <div class="cb-row">
+                <span class="cb">✓</span>
+                <div>
+                  <div class="txt">应用到现有商品</div>
+                  <div class="d-hint">勾上会按新比例重算在售商品销售价（单品单独设过的会跳过）</div>
+                </div>
+              </div>
+            </div>
+            <div class="dlg-foot"><span class="btn">取消</span><span class="btn pri">保存</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="width: 580px;">
+        <span class="t">口径</span>
+        保存后出现屏1 顶部的重算完成反馈（已保存配置；重算在售商品 N 件，跳过单品 M 件）。
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 屏2 商品审核通过弹窗（两种填写态） ==================== -->
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">屏2 · 商品审核「通过」弹窗 · 留空态（默认）<span>对应代码 admin-web/src/views/goods/GoodsAudit.vue；比例留空 = 按档位自动计算，右侧实时显示销售价</span></div>
+      <div class="browser" style="width: 580px;">
+        <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品审核</span></div>
+        <div class="dim-body">
+          <div class="dlg" style="width: 480px;">
+            <div class="dlg-head"><span>审核通过 · 上架商品</span><span class="dlg-x">✕</span></div>
+            <div class="dlg-body">
+              <div style="color:#6B7280; margin-bottom: 12px;">「山东大姜（老姜）」供货价 ¥2.20，请设定加价比例生成销售价。</div>
+              <div class="dlg-row">
+                <div class="dlg-l">加价比例</div>
+                <div class="dlg-r">
+                  <input class="d-ipt ph" placeholder="留空则自动按档位计算" />
+                  <div class="d-hint">留空 = 按 供应商 &gt; 分类 &gt; 全局 自动计算（当前会算出 30%）（如 0.3 = 加价 30%）</div>
+                </div>
+              </div>
+              <div class="dlg-row">
+                <div class="dlg-l">销售价预览</div>
+                <div class="dlg-r"><span class="price-prev">¥2.86<small>按「全局默认 30%」实时算出</small></span></div>
+              </div>
+            </div>
+            <div class="dlg-foot"><span class="btn">取消</span><span class="btn pri" style="background:#00A05C;border-color:#00A05C;">确认通过并上架</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 10px;">
+        <div class="fb">✓ 已通过。该商品按「全局默认 30%」定价</div>
+        <div class="fb-lab">↑ 留空态通过后的结果提示</div>
+      </div>
+    </div>
+
+    <div class="fig">
+      <div class="fig-cap">屏2 · 同一弹窗 · 手动填写态<span>填了比例 → 橙色警示：会被固定为「单品」比例，之后调档位不影响它</span></div>
+      <div class="browser" style="width: 580px;">
+        <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 商品审核</span></div>
+        <div class="dim-body">
+          <div class="dlg" style="width: 480px;">
+            <div class="dlg-head"><span>审核通过 · 上架商品</span><span class="dlg-x">✕</span></div>
+            <div class="dlg-body">
+              <div style="color:#6B7280; margin-bottom: 12px;">「山东大姜（老姜）」供货价 ¥2.20，请设定加价比例生成销售价。</div>
+              <div class="dlg-row">
+                <div class="dlg-l">加价比例</div>
+                <div class="dlg-r">
+                  <input class="d-ipt" value="0.5" />
+                  <div class="d-hint orange">手动填写会把此商品固定为「单品」比例，之后调整供应商/分类/全局比例不会影响它（如 0.3 = 加价 30%）</div>
+                </div>
+              </div>
+              <div class="dlg-row">
+                <div class="dlg-l">销售价预览</div>
+                <div class="dlg-r"><span class="price-prev">¥3.30<small>按「单品 50%」实时算出</small></span></div>
+              </div>
+            </div>
+            <div class="dlg-foot"><span class="btn">取消</span><span class="btn pri" style="background:#00A05C;border-color:#00A05C;">确认通过并上架</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 10px;">
+        <div class="fb warn">✓ 已通过。该商品已固定为「单品 50%」</div>
+        <div class="fb-lab">↑ 手动填写态通过后的结果提示（写法照现状：小数，0.3 = 30%）</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 屏3 采购商审核 ==================== -->
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">屏3 · 运营后台「采购方管理」：待审核 / 已忽略 / 全部 页签 + 「忽略」操作<span>对应代码 admin-web/src/views/buyers/；「忽略」用灰/中性色，避免和红色「驳回」混淆；超 24 小时红字提醒照现状</span></div>
+      <div class="browser" style="width: 1200px;">
+        <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 采购方管理</span></div>
+        <div class="admin">
+          <div class="aside">
+            <div class="logo">🌿 辉崧鲜配运营后台</div>
+            <div class="mi on"><span class="ico">👤</span>采购方管理<span class="badge">3</span></div>
+            <div class="mi"><span class="ico">💬</span>申诉处理</div>
+            <div class="mi"><span class="ico">🏪</span>供应商管理</div>
+            <div class="mi"><span class="ico">🚲</span>配送员管理</div>
+            <div class="mi"><span class="ico">🥬</span>商品审核</div>
+            <div class="mi"><span class="ico">📦</span>商品管理</div>
+            <div class="mi"><span class="ico">🏷️</span>价格与加价</div>
+            <div class="mi"><span class="ico">🧾</span>订单履约</div>
+            <div class="mi"><span class="ico">📞</span>催单台</div>
+            <div class="mi"><span class="ico">🛠</span>售后管理</div>
+            <div class="mi"><span class="ico">🚚</span>派送调度</div>
+            <div class="mi"><span class="ico">💰</span>资金结算</div>
+            <div class="mi"><span class="ico">📈</span>报表</div>
+            <div class="mi"><span class="ico">⚙️</span>系统设置</div>
+          </div>
+          <div class="main">
+            <div class="crumb">采购方管理 / <b>注册审核</b></div>
+            <div class="tabs">
+              <span class="tab on">待审核 (3)</span>
+              <span class="tab">已忽略 (2)</span>
+              <span class="tab">全部</span>
+            </div>
+            <div class="el-card" style="margin-bottom: 0;">
+              <div class="ec-body">
+                <table class="el-tb">
+                  <tr><th style="min-width:140px;">餐馆</th><th style="width:90px;">联系人</th><th style="width:120px;">手机号</th><th style="min-width:150px;">收货地址</th><th style="width:130px;">注册时间</th><th style="width:130px;">状态</th><th style="width:230px;">操作</th></tr>
+                  <tr>
+                    <td>福满楼家常菜</td><td>王老板</td><td>138****5678</td><td>幸福小区 3 号商铺</td><td>2026-10-03 08:12</td>
+                    <td><span class="tag pend">待审核</span></td>
+                    <td><span class="lbtn pri">查看</span><span class="lbtn" style="color:#00A05C;">通过</span><span class="lbtn dgr">驳回</span><span class="lbtn neu">忽略</span></td>
+                  </tr>
+                  <tr>
+                    <td>老地方川菜馆</td><td>李姐</td><td>159****2210</td><td>建设路 45 号</td><td>2026-10-02 21:40</td>
+                    <td><span class="tag pend">待审核</span><div class="overdue">⏰ 待审超24h</div></td>
+                    <td><span class="lbtn pri">查看</span><span class="lbtn" style="color:#00A05C;">通过</span><span class="lbtn dgr">驳回</span><span class="lbtn neu">忽略</span></td>
+                  </tr>
+                  <tr>
+                    <td>张记早餐店</td><td>张师傅</td><td>137****9034</td><td>振兴市场东门 12 号</td><td>2026-10-03 07:55</td>
+                    <td><span class="tag pend">待审核</span></td>
+                    <td><span class="lbtn pri">查看</span><span class="lbtn" style="color:#00A05C;">通过</span><span class="lbtn dgr">驳回</span><span class="lbtn neu">忽略</span></td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="width: 1200px;">
+        <span class="t">本屏状态对照</span>
+        页签角标只算「待审核」；侧栏「采购方管理」红色角标 3 同口径。「忽略」为灰/中性色链接；待审超 24 小时的行保留红字提醒（照现状）。
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="fig">
+        <div class="fig-cap">屏3-2 · 「忽略」二次确认弹窗<span>确认键用中性色（非红非绿）</span></div>
+        <div class="browser" style="width: 560px;">
+          <div class="browser-top"><i></i><i></i><i></i><span class="browser-url">运营后台 · 采购方管理</span></div>
+          <div class="dim-body">
+            <div class="dlg" style="width: 440px;">
+              <div class="dlg-head"><span>忽略这条注册？</span><span class="dlg-x">✕</span></div>
+              <div class="dlg-body">
+                <div style="color:#6B7280; line-height:1.8;">忽略后该账号不再出现在待审核列表、无法下单，也不给申诉入口。适合恶意注册。</div>
+              </div>
+              <div class="dlg-foot"><span class="btn">再想想</span><span class="btn neu">确认忽略</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fig">
+        <div class="fig-cap">屏3-3 · 「已忽略」页签内容 + 待审核空态</div>
+        <div class="mini-panel">
+          <div class="t">「已忽略 (2)」页签 · 行内状态灰字，操作只留「查看」</div>
+          <table class="el-tb">
+            <tr><th style="min-width:150px;">餐馆</th><th style="width:120px;">手机号</th><th style="width:100px;">状态</th><th style="width:80px;">操作</th></tr>
+            <tr><td>某某贸易商行</td><td>136****8890</td><td><span class="tag ignored">已忽略</span></td><td><span class="lbtn pri">查看</span></td></tr>
+            <tr><td>测试账号 007</td><td>150****3312</td><td><span class="tag ignored">已忽略</span></td><td><span class="lbtn pri">查看</span></td></tr>
+          </table>
+        </div>
+        <div class="mini-panel" style="margin-top: 12px;">
+          <div class="t">空态 · 待审核列表清空时</div>
+          <div class="empty-box">暂无待审核注册</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 屏4 供应商端 · 商品管理 ==================== -->
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">屏4 · 供应商端「商品管理」：待审核 / 已驳回行的「编辑」已点亮<span>对应代码 frontend/src/subpkg-supplier/pages/goods-manage.vue；三种状态行同屏可见；底部语音报量入口照现状</span></div>
+      <div class="phone">
+        <div class="phone-bar">9:41
+          <div class="capsule"><span></span><span></span></div>
+        </div>
+        <div class="phone-title"><span class="back">‹</span>商品管理</div>
+        <div class="phone-body">
+          <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+          <div class="m-sec">我的商品（3）</div>
+
+          <!-- 待审核行：编辑已点亮 + 删除 -->
+          <div class="m-item">
+            <div class="m-thumb bg-a">🥒</div>
+            <div class="m-main">
+              <div class="m-name">黄瓜（水果型）</div>
+              <div class="m-desc">供货价 ¥1.80/斤 · 日供 300斤</div>
+              <div class="m-acts">
+                <span class="act-link lit">✏️ 编辑</span>
+                <span class="act-del">🗑 删除</span>
+              </div>
+            </div>
+            <span class="m-tag mt-pend">待审核</span>
+          </div>
+
+          <!-- 已驳回行：编辑已点亮 + 删除 + 驳回原因红字 -->
+          <div class="m-item">
+            <div class="m-thumb bg-b">🍅</div>
+            <div class="m-main">
+              <div class="m-name">西红柿（粉果）</div>
+              <div class="m-desc">供货价 ¥2.00/斤 · 日供 150斤<span class="rej"> · 图片不清晰，请重拍封面</span></div>
+              <div class="m-acts">
+                <span class="act-link lit">✏️ 编辑</span>
+                <span class="act-del">🗑 删除</span>
+              </div>
+            </div>
+            <span class="m-tag mt-rej">已驳回</span>
+          </div>
+
+          <!-- 在售行（对照）：编辑本来就可点 -->
+          <div class="m-item">
+            <div class="m-thumb bg-c">🧄</div>
+            <div class="m-main">
+              <div class="m-name">山东大姜（老姜）</div>
+              <div class="m-desc">供货价 ¥2.20/斤 · 日供 200斤</div>
+              <div class="m-acts">
+                <span class="act-link">✏️ 编辑</span>
+                <span class="act-stock">⚡ 改库存</span>
+                <span class="act-down">⬇ 下架</span>
+              </div>
+            </div>
+            <span class="m-tag mt-ok">在售</span>
+          </div>
+
+          <!-- 底部语音报量入口（照现状） -->
+          <div class="voice-dock">
+            <div class="voice-btn">🎤 按住说话 改价 / 报量</div>
+            <div class="voice-swap">⌨️ 打字报量</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note" style="width: 336px;">
+        <span class="t">本屏重点</span>
+        「待审核」「已驳回」两行的<b>编辑按钮点亮</b>（绿底绿字带描边），与「在售」行编辑观感一致可点；这两态操作仍只有 编辑 + 删除；已驳回行保留驳回原因红字。
+      </div>
+    </div>
+
+    <div class="fig">
+      <div class="fig-cap">屏4-2 · 「编辑待审商品」弹层<span>编辑的是待审核/已驳回那条申请本身：改完仍是这一条，不会多出一条待审</span></div>
+      <div class="phone">
+        <div class="phone-bar">9:41
+          <div class="capsule"><span></span><span></span></div>
+        </div>
+        <div class="phone-title"><span class="back">‹</span>商品管理</div>
+        <div class="phone-body">
+          <div class="m-mask">
+            <div class="m-sheet">
+              <div class="sheet-head">
+                <div class="sheet-title">✏️ 编辑待审商品</div>
+                <div class="sheet-sub">还没审核通过，改完仍是这一条，不会多出一条待审</div>
+              </div>
+              <div class="sheet-body">
+                <div class="s-card">
+                  <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt" value="黄瓜（水果型）" /></div></div>
+                  <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+                    <div class="chip-g">
+                      <span class="s-chip on">时令蔬菜</span><span class="s-chip">猪肉</span><span class="s-chip">牛羊肉</span><span class="s-chip">禽蛋</span><span class="s-chip">水产</span><span class="s-chip">冻品</span><span class="s-chip">调料</span>
+                    </div>
+                    <div class="s-muted">只能选已授权分类</div>
+                  </div></div>
+                  <div class="f-row"><div class="f-l">计量方式</div><div class="f-r">
+                    <div class="chip-g"><span class="s-chip on">称重（斤）</span><span class="s-chip">固定规格</span></div>
+                  </div></div>
+                  <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt" value="1.80" /></div></div>
+                  <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt" value="300" /></div></div>
+                  <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r">
+                    <input class="s-ipt" value="今早现摘，带花带刺" />
+                    <div class="s-muted">会显示在采购方商品名下方（灰字），可不填；最多 12 字　9/12</div>
+                  </div></div>
+                  <div class="f-row top"><div class="f-l">封面图</div><div class="f-r">
+                    <div class="cover-picked">
+                      <div class="cover-th"><span class="cam">📷</span></div>
+                      <div class="cover-meta"><div class="a">已选 1 张 · 点击可重选</div><div class="b">随申请一起提交，走运营审核</div></div>
+                    </div>
+                  </div></div>
+                </div>
+              </div>
+              <div class="sheet-foot">
+                <span class="s-btn">取消</span>
+                <span class="s-btn pri">提交修改</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note" style="width: 336px;">
+        <span class="t">可改字段</span>
+        商品名称 / 商品分类（仅已授权分类）/ 计量方式 / 供货价 / 日可供量 / 商品备注（≤12 字）/ 封面图；底部「取消 / 提交修改」。
+      </div>
+    </div>
+
+    <div class="fig">
+      <div class="fig-cap">屏4-3 · 提交修改后的三种反馈<span>含兜底态：提交瞬间商品刚好被运营审核通过</span></div>
+      <div style="display: flex; flex-direction: column; gap: 16px; width: 300px;">
+        <div>
+          <div class="fb">✓ 已更新，仍在等待审核</div>
+          <div class="fb-lab">待审核态改完 → 仍是原来那条待审</div>
+        </div>
+        <div>
+          <div class="fb">✓ 已重新提交审核</div>
+          <div class="fb-lab">已驳回态改完 → 重新进入待审核</div>
+        </div>
+        <div>
+          <div class="fb warn">该商品已审核通过，请用「变更申请」修改</div>
+          <div class="fb-lab">兜底态：提交时刚好被运营审核通过（此时原弹层不再适用，引导走在售商品的变更申请）</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="t">📌 本卡边界（只出原型，绝不动工程）</div>
+    <div class="d">
+      本文件是<b>原型需求单产出</b>：不改、不新建、不删除任何工程文件与已有原型文件，不碰 Obsidian Vault。只<b>只读参考</b>了 <code>admin-web/src/views/pricing/Pricing.vue</code>、<code>admin-web/src/views/goods/GoodsAudit.vue</code>、<code>admin-web/src/views/buyers/BuyerList.vue</code>、<code>admin-web/src/layout/AdminLayout.vue</code>、<code>frontend/src/subpkg-supplier/pages/goods-manage.vue</code>（菜单名、表格列名、语音入口均照现状取材，未增减屏幕应有信息）。<br>
+      视觉硬基准：主色 <code>#00B96B</code>、页底 <code>#F5F6F8</code>、卡片白底圆角 12px；后台为左侧一级菜单 + 顶部面包屑，表格 Element 风格（边框 <code>#E5E8EB</code>、表头浅灰底）；小程序端 336×648 手机壳、绿色状态栏 + 微信胶囊、底部 tabBar 语境；灰字 <code>#8A9099</code> / 次要 <code>#6B7280</code> / 警示橙 <code>#FF8F1F</code> / 危险红 <code>#FA5151</code>。
+    </div>
+    <div class="t2">✅ 3 个改法 → 屏位对照</div>
+    <div class="d">
+      <b>① 加价比例修正</b> → 屏1（比例来源三态 + 恢复继承按钮与二次确认 + 保存影响范围默认勾选「应用到现有商品」+ 重算完成反馈 + 暂无供应商空态）＋ 屏2（通过弹窗比例可留空，留空=按档位自动算、手动填=橙色警示钉死单品）；<b>② 采购商忽略</b> → 屏3（待审核/已忽略/全部页签 + 灰色「忽略」操作 + 中性色二次确认 + 已忽略页签只剩查看 + 空态）；<b>③ 待审商品可编辑</b> → 屏4（待审核/已驳回行编辑点亮 + 编辑待审商品弹层 + 三种提交反馈含兜底态）。<br>
+      全部为静态视觉稿（无真跳转）；加价比例写法照现状（小数，0.3 = 30%）。
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
+
+> 卡BU（2026-10-03 大辉）修订：商品备注上限 30 字 → **12 字**（买家商品卡名称下方灰字位与规格说明抢同一行，30 字会撑乱卡片）。

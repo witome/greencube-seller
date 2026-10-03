@@ -31,10 +31,11 @@ class ChangesDto {
   @Min(0)
   dailySupply?: number
 
-  /// 商品备注（2026-10-02 卡BP）：≤30 字，挂 product_supplier_link.remark，审核通过后写入
+  /// 商品备注（2026-10-02 卡BP）：挂 product_supplier_link.remark，审核通过后写入
+  /// 卡BU（2026-10-03）：30 → 12 字（与新品申请同口径）
   @IsOptional()
   @IsString()
-  @MaxLength(30, { message: '商品备注最多 30 字' })
+  @MaxLength(12, { message: '商品备注最多 12 字' })
   remark?: string
 }
 

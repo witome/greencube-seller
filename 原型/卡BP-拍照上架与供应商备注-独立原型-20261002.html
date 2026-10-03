@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>卡BP-拍照上架与供应商备注-原型-20261002</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  body { background: #EEF1F4; color: #1F2329; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .page { padding: 22px 26px 30px; }
+  h1 { font-size: 18px; }
+  .sub { font-size: 13px; color: #6B7280; margin-top: 8px; line-height: 1.8; }
+  .sub b { color: #1F2329; }
+  #shots { background: #EEF1F4; padding: 18px; width: fit-content; display: flex; gap: 36px; align-items: flex-start; flex-wrap: wrap; }
+  figure { display: flex; flex-direction: column; }
+  .fig-cap { background: #fff; border-radius: 14px; padding: 12px 16px; margin-bottom: 14px; font-size: 13px; font-weight: 600; }
+  .fig-cap span { font-weight: 400; color: #8A9099; font-size: 11px; display: block; margin-top: 4px; }
+
+  /* 手机 */
+  .phone { width: 336px; height: 648px; background: #fff; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 6px 24px rgba(0,0,0,.10); }
+  .phone-bar { height: 34px; background: #00B96B; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; flex: 0 0 auto; position: relative; }
+  .capsule { position: absolute; right: 14px; top: 9px; width: 58px; height: 17px; border: 1px solid rgba(255,255,255,.7); border-radius: 10px; display: flex; align-items: center; justify-content: space-around; }
+  .capsule span { width: 5px; height: 5px; border-radius: 50%; background: #fff; display: block; }
+  .phone-title { height: 44px; background: #fff; padding: 0 12px; font-size: 15px; font-weight: 600; display: flex; align-items: center; border-bottom: 1px solid #F0F1F3; flex: 0 0 auto; }
+  .phone-title .back { color: #00B96B; font-weight: 400; font-size: 14px; margin-right: 6px; }
+  .phone-body { flex: 1; overflow-y: auto; background: #F5F6F8; }
+  .home-ind { flex: 0 0 auto; height: 14px; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .home-ind i { display: block; width: 96px; height: 4px; border-radius: 3px; background: #D5DAE0; }
+
+  .card { background: #fff; border-radius: 12px; margin: 10px 12px; padding: 12px 14px; }
+  .card-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .notice { background: #FFF9E8; color: #8A6D1A; font-size: 10.5px; line-height: 1.6; border-radius: 8px; padding: 8px 10px; margin: 10px 12px; }
+  .form-row { display: flex; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #F5F6F8; font-size: 12.5px; }
+  .form-row:last-child { border-bottom: 0; }
+  .fr-l { width: 64px; color: #6B7280; padding-top: 5px; flex: 0 0 auto; }
+  .fr-r { flex: 1; min-width: 0; }
+  .ipt { width: 100%; border: 1px solid #E5E8EB; border-radius: 8px; padding: 6px 9px; font-size: 12.5px; background: #fff; }
+  .ipt.ai { border-color: #00B96B; background: #F2FBF7; }
+  .ta { min-height: 48px; line-height: 1.5; resize: none; }
+  .chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #F2F4F6; color: #4E5969; }
+  .chip.on { background: #E6F9F0; color: #00995A; }
+  .muted { font-size: 10.5px; color: #8A9099; line-height: 1.6; margin-top: 5px; }
+  .mbtn { display: block; text-align: center; border-radius: 10px; padding: 10px 0; font-size: 13px; font-weight: 600; margin: 6px 12px; }
+  .mbtn.up { background: #00B96B; color: #fff; }
+
+  /* 封面/拍照块 */
+  .cover-shot { position: relative; width: 100%; height: 118px; border-radius: 10px; overflow: hidden; }
+  .t-ginger { background: radial-gradient(circle at 35% 30%, #f3d9a8, #d9a85a 55%, #a5742f); }
+  .cover-shot .badge { position: absolute; right: 8px; top: 8px; background: rgba(17,17,17,.72); color: #fff; font-size: 10px; padding: 3px 8px; border-radius: 999px; }
+  .ai-flash { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #00995A; background: #E6F9F0; border-radius: 8px; padding: 7px 10px; margin-top: 8px; }
+  .spin { width: 12px; height: 12px; border: 2px solid #B6E4CF; border-top-color: #00B96B; border-radius: 50%; animation: rot .8s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* 买家商品卡 */
+  .g-card { background: #fff; border-radius: 12px; margin: 10px 12px; padding: 12px; display: flex; gap: 11px; }
+  .g-thumb { width: 76px; height: 76px; border-radius: 10px; flex: 0 0 auto; position: relative; }
+  .t-gingersm { background: radial-gradient(circle at 35% 30%, #f3d9a8, #d9a85a 55%, #a5742f); }
+  .t-tomato { background: radial-gradient(circle at 32% 28%, #ff9a80, #e04530 58%, #a72c1c); }
+  .t-cabbage { background: radial-gradient(circle at 36% 30%, #e2f3c8, #93c76c 55%, #5e9440); }
+  .g-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .g-name { font-size: 14px; font-weight: 600; }
+  .g-sub { font-size: 11px; color: #8A9099; margin-top: 4px; line-height: 1.5;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .g-sub b { color: #8A9099; font-weight: 400; }
+  .g-price-row { margin-top: auto; display: flex; align-items: baseline; }
+  .g-price { color: #FA5151; font-size: 16px; font-weight: 700; }
+  .g-price small { font-size: 11px; font-weight: 400; }
+  .g-add { margin-left: auto; width: 26px; height: 26px; border-radius: 50%; background: #00B96B; color: #fff; font-size: 17px; text-align: center; line-height: 24px; }
+
+  .legend { font-size: 11.5px; color: #6B7280; line-height: 1.9; background:#fff; border-radius:12px; padding:12px 16px; margin-top: 18px; max-width: 760px; }
+  .legend b { color: #1F2329; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>卡BP · 拍照快速上架 + 供应商备注（原型）2026-10-02</h1>
+  <div class="sub">
+    ① 供货商拍一张菜的照片 → AI 用 2~3 秒自动填好<b>商品名 / 分类 / 计量方式</b>（绿底字段），供货商核对、可手改；<br>
+    ② 表单新增<b>「商品备注」</b>（如：今天刚到的老姜，辣味足），随申请一起走运营审核；<br>
+    ③ 采购方商品列表里，名称下方原来显示「称重」的<b>灰色位置改为显示备注</b>；没填备注的商品仍显示「称重 / 规格」；<br>
+    ④ 一个菜有多个供货商时，灰字显示<b>主供货商</b>的备注。AI 不碰价格与可供量。
+  </div>
+</div>
+
+<div id="shots">
+
+  <!-- 手机①：供货商 · 拍照识别 + 备注 -->
+  <figure>
+    <div class="fig-cap">供应商端 · 提交新商品<span>拍照 → AI 自动填三项 + 手写备注，价格/日供仍手填</span></div>
+    <div class="phone">
+      <div class="phone-bar">9:41
+        <div class="capsule"><span></span><span></span></div>
+      </div>
+      <div class="phone-title"><span class="back">‹</span>商品管理</div>
+      <div class="phone-body">
+        <div class="notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。</div>
+
+        <div class="card">
+          <div class="card-title">🆕 提交新商品</div>
+
+          <div class="form-row">
+            <div class="fr-l">商品照片</div>
+            <div class="fr-r">
+              <div class="cover-shot t-ginger"><div class="badge">📷 已拍 · 点击重拍</div></div>
+              <div class="ai-flash"><span>✨</span> AI 已识别，已帮你填好下面 3 项，请核对</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="fr-l">商品名称</div>
+            <div class="fr-r"><input class="ipt ai" value="山东大姜（老姜）" /></div>
+          </div>
+          <div class="form-row">
+            <div class="fr-l">商品分类</div>
+            <div class="fr-r">
+              <div class="chip-group">
+                <span class="chip">叶菜类</span><span class="chip on">根茎类</span><span class="chip">葱蒜类</span>
+              </div>
+              <div class="muted">AI 选的是「根茎类」，认错了点别的分类即可</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="fr-l">计量方式</div>
+            <div class="fr-r">
+              <div class="chip-group">
+                <span class="chip on">称重（斤）</span><span class="chip">固定规格</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="fr-l">商品备注</div>
+            <div class="fr-r">
+              <textarea class="ipt ta">今天刚到的老姜，辣味足，带泥新鲜</textarea>
+              <div class="muted">会显示在采购方商品名下方（灰字），可不填；最多 12 字</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="fr-l">供货价</div>
+            <div class="fr-r"><input class="ipt" placeholder="如 2.20（元/斤，提交后审核）" /></div>
+          </div>
+          <div class="form-row">
+            <div class="fr-l">日可供量</div>
+            <div class="fr-r"><input class="ipt" placeholder="如 200（斤）" /></div>
+          </div>
+        </div>
+
+        <div class="mbtn up">提交申请</div>
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+  </figure>
+
+  <!-- 手机②：买家列表，灰字 = 备注 / 兜底称重 -->
+  <figure>
+    <div class="fig-cap">采购方端 · 商品列表<span>名称下灰字：有备注显示备注，没备注仍显示「称重」</span></div>
+    <div class="phone">
+      <div class="phone-bar">9:41
+        <div class="capsule"><span></span><span></span></div>
+      </div>
+      <div class="phone-title"><span class="back">‹</span>商品</div>
+      <div class="phone-body">
+
+        <div class="g-card">
+          <div class="g-thumb t-gingersm"></div>
+          <div class="g-main">
+            <div class="g-name">山东大姜（老姜）</div>
+            <div class="g-sub">今天刚到的老姜，辣味足，带泥新鲜</div>
+            <div class="g-price-row"><span class="g-price">¥4.16<small>/斤</small></span><span class="g-add">+</span></div>
+          </div>
+        </div>
+
+        <div class="g-card">
+          <div class="g-thumb t-tomato"></div>
+          <div class="g-main">
+            <div class="g-name">西红柿（粉果）</div>
+            <div class="g-sub">本地大棚当天摘，沙瓤可生吃</div>
+            <div class="g-price-row"><span class="g-price">¥3.64<small>/斤</small></span><span class="g-add">+</span></div>
+          </div>
+        </div>
+
+        <div class="g-card">
+          <div class="g-thumb t-cabbage"></div>
+          <div class="g-main">
+            <div class="g-name">大白菜</div>
+            <!-- 该商品主供货商没填备注 → 保持现状，灰字仍为「称重」 -->
+            <div class="g-sub"><b>称重</b></div>
+            <div class="g-price-row"><span class="g-price">¥1.28<small>/斤</small></span><span class="g-add">+</span></div>
+          </div>
+        </div>
+
+      </div>
+      <div class="home-ind"><i></i></div>
+    </div>
+  </figure>
+
+</div>
+
+<div class="page">
+  <div class="legend">
+    <b>规则备注（给开发对齐用）</b><br>
+    1. 识别接口：图片走现有 /upload 上传后，后端新增视觉识别（百炼 qwen-vl-plus，复用 DASHSCOPE_API_KEY）；识别失败/超时 → 表单留空手填，不报错阻断（与现有语音解析同一兜底口径）。<br>
+    2. 服务端校验：AI 给的 categoryId 必须在该供应商<b>已授权分类</b>内，否则丢弃；AI 输出只填表单，<b>绝不直接落库</b>。<br>
+    3. 备注字段：新品/变更申请 payload 内新增 remark（≤12 字），随单运营审核；通过后写到商品的供应商备注上。<br>
+    4. 展示口径：商品列表名称下灰字 = 主供货商备注；为空时回退 specText /「称重」「固定规格」（现逻辑不变）。<br>
+    5. 一期一图一品；连续拍摄批量上架留作二期。
+  </div>
+</div>
+</body>
+</html>
+
+> 卡BU（2026-10-03 大辉）修订：商品备注上限 30 字 → **12 字**（买家商品卡名称下方灰字位与规格说明抢同一行，30 字会撑乱卡片）。
