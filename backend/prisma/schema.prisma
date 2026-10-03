@@ -801,3 +801,28 @@ model DemandSubscribeQuota {
   @@unique([purchaserId, templateId])
   @@map("demand_subscribe_quota")
 }
+
+/// 计量单位字典（卡BV-1 2026-10-03）
+///
+/// 背景：商品「单位」此前是**写死的兜底**（后端 `unit ?? '斤'`、前端 chip 写死「斤」）。
+/// 大辉要求单位**由运营自己在后台维护**（新增「计量单位」页，可新增 / 改名 / 排序 / 启停）。
+/// 所以必须是**一张可维护的表** —— 禁止改成 TS 枚举常量，也禁止塞进 Product 表当列。
+///
+/// 口径：
+/// ① 只停用、不删除（单位一旦被商品/历史订单引用，删了就会显示空白）→ 接口层不提供 DELETE；
+/// ② 停用后：新建商品与供应商端不再出现该单位（GET /units 只返回 status=1）；
+/// ③ **老商品不受影响**：校验的放行集合 = 启用中的单位 ∪ 该商品/申请当前正在用的那个单位，
+///    否则「单位被停用 → 供应商编辑老商品改不动」会死锁；
+/// ④ name 唯一且**含已停用的行** —— 先停用再新增同名同样要拦（后台提示「该单位已存在，请换一个」）。
+model MeasureUnit {
+  id        BigInt   @id @default(autoincrement())
+  /// 单位名（斤 / 公斤 / 袋 / 桶 …）
+  name      String   @unique @db.VarChar(20)
+  /// 越小越靠前：决定供应商端单位 chip 的展示顺序
+  sort      Int      @default(0)
+  /// 1 启用 / 0 停用
+  status    Int      @default(1) @db.TinyInt
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("measure_unit")
+}

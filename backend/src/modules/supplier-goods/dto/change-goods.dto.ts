@@ -31,6 +31,15 @@ class ChangesDto {
   @Min(0)
   dailySupply?: number
 
+  /// 卡BV-1（2026-10-03）：单位进变更（原型口径：改了单位 → 随变更一起走运营审核）。
+  /// 可选：不传 = 不改；传了由 service 校验「启用中 ∪ 商品当前单位」。
+  /// ⚠️ 必须在这里显式声明 —— 全局 ValidationPipe 开了 whitelist，
+  /// 没装饰器的字段会被静默丢弃（前端传了 unit 也进不到 changes 里）。
+  @IsOptional()
+  @IsString()
+  @MaxLength(10, { message: '计量单位最多 10 字' })
+  unit?: string
+
   /// 商品备注（2026-10-02 卡BP）：挂 product_supplier_link.remark，审核通过后写入
   /// 卡BU（2026-10-03）：30 → 12 字（与新品申请同口径）
   @IsOptional()

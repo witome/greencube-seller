@@ -34,6 +34,8 @@ import { PaymentModule } from './modules/payment/payment.module'
 import { DemandModule } from './modules/demand/demand.module'
 import { WxModule } from './modules/wx/wx.module'
 import { SupplierNotifyModule } from './modules/supplier-notify/supplier-notify.module'
+// 计量单位字典（卡BV-1 2026-10-03）
+import { MeasureUnitModule } from './modules/measure-unit/measure-unit.module'
 
 @Module({
   imports: [
@@ -74,6 +76,8 @@ import { SupplierNotifyModule } from './modules/supplier-notify/supplier-notify.
     DemandModule,
     // 未接单电话催办（卡BN-1 2026-10-02）
     SupplierNotifyModule,
+    // 计量单位字典（卡BV-1 2026-10-03）
+    MeasureUnitModule,
   ],
   providers: [
     // 全局统一响应包装

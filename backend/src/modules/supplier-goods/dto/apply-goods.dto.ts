@@ -19,10 +19,13 @@ export class ApplyGoodsDto {
   @MaxLength(100)
   specText?: string
 
-  @IsOptional()
+  /// 卡BV-1（2026-10-03）：**必填**（原为可选，后端兜底写死 '斤'）。
+  /// 取值必须是 measure_unit 里「启用中」的单位 —— 表级校验在 service 层（查库），
+  /// 这里只保证「传了、是字符串、长度合法」；空值由 @IsNotEmpty 拦成 400。
+  @IsNotEmpty({ message: '请选择计量单位' })
   @IsString()
-  @MaxLength(10)
-  unit?: string
+  @MaxLength(10, { message: '计量单位最多 10 字' })
+  unit: string
 
   @IsNumber({}, { message: '供货价必须为数字' })
   @Min(0.01, { message: '供货价必须大于 0' })

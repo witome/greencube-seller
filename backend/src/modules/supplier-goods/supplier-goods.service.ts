@@ -7,6 +7,8 @@ import { ChangeGoodsDto } from './dto/change-goods.dto'
 import { QuickStockDto } from './dto/quick-stock.dto'
 import { AuditService } from '../audit/audit.service'
 import { UpdateStatusDto } from './dto/update-status.dto'
+// 卡BV-1（2026-10-03）：计量单位校验（放行集合 = 启用中的单位 ∪ 当前正在使用的单位）
+import { assertUnitAllowed, assertUnitRequired } from '../measure-unit/unit-check'
 
 /// 商品状态（schema Product.status 权威口径：0 下架 / 1 在售 / 2 变更审核中）
 /// ⚠️ 新品的「待审核 / 已驳回」不再由 product.status 表达 —— 由该商品最新一条
@@ -149,6 +151,11 @@ export class SupplierGoodsService {
     const category = await this.prisma.category.findUnique({ where: { id: BigInt(dto.categoryId) } })
     if (!category) throw new BizException(ErrorCode.PARAM_ERROR, '商品分类不存在')
 
+    // 卡BV-1（2026-10-03）：单位**必填**且必须命中「启用中」的计量单位。
+    // ⚠️ 这里删掉了原先写死的兜底 `unit ?? '斤'` —— 单位由运营在后台维护，供应商传什么存什么；
+    // 新品没有「当前值」可放行，所以只认启用中的单位。
+    const unit = await assertUnitRequired(this.prisma, dto.unit)
+
     // 事务（2026-09-19 卡B 涉库存/商品收口）：product + product_supplier_link（可供量）+ 审核申请
     // 三张表要么都成、要么都不成。原实现三次独立 create，中途失败会留下「有商品无供货关系」
     // 或「有商品无待审申请」的孤儿数据
@@ -158,7 +165,7 @@ export class SupplierGoodsService {
           categoryId: dto.categoryId,
           name: dto.name,
           weighType: dto.weighType,
-          unit: dto.unit ?? '斤',
+          unit, // 卡BV-1：已校验（必填 + 命中启用单位），不再兜底 '斤'
           specText: dto.specText,
           images: dto.images,
           cover: dto.cover, // 卡Z1：新品提交可带封面（随审核一起过，不走免审通道）
@@ -190,7 +197,7 @@ export class SupplierGoodsService {
             name: dto.name,
             categoryId: dto.categoryId,
             weighType: dto.weighType,
-            unit: dto.unit ?? '斤',
+            unit, // 卡BV-1：同上
             specText: dto.specText,
             supplyPrice: dto.supplyPrice,
             dailySupply: dto.dailySupply,
@@ -226,6 +233,12 @@ export class SupplierGoodsService {
       throw new BizException(ErrorCode.PRODUCT_OFF_SHELF, '仅已上架商品可发起变更')
     }
 
+    // 卡BV-1（2026-10-03）：changes.unit **可选**，传了才校验。
+    // 放行集合 = 启用中的单位 ∪ 该商品当前正在用的单位（老商品单位被停用也不会把编辑卡死）
+    if (dto.changes.unit !== undefined) {
+      await assertUnitAllowed(this.prisma, dto.changes.unit, product.unit ?? null)
+    }
+
     // ⚠️ 同一商品同时只允许一个进行中的变更申请
     const inProgress = await this.prisma.productApplication.findFirst({
       where: { productId: BigInt(productId), type: 2, status: 0 },
@@ -236,6 +249,8 @@ export class SupplierGoodsService {
     // 卡BP（2026-10-02）：remark 挂在 link 上（非 product），旧值取 link.remark
     const fieldText: Record<string, string> = {
       name: '品名', categoryId: '分类', weighType: '计量方式', specText: '规格', supplyPrice: '供货价', dailySupply: '日可供量', remark: '商品备注',
+      // 卡BV-1（2026-10-03）：单位进变更（原型口径「改了单位 → 随变更一起走运营审核」）
+      unit: '单位',
     }
     const diffs = Object.entries(dto.changes)
       .filter(([, v]) => v !== undefined)
@@ -313,7 +328,14 @@ export class SupplierGoodsService {
     const productId = apply.productId
     const beforeStatus = apply.status
     const oldPayload = (apply.payload as any) || {}
-    const unit = dto.unit ?? oldPayload.unit ?? '斤'
+    const oldUnit = typeof oldPayload.unit === 'string' ? oldPayload.unit.trim() : ''
+
+    // 卡BV-1（2026-10-03）：unit **可选** —— 传了才校验，不传保留原值（不再兜底 '斤'）。
+    // 放行集合 = 启用中的单位 ∪ 该申请当前正在用的单位：老申请的单位被停用后，
+    // 供应商「不改单位」重新提交也必须能过（否则老申请就永远改不动了）。
+    const unit = dto.unit !== undefined
+      ? await assertUnitAllowed(this.prisma, dto.unit, oldUnit || null)
+      : oldUnit
 
     // payload 整体替换：必填 7 项用新值；未传的可选字段保留原值（undefined 在 Prisma Json 里会被丢弃，必须条件展开）
     const nextPayload: any = {
@@ -321,10 +343,11 @@ export class SupplierGoodsService {
       name: dto.name,
       categoryId: dto.categoryId,
       weighType: dto.weighType,
-      unit,
       supplyPrice: dto.supplyPrice,
       dailySupply: dto.dailySupply,
     }
+    // 单位只在拿得到值时写（老申请 payload 里没单位时保持原样，不写成空串）
+    if (unit) nextPayload.unit = unit
     if (dto.specText !== undefined) nextPayload.specText = dto.specText
     if (dto.images !== undefined) nextPayload.images = dto.images
     if (dto.qualification !== undefined) nextPayload.qualification = dto.qualification
@@ -348,7 +371,7 @@ export class SupplierGoodsService {
           name: dto.name,
           categoryId: dto.categoryId,
           weighType: dto.weighType,
-          unit,
+          ...(unit ? { unit } : {}), // 卡BV-1：同 payload，拿不到值就不动
           ...(dto.specText !== undefined ? { specText: dto.specText } : {}),
           ...(dto.images !== undefined ? { images: dto.images } : {}),
           ...(dto.cover !== undefined ? { cover: dto.cover } : {}),

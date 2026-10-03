@@ -10,6 +10,8 @@ import { BatchReviewDto } from './dto/batch-review.dto'
 import { BatchChangeReviewDto } from './dto/batch-change-review.dto'
 import { AuditService } from '../audit/audit.service'
 import { resolveDefaultMarkup, loadMarkupConfigs, resolveMarkupFromConfigs } from '../admin-pricing/markup-resolver'
+// 卡BV-1（2026-10-03）：计量单位校验（放行集合 = 启用中的单位 ∪ 当前正在使用的单位）
+import { assertUnitAllowed, assertUnitRequired } from '../measure-unit/unit-check'
 
 @Injectable()
 export class AdminGoodsService {
@@ -175,6 +177,8 @@ export class AdminGoodsService {
       if (changes.specText !== undefined) productUpdate.specText = changes.specText
       if (changes.weighType !== undefined) productUpdate.weighType = changes.weighType
       if (changes.categoryId !== undefined) productUpdate.categoryId = changes.categoryId
+      // 卡BV-1（2026-10-03）：单位随变更一起生效（供应商提交变更时已校验过「启用 ∪ 当前值」）
+      if (changes.unit !== undefined) productUpdate.unit = String(changes.unit)
 
       if (changes.supplyPrice !== undefined && link) {
         const newSupplyPrice = Number(changes.supplyPrice)
@@ -471,13 +475,18 @@ export class AdminGoodsService {
       ? dto.salePrice
       : Math.round(dto.supplyPrice * (1 + markupRate) * 100) / 100
 
+    // 卡BV-1（2026-10-03）：运营新增商品同样走单位校验 —— 新品没有「当前值」可放行，
+    // 只认 measure_unit 里启用中的单位（与供应商提交新品同一套口径）。
+    // ⚠️ 原先写死的兜底 `unit ?? '斤'` 一并去掉，运营后台的单位栏改从维护表取（卡BV-2）。
+    const unit = await assertUnitRequired(this.prisma, dto.unit)
+
     const product = await this.prisma.$transaction(async (tx) => {
       const p = await tx.product.create({
         data: {
           categoryId: BigInt(dto.categoryId),
           name: dto.name,
           weighType: dto.weighType,
-          unit: dto.unit ?? '斤',
+          unit, // 卡BV-1：已校验（命中启用单位），不再兜底 '斤'
           specText: dto.specText,
           salePrice,
           markupRate,
@@ -523,7 +532,12 @@ export class AdminGoodsService {
     const productUpdate: any = {}
     if (dto.name !== undefined) productUpdate.name = dto.name
     if (dto.weighType !== undefined) productUpdate.weighType = dto.weighType
-    if (dto.unit !== undefined) productUpdate.unit = dto.unit
+    // 卡BV-1（2026-10-03）：运营编辑商品同样校验单位。
+    // 放行集合 = 启用中的单位 ∪ 该商品**当前**的单位 —— 老商品的单位被停用后，
+    // 运营打开编辑弹层不改单位也要能保存（后台单位下拉会兼容显示已停用的当前值）。
+    if (dto.unit !== undefined && String(dto.unit).trim()) {
+      productUpdate.unit = await assertUnitAllowed(this.prisma, dto.unit, product.unit ?? null)
+    }
     if (dto.specText !== undefined) productUpdate.specText = dto.specText
     if (dto.markupRate !== undefined) productUpdate.markupRate = dto.markupRate
 
