@@ -25,6 +25,10 @@ export const goodsAdminApi = {
   getGoodsChangePending: () => request.get('/admin/goods/change-pending'),
   reviewGoodsApply: (applyId, data) => request.post(`/admin/goods/pending/${applyId}/review`, data),
   reviewGoodsChange: (changeId, data) => request.post(`/admin/goods/change/${changeId}/review`, data),
+  // 卡BS（2026-10-03）：批量通过（新品 / 变更）—— 返回 { total, approved, failed }
+  batchReviewGoodsApply: (applyIds, markupRate) =>
+    request.post('/admin/goods/pending/batch-review', { applyIds, ...(markupRate != null && markupRate !== '' ? { markupRate } : {}) }),
+  batchReviewGoodsChange: (changeIds) => request.post('/admin/goods/change/batch-review', { changeIds }),
   getPriority: (productId) => request.get(`/admin/goods/${productId}/priority`),
   setPriority: (productId, items) => request.put(`/admin/goods/${productId}/priority`, { items }),
   // 商品管理（在售/下架商品列表 + 上下架 + 新增 + 编辑）

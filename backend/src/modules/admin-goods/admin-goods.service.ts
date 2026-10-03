@@ -6,6 +6,8 @@ import { ReviewChangeDto } from './dto/review-change.dto'
 import { SetPriorityDto } from './dto/set-priority.dto'
 import { CreateProductDto } from './dto/create-product.dto'
 import { UpdateProductDto } from './dto/update-product.dto'
+import { BatchReviewDto } from './dto/batch-review.dto'
+import { BatchChangeReviewDto } from './dto/batch-change-review.dto'
 import { AuditService } from '../audit/audit.service'
 import { resolveDefaultMarkup, loadMarkupConfigs, resolveMarkupFromConfigs } from '../admin-pricing/markup-resolver'
 
@@ -230,6 +232,66 @@ export class AdminGoodsService {
       })
 
       return { changeId, status: 'rejected' }
+    }
+  }
+
+  // ────────────────────────────────────────
+  // 卡BS（2026-10-03）：批量通过
+  // 实现红线：**逐条复用 reviewApply / reviewChange**，不复制任何定价 / 落库 / 审计逻辑；
+  // 单条独立 try/catch（不做整批大事务），一条失败不中断整批；
+  // 审计沿用被调方法已有的 REVIEW_GOODS_APPLY / REVIEW_GOODS_CHANGE（不新增 action）。
+  // ────────────────────────────────────────
+  async batchReviewApply(operatorId: bigint, dto: BatchReviewDto) {
+    const ids = this.normalizeIds(dto?.applyIds)
+    const failed: { id: number; name?: string; reason: string }[] = []
+    let approved = 0
+    for (const id of ids) {
+      try {
+        // 留空 = 走 reviewApply 内部的 resolveDefaultMarkup（供应商>分类>全局），与单条通过完全一致
+        const res = await this.reviewApply(id, operatorId, { approved: true, markupRate: dto?.markupRate })
+        if (res?.status === 'approved') approved += 1
+      } catch (e: any) {
+        failed.push({ id, name: await this.applyNameOf(id), reason: e?.message || '审核失败' })
+      }
+    }
+    return { total: ids.length, approved, failed }
+  }
+
+  async batchReviewChange(operatorId: bigint, dto: BatchChangeReviewDto) {
+    const ids = this.normalizeIds(dto?.changeIds)
+    const failed: { id: number; name?: string; reason: string }[] = []
+    let approved = 0
+    for (const id of ids) {
+      try {
+        const res = await this.reviewChange(id, operatorId, { approved: true })
+        if (res?.status === 'approved') approved += 1
+      } catch (e: any) {
+        failed.push({ id, name: await this.applyNameOf(id), reason: e?.message || '审核失败' })
+      }
+    }
+    return { total: ids.length, approved, failed }
+  }
+
+  /// 去重 + 上限校验（1~50，越界抛 PARAM_ERROR）
+  private normalizeIds(ids: any): number[] {
+    const list = Array.isArray(ids) ? ids.map((i) => Number(i)).filter((i) => Number.isInteger(i)) : []
+    const uniq = [...new Set(list)]
+    if (!uniq.length || uniq.length > 50) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '一次最多批量通过 50 条，请分批')
+    }
+    return uniq
+  }
+
+  /// 失败明细里带商品名（读不到就省略，不影响失败原因）
+  private async applyNameOf(id: number): Promise<string | undefined> {
+    try {
+      const app = await this.prisma.productApplication.findUnique({
+        where: { id: BigInt(id) },
+        include: { product: true },
+      })
+      return app?.product?.name || undefined
+    } catch {
+      return undefined
     }
   }
 

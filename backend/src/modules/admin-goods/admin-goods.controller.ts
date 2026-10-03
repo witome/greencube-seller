@@ -5,6 +5,8 @@ import { ReviewChangeDto } from './dto/review-change.dto'
 import { SetPriorityDto } from './dto/set-priority.dto'
 import { CreateProductDto } from './dto/create-product.dto'
 import { UpdateProductDto } from './dto/update-product.dto'
+import { BatchReviewDto } from './dto/batch-review.dto'
+import { BatchChangeReviewDto } from './dto/batch-change-review.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
 
@@ -53,6 +55,21 @@ export class AdminGoodsController {
   @Roles(Role.ADMIN)
   async updateProductStatus(@Param('id') id: string, @CurrentUser('userId') userId: bigint, @Body() body: any) {
     return this.service.updateProductStatus(Number(id), Number(body?.status), userId)
+  }
+
+  /// 卡BS（2026-10-03）：新品批量通过（逐条复用 reviewApply，单条失败不中断整批）
+  /// 返回 { total, approved, failed: [{ id, name, reason }] }
+  @Post('pending/batch-review')
+  @Roles(Role.ADMIN)
+  async batchReviewApply(@CurrentUser('userId') userId: bigint, @Body() dto: BatchReviewDto) {
+    return this.service.batchReviewApply(userId, dto)
+  }
+
+  /// 卡BS（2026-10-03）：变更批量通过（逐条复用 reviewChange，单条失败不中断整批）
+  @Post('change/batch-review')
+  @Roles(Role.ADMIN)
+  async batchReviewChange(@CurrentUser('userId') userId: bigint, @Body() dto: BatchChangeReviewDto) {
+    return this.service.batchReviewChange(userId, dto)
   }
 
   /// 新品审核（通过上架 / 驳回）

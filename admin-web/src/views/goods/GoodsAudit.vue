@@ -4,7 +4,25 @@
       <!-- 待审核新品 -->
       <el-tab-pane label="待审核新品" name="apply">
         <el-card shadow="never">
-          <el-table :data="pendingList" v-loading="loading" stripe>
+          <!-- 卡BS（2026-10-03）：筛选条（供应商 / 分类 / 关键字）+ 批量通过 -->
+          <div class="filter-bar">
+            <el-select v-model="applyFilter.supplierName" placeholder="全部供应商" clearable style="width:160px">
+              <el-option v-for="s in supplierOptions" :key="s" :label="s" :value="s" />
+            </el-select>
+            <el-select v-model="applyFilter.categoryId" placeholder="全部分类" clearable style="width:140px">
+              <el-option v-for="c in categoryOptions" :key="c.id" :label="c.name" :value="c.id" />
+            </el-select>
+            <el-input v-model="applyFilter.keyword" placeholder="商品名称关键字" clearable style="width:180px" />
+            <el-button @click="resetApplyFilter">重置</el-button>
+            <span class="filter-count">筛选后 {{ filteredPending.length }} / 共 {{ allPending.length }} 条</span>
+            <el-button
+              type="success"
+              :disabled="!selectedApplies.length"
+              @click="openBatchApprove"
+            >批量通过（已选 {{ selectedApplies.length }} 条）</el-button>
+          </div>
+          <el-table :data="filteredPending" v-loading="loading" stripe @selection-change="onApplySelectionChange">
+            <el-table-column type="selection" width="46" />
             <el-table-column prop="name" label="商品名称" min-width="140" />
             <el-table-column prop="supplierName" label="供应商" width="120" />
             <el-table-column label="供货价" width="100">
@@ -30,14 +48,29 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-empty v-if="!pendingList.length && !loading" description="暂无待审核新品" />
+          <el-empty v-if="!allPending.length && !loading" description="暂无待审核新品" />
         </el-card>
       </el-tab-pane>
 
       <!-- 待审核变更 -->
       <el-tab-pane label="待审核变更" name="change">
         <el-card shadow="never">
-          <el-table :data="changeList" v-loading="loading" stripe>
+          <!-- 卡BS（2026-10-03）：变更 tab 筛选条 + 批量通过（筛选同上：前端过滤，全选只作用于筛选结果） -->
+          <div class="filter-bar">
+            <el-select v-model="changeFilter.supplierName" placeholder="全部供应商" clearable style="width:160px">
+              <el-option v-for="s in supplierOptions" :key="s" :label="s" :value="s" />
+            </el-select>
+            <el-input v-model="changeFilter.keyword" placeholder="商品名称关键字" clearable style="width:180px" />
+            <el-button @click="resetChangeFilter">重置</el-button>
+            <span class="filter-count">筛选后 {{ filteredChange.length }} / 共 {{ allChange.length }} 条</span>
+            <el-button
+              type="success"
+              :disabled="!selectedChanges.length"
+              @click="openBatchChange"
+            >批量通过（已选 {{ selectedChanges.length }} 条）</el-button>
+          </div>
+          <el-table :data="filteredChange" v-loading="loading" stripe @selection-change="onChangeSelectionChange">
+            <el-table-column type="selection" width="46" />
             <el-table-column prop="productName" label="商品" width="120" />
             <el-table-column prop="supplierName" label="供应商" width="120" />
             <el-table-column label="变更内容（原值 → 新值）" min-width="220">
@@ -60,7 +93,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-empty v-if="!changeList.length && !loading" description="暂无待审核变更" />
+          <el-empty v-if="!allChange.length && !loading" description="暂无待审核变更" />
         </el-card>
       </el-tab-pane>
 
@@ -141,6 +174,53 @@
       </template>
     </el-dialog>
 
+    <!-- 卡BS（2026-10-03）：新品批量通过 —— 沿用单条通过的定价口径（留空=档位自动 / 填写=固定单品） -->
+    <el-dialog v-model="batchDialog" title="批量通过 · 待审核新品" width="560px">
+      <el-alert
+        type="warning"
+        :closable="false"
+        :title="`将通过 ${selectedApplies.length} 条，涉及 ${applySupplierCount} 个供应商`"
+        style="margin-bottom:12px"
+      />
+      <p class="batch-line">供货价区间：¥{{ applyPriceRange }}</p>
+      <el-form label-width="110px">
+        <el-form-item label="加价比例">
+          <el-input v-model="batchRateInput" placeholder="留空则按档位自动计算" style="width:180px" clearable />
+          <span class="tip">（如 0.3 = 加价 30%）</span>
+          <div v-if="!batchRateFilled" class="rate-hint">
+            留空 = 按 供应商 &gt; 分类 &gt; 全局 自动计算（与单条通过同一套逻辑）
+          </div>
+          <div v-else class="rate-hint orange">
+            统一填写会把这批商品都固定为「单品」比例，之后调整供应商/分类/全局比例不会影响它们
+          </div>
+        </el-form-item>
+      </el-form>
+      <p class="batch-note">通过后如需改价，去「商品管理」改，或让供应商提变更。</p>
+      <template #footer>
+        <el-button @click="batchDialog = false">取消</el-button>
+        <el-button type="success" :loading="submitting" @click="submitBatchApprove">确认通过 {{ selectedApplies.length }} 条</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 卡BS（2026-10-03）：变更批量通过 —— 通过后立即改动在售价格 -->
+    <el-dialog v-model="batchChangeDialog" title="批量通过 · 待审核变更" width="560px">
+      <el-alert
+        type="warning"
+        :closable="false"
+        :title="`将通过 ${selectedChanges.length} 条变更，涉及 ${changeSupplierCount} 个供应商`"
+        style="margin-bottom:12px"
+      />
+      <p class="batch-danger">通过后立即改动在售价格，对采购方即时生效</p>
+      <ul class="batch-list">
+        <li v-for="r in selectedChanges" :key="r.changeId">{{ r.productName }}（{{ r.supplierName }}）</li>
+      </ul>
+      <p class="batch-note">通过后如需改价，去「商品管理」改，或让供应商提变更。</p>
+      <template #footer>
+        <el-button @click="batchChangeDialog = false">取消</el-button>
+        <el-button type="success" :loading="submitting" @click="submitBatchChange">确认通过 {{ selectedChanges.length }} 条</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 供货优先级设置弹窗 -->
     <el-dialog v-model="priorityDialog" :title="`供货优先级 · ${currentPriority?.productName || ''}`" width="560px">
       <el-alert type="info" :closable="false" title="优先级数字越小越优先（自动拆单时优先分配），按供应商调整后保存" style="margin-bottom:12px" />
@@ -168,15 +248,26 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { goodsAdminApi, pricingAdminApi } from '../../api/modules'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { goodsAdminApi, pricingAdminApi, userAdminApi, categoryAdminApi } from '../../api/modules'
 
 const activeTab = ref('apply')
 const loading = ref(false)
 const submitting = ref(false)
 
-const pendingList = ref([])
-const changeList = ref([])
+// 卡BS（2026-10-03）：接口原样数据 + 筛选结果分离（:data 绑筛选结果 → 表头全选天然只作用于筛选结果）
+const allPending = ref([])
+const allChange = ref([])
+const applyFilter = ref({ supplierName: '', categoryId: null, keyword: '' })
+const changeFilter = ref({ supplierName: '', keyword: '' })
+const selectedApplies = ref([])
+const selectedChanges = ref([])
+const supplierOptions = ref([])
+const categoryOptions = ref([])
+// 卡BS：批量通过弹窗（新品 / 变更）
+const batchDialog = ref(false)
+const batchChangeDialog = ref(false)
+const batchRateInput = ref('')
 
 // 供货优先级
 const priorityProducts = ref([])
@@ -208,6 +299,42 @@ const rateFilled = computed(() => rateNum.value !== null)
 const defaultRate = computed(() => defaultResolve.value.rate)
 const defaultSource = computed(() => defaultResolve.value.source)
 
+// ── 卡BS（2026-10-03）：前端筛选（供应商 / 分类 / 关键字）→ 表头全选只作用于筛选结果 ──
+function matchRow(row, f) {
+  if (f.supplierName && row.supplierName !== f.supplierName) return false
+  if (f.categoryId != null && row.categoryId !== f.categoryId) return false
+  const kw = (f.keyword || '').trim().toLowerCase()
+  if (kw && !String(row.name || '').toLowerCase().includes(kw)) return false
+  return true
+}
+const filteredPending = computed(() => allPending.value.filter((r) => matchRow(r, applyFilter.value)))
+const filteredChange = computed(() => {
+  const f = changeFilter.value
+  const kw = (f.keyword || '').trim().toLowerCase()
+  return allChange.value.filter((r) => {
+    if (f.supplierName && r.supplierName !== f.supplierName) return false
+    if (kw && !String(r.productName || '').toLowerCase().includes(kw)) return false
+    return true
+  })
+})
+function resetApplyFilter() { applyFilter.value = { supplierName: '', categoryId: null, keyword: '' } }
+function resetChangeFilter() { changeFilter.value = { supplierName: '', keyword: '' } }
+function onApplySelectionChange(rows) { selectedApplies.value = rows }
+function onChangeSelectionChange(rows) { selectedChanges.value = rows }
+// 批量弹窗展示用：涉及供应商数 / 供货价区间
+const applySupplierCount = computed(() => new Set(selectedApplies.value.map((r) => r.supplierName)).size)
+const changeSupplierCount = computed(() => new Set(selectedChanges.value.map((r) => r.supplierName)).size)
+const applyPriceRange = computed(() => {
+  const ps = selectedApplies.value.map((r) => Number(r.supplyPrice) || 0).filter((n) => !isNaN(n))
+  if (!ps.length) return '0.00 — 0.00'
+  return `${Math.min(...ps).toFixed(2)} — ${Math.max(...ps).toFixed(2)}`
+})
+const batchRateNum = computed(() => {
+  const v = parseFloat(batchRateInput.value)
+  return isNaN(v) ? null : v
+})
+const batchRateFilled = computed(() => batchRateNum.value !== null)
+
 // 展示层近似解析（与后端 resolveMarkupFromConfigs 同口径）：供应商 > 分类 > 全局 > 0.30
 // pending 接口只回 supplierName，按档口名匹配配置（仅预览展示用，落库值由后端权威解析）
 function resolveDefaultFor(row) {
@@ -237,8 +364,10 @@ function fmtTime(iso) {
 async function load() {
   loading.value = true
   try {
-    pendingList.value = await goodsAdminApi.getGoodsPending()
-    changeList.value = await goodsAdminApi.getGoodsChangePending()
+    allPending.value = await goodsAdminApi.getGoodsPending()
+    allChange.value = await goodsAdminApi.getGoodsChangePending()
+    selectedApplies.value = []
+    selectedChanges.value = []
   } catch (e) { /* 已提示 */ } finally {
     loading.value = false
   }
@@ -291,6 +420,72 @@ async function submitApprove() {
   }
 }
 
+// ── 卡BS（2026-10-03）：批量通过（新品 / 变更）──
+const BATCH_LIMIT = 50
+
+function openBatchApprove() {
+  if (!selectedApplies.value.length) return
+  if (selectedApplies.value.length > BATCH_LIMIT) {
+    ElMessage.warning(`一次最多 ${BATCH_LIMIT} 条，请分批`)
+    return
+  }
+  batchRateInput.value = '' // 默认留空 = 按档位自动（与单条通过同口径）
+  batchDialog.value = true
+}
+
+async function submitBatchApprove() {
+  if (batchRateFilled.value && (batchRateNum.value < 0 || batchRateNum.value > 2)) {
+    ElMessage.warning('加价比例需在 0 ~ 2 之间（如 0.3 = 加价 30%）')
+    return
+  }
+  const ids = selectedApplies.value.map((r) => r.applyId)
+  if (ids.length > BATCH_LIMIT) { ElMessage.warning(`一次最多 ${BATCH_LIMIT} 条，请分批`); return }
+  submitting.value = true
+  try {
+    const res = await goodsAdminApi.batchReviewGoodsApply(ids, batchRateFilled.value ? batchRateNum.value : null)
+    batchDialog.value = false
+    reportBatchResult(res, '新品')
+    load()
+  } catch (e) { /* 已提示 */ } finally { submitting.value = false }
+}
+
+function openBatchChange() {
+  if (!selectedChanges.value.length) return
+  if (selectedChanges.value.length > BATCH_LIMIT) {
+    ElMessage.warning(`一次最多 ${BATCH_LIMIT} 条，请分批`)
+    return
+  }
+  batchChangeDialog.value = true
+}
+
+async function submitBatchChange() {
+  const ids = selectedChanges.value.map((r) => r.changeId)
+  if (ids.length > BATCH_LIMIT) { ElMessage.warning(`一次最多 ${BATCH_LIMIT} 条，请分批`); return }
+  submitting.value = true
+  try {
+    const res = await goodsAdminApi.batchReviewGoodsChange(ids)
+    batchChangeDialog.value = false
+    reportBatchResult(res, '变更')
+    load()
+  } catch (e) { /* 已提示 */ } finally { submitting.value = false }
+}
+
+// 部分失败也要给出可读明细（商品名 + 失败原因），不能只报数字
+function reportBatchResult(res, label) {
+  const approved = res?.approved ?? 0
+  const failed = res?.failed || []
+  if (!failed.length) {
+    ElMessage.success(`${label}批量通过成功 ${approved} 条`)
+    return
+  }
+  const lines = failed.map((f) => `${f.name ? `${f.name}：` : ''}${f.reason}（id ${f.id}）`).join('<br>')
+  ElMessageBox.alert(
+    `成功 ${approved} 条，失败 ${failed.length} 条：<br><span style="color:#f56c6c">${lines}</span>`,
+    `${label}批量通过结果`,
+    { dangerouslyUseHTMLString: true, confirmButtonText: '知道了' },
+  )
+}
+
 async function submitReject() {
   if (!rejectReason.value.trim()) { ElMessage.warning('请填写驳回原因'); return }
   submitting.value = true
@@ -305,6 +500,16 @@ async function submitReject() {
 }
 
 async function approveChange(row) {
+  // 卡BS（2026-10-03）：单条「通过」原先点一下直接改在售价格，补二次确认
+  try {
+    await ElMessageBox.confirm(
+      `通过后立即改动「${row.productName}」的在售价格，对采购方即时生效。<br>通过后如需改价，去商品管理改，或让供应商提变更。`,
+      '确认通过这条变更？',
+      { type: 'warning', dangerouslyUseHTMLString: true, confirmButtonText: '确认通过', cancelButtonText: '取消' },
+    )
+  } catch (e) {
+    return // 用户取消 → 不生效
+  }
   submitting.value = true
   try {
     await goodsAdminApi.reviewGoodsChange(row.changeId, { approved: true })
@@ -370,10 +575,25 @@ async function savePriority() {
   }
 }
 
+// 卡BS：筛选条下拉数据（供应商 / 分类）；失败不阻断审核，只是下拉为空
+async function loadFilterOptions() {
+  try {
+    const sup = await userAdminApi.getSuppliers()
+    supplierOptions.value = [...new Set((sup || []).map((s) => s.stallName).filter(Boolean))].sort()
+  } catch (e) { supplierOptions.value = [] }
+  try {
+    const cats = await categoryAdminApi.getCategories()
+    categoryOptions.value = (cats || [])
+      .map((c) => ({ id: c.id != null ? c.id : c.categoryId, name: c.name }))
+      .filter((c) => c.id != null)
+  } catch (e) { categoryOptions.value = [] }
+}
+
 onMounted(() => {
   load()
   loadPriorityProducts()
   loadMarkupCfg()
+  loadFilterOptions()
 })
 </script>
 
@@ -392,4 +612,11 @@ onMounted(() => {
 .rate-hint { color: #8a9099; font-size: 12px; line-height: 1.6; margin-top: 4px; }
 .rate-hint.orange { color: #ff8f1f; }
 .preview-src { color: #8a9099; font-size: 11px; margin-left: 6px; }
+/* 卡BS（2026-10-03）：筛选条 + 批量弹窗 */
+.filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.filter-count { color: #8a9099; font-size: 12px; margin-right: auto; }
+.batch-line { color: #606266; font-size: 13px; margin: 0 0 12px; }
+.batch-note { color: #8a9099; font-size: 12px; margin: 12px 0 0; }
+.batch-danger { color: #f56c6c; font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+.batch-list { margin: 0 0 8px; padding-left: 18px; color: #606266; font-size: 13px; max-height: 160px; overflow: auto; }
 </style>
