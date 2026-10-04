@@ -80,10 +80,13 @@
               v-for="c in categories"
               :key="c.id"
               class="gm-cat-tag"
-              :class="{ on: form.categoryId === c.id }"
-              @click="form.categoryId = c.id"
+              :class="{ on: form.categoryId === c.id, off: !catAuthorized(c.id) }"
+              :title="catAuthorized(c.id) ? '' : '该分类未授权给这家供应商'"
+              @click="pickCategory(c)"
             >{{ c.name }}</span>
           </div>
+          <!-- 卡BZ-2：未授权分类置灰并说明原因，避免"点了保存没反应" -->
+          <div v-if="authTipText" class="gm-tip block gm-auth-tip">{{ authTipText }}</div>
         </el-form-item>
         <el-form-item label="计量方式" required>
           <el-radio-group v-model="form.weighType">
@@ -136,7 +139,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { goodsAdminApi, categoryAdminApi, userAdminApi, unitAdminApi } from '../../api/modules'
 
@@ -161,6 +164,50 @@ const form = ref({
   supplierId: null, supplyPrice: 0, dailySupply: 0, salePrice: null,
 })
 const markupPercent = ref(30)
+
+// ── 卡BZ-2（2026-10-04）：供应商「分类授权」校验 ──
+// 口径：运营后台给商品选分类时，该分类必须是这家供应商已授权的（与供应商端提交新品一致）。
+// supplierCategoryIds = null 表示"还不知道"（未选供应商/接口失败）→ 前端不置灰，仍由后端兜底拦。
+const supplierCategoryIds = ref(null)
+const editSupplierId = ref(null)      // 编辑态下的主供供应商（弹层里没有供应商选择框）
+const initialCategoryId = ref(null)   // 打开弹层时库里的分类，用于判断"分类是否真的改了"
+const selectedSupplierId = computed(() => (editing.value ? editSupplierId.value : form.value.supplierId))
+
+function catAuthorized(id) {
+  const auth = supplierCategoryIds.value
+  if (!auth) return true
+  return auth.includes(id)
+}
+
+const authTipText = computed(() => {
+  const auth = supplierCategoryIds.value
+  if (!auth) return ''
+  const sup = suppliers.value.find((s) => s.supplierId === selectedSupplierId.value)
+  const who = sup?.stallName || '这家供应商'
+  if (!auth.length) return `⚠️ ${who}还没有授权任何分类，请先到『供应商管理 → 分类授权』勾选`
+  return `灰色分类 = ${who}未授权；勾选后才能选（去『供应商管理 → 分类授权』）`
+})
+
+async function loadSupplierCategories(supplierId) {
+  if (!supplierId) { supplierCategoryIds.value = null; return }
+  try {
+    const rows = await categoryAdminApi.getSupplierCategories(supplierId)
+    supplierCategoryIds.value = (rows || []).map((r) => r.categoryId)
+  } catch (e) {
+    supplierCategoryIds.value = null // 拿不到就不拦，交给后端
+  }
+}
+
+function pickCategory(c) {
+  if (!catAuthorized(c.id)) {
+    ElMessage.warning(`「${c.name}」未授权给这家供应商，请先到『供应商管理 → 分类授权』勾选后再选`)
+    return
+  }
+  form.value.categoryId = c.id
+}
+
+// 新增态：换供应商 → 重新拉它的可发布分类
+watch(() => form.value.supplierId, (v) => { if (!editing.value) loadSupplierCategories(v) })
 
 // ── 卡BV-2（2026-10-03）：计量单位下拉（GET /units，只启用中，按 sort） ──
 const units = ref([])
@@ -219,6 +266,10 @@ function openCreate() {
   form.value = { name: '', categoryId: null, weighType: 1, unit: '斤', specText: '', supplierId: null, supplyPrice: 0, dailySupply: 0, salePrice: null }
   initialSalePrice.value = null
   markupPercent.value = 30
+  // 卡BZ-2：换供应商才重新拉分类授权，这里先清空
+  editSupplierId.value = null
+  initialCategoryId.value = null
+  supplierCategoryIds.value = null
   dialog.value = true
 }
 
@@ -242,6 +293,11 @@ function openEdit(row) {
   // 记下原值作为脏标记基线：不动销售价框 → save() 不发这个字段 → 后端重算
   initialSalePrice.value = row.salePrice ?? null
   markupPercent.value = Math.round((row.markupRate || 0) * 100)
+  // 卡BZ-2：记下"打开时的分类"和主供供应商，并拉它的分类授权（未授权的标签置灰）
+  initialCategoryId.value = form.value.categoryId
+  editSupplierId.value = row.primarySupplier?.supplierId ?? null
+  supplierCategoryIds.value = null
+  loadSupplierCategories(editSupplierId.value)
   dialog.value = true
 }
 
@@ -257,6 +313,15 @@ async function save() {
   if (!form.value.name) { ElMessage.warning('请填写商品名称'); return }
   if (!form.value.categoryId) { ElMessage.warning('请选择分类'); return }
   if (!editing.value && !form.value.supplierId) { ElMessage.warning('请选择供应商'); return }
+  // 卡BZ-2：分类真的改了、且新分类未授权给该供应商 → 前端先拦（后端同样会拦，双保险）
+  if (
+    form.value.categoryId !== initialCategoryId.value &&
+    supplierCategoryIds.value &&
+    !supplierCategoryIds.value.includes(form.value.categoryId)
+  ) {
+    ElMessage.warning('该商品分类未授权给这家供应商，请先到『供应商管理 → 分类授权』勾选后再保存')
+    return
+  }
   saving.value = true
   try {
     const payload = {
@@ -337,6 +402,17 @@ onMounted(async () => {
   background: #e6f7ef;
   color: #00b96b;
   font-weight: 600;
+}
+/* 卡BZ-2：该分类未授权给这家供应商 → 置灰不可选 */
+.gm-cat-tag.off {
+  background: #f7f8fa;
+  color: #c8ccd4;
+  cursor: not-allowed;
+}
+/* 当前分类恰好是未授权的（历史遗留商品）→ 用琥珀色标出来，提示运营换一个 */
+.gm-cat-tag.off.on {
+  background: #fdf6e3;
+  color: #b88230;
 }
 .gm-tip {
   color: #909399;

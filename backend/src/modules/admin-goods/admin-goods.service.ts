@@ -458,9 +458,33 @@ export class AdminGoodsService {
   // ────────────────────────────────────────
   // 新增商品（归属供应商 + 供货价 + 加价比例 + 规格，创建商品 + 供货关系）
   // ────────────────────────────────────────
+  /// 卡BZ-2（2026-10-04，大辉拍板）：后台给商品分类时必须命中该供应商的「分类授权」。
+  /// 口径与供应商端提交新品一致（supplier_category 决定可发布范围）：未授权 → 拦下并给出可操作提示，
+  /// 运营先去「供应商管理 → 分类授权」勾选后重试。
+  private async assertSupplierCategoryAuthorized(supplierId: bigint | number, categoryId: bigint | number, categoryName?: string | null) {
+    const ok = await this.prisma.supplierCategory.findFirst({
+      where: { supplierId: BigInt(supplierId), categoryId: BigInt(categoryId) },
+    })
+    if (ok) return
+
+    const [sup, cat] = await Promise.all([
+      this.prisma.supplier.findUnique({ where: { id: BigInt(supplierId) }, select: { stallName: true } }),
+      categoryName
+        ? Promise.resolve({ name: categoryName })
+        : this.prisma.category.findUnique({ where: { id: BigInt(categoryId) }, select: { name: true } }),
+    ])
+    throw new BizException(
+      ErrorCode.FORBIDDEN,
+      `「${sup?.stallName ?? '该供应商'}」未授权「${cat?.name ?? '该'}」分类，请先到「供应商管理 → 分类授权」为该供应商勾选该分类，再提交`,
+    )
+  }
+
   async createProduct(operatorId: bigint, dto: CreateProductDto) {
     const supplier = await this.prisma.supplier.findUnique({ where: { id: BigInt(dto.supplierId) } })
     if (!supplier) throw new BizException(ErrorCode.PARAM_ERROR, '供应商不存在')
+
+    // 卡BZ-2：分类必须已授权给该供应商（放在定价解析之前，免得给未授权分类白算一遍加价比例）
+    await this.assertSupplierCategoryAuthorized(dto.supplierId, dto.categoryId)
 
     // 卡BI：运营显式给比例 = 单品单独设过（markupOverridden=1）；
     // 未给 → 按配置解析默认比例（供应商 > 分类 > 全局 > 0.30），markupOverridden=0
@@ -539,6 +563,14 @@ export class AdminGoodsService {
     if (dto.categoryId !== undefined) {
       const cat = await this.prisma.category.findUnique({ where: { id: BigInt(dto.categoryId) } })
       if (!cat) throw new BizException(ErrorCode.PARAM_ERROR, '分类不存在')
+      // 卡BZ-2（2026-10-04）：改分类时，目标分类必须已授权给该商品的主供供应商。
+      // 值没变则不校验 —— 免得历史遗留的「分类未授权」商品连改个价都保存不了。
+      if (BigInt(dto.categoryId) !== product.categoryId) {
+        const primarySupplierId = product.links[0]?.supplierId
+        if (primarySupplierId) {
+          await this.assertSupplierCategoryAuthorized(primarySupplierId, dto.categoryId, cat.name)
+        }
+      }
       productUpdate.categoryId = BigInt(dto.categoryId)
       categoryNameAfter = cat.name
     }
