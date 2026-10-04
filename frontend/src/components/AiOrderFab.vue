@@ -56,6 +56,8 @@
       <view class="aifab-rec-box">
         <view class="aifab-rec-mic">🎤</view>
         <view class="aifab-rec-title">{{ recTitle }}</view>
+        <!-- 合规（2026-10-04）：AI 生成合成内容显著标识（微信《人工智能生成合成内容标识办法》）-->
+        <view class="aifab-rec-gen">AI生成 · 识别结果仅供参考</view>
         <view class="aifab-rec-tip">松开即识别 · 最长 30 秒</view>
       </view>
     </view>
@@ -414,6 +416,12 @@ const openAssistant = () => uni.switchTab({ url: '/pages/buyer/cart' })
   color: $text-body;
   font-weight: 600;
   min-height: 20px;
+}
+/* 合规（2026-10-04）：AI 生成合成内容显著标识 */
+.aifab-rec-gen {
+  margin-top: 7px;
+  font-size: 10.5px;
+  color: #C41E3A;
 }
 .aifab-rec-tip {
   margin-top: 8px;

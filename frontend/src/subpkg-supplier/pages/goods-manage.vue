@@ -64,7 +64,7 @@
           </view>
           <!-- 卡BP：拍照后 AI 自动识别（loading/成功/失败三态，失败不阻断、留空手填） -->
           <view v-if="aiState === 'loading'" class="ai-flash"><view class="ai-spin"></view>AI 正在识别照片，约 2~3 秒…</view>
-          <view v-else-if="aiState === 'done'" class="ai-flash"><text>✨</text> AI 已识别，已帮你填好下面 3 项，请核对</view>
+          <view v-else-if="aiState === 'done'" class="ai-flash"><text>✨</text> 以下内容由人工智能（AI）生成，已帮你填好下面 3 项，请核对</view>
           <view v-else-if="aiState === 'fail'" class="muted" style="margin-top:6px;">AI 没认出这张照片，手动填写也一样能提交</view>
         </view>
       </view>

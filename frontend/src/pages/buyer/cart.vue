@@ -14,6 +14,8 @@
       <view class="col-inner">
         <!-- ① 公告气泡（原助手页 kefu.vue 的 4 条，文案逐字照抄） -->
         <view class="notice">
+          <!-- 合规（2026-10-04）：AI 生成合成内容显著标识（微信《人工智能生成合成内容标识办法》）-->
+          <view class="notice-line ai-notice">📢 本页订单草稿由人工智能（AI）生成，仅供参考，请核对无误后再下单</view>
           <view class="notice-line">🤖 智能下单助手在线，发送想买的菜和数量即可整理订单草稿</view>
           <view class="notice-line">💬 可以一句一句来（「土豆5斤」→「再加5斤土豆」），草稿会一直累加；要改说「土豆改成20斤」</view>
           <view class="notice-line">🎤 按住左下角话筒说话也行</view>
@@ -24,6 +26,7 @@
         <view class="brow">
           <view class="bav">🤖</view>
           <view class="bubble ai">
+            <view class="ai-badge">AI生成</view>
             <view class="bb-line">您好，我是辉崧鲜配智能下单助手～</view>
             <view class="bb-line">告诉我您要买什么，比如「土豆50斤，白菜两颗，明天早上送到」，我帮您整理成订单。</view>
             <view class="bb-line">后面还想加菜，直接接着说就行。</view>
@@ -42,6 +45,7 @@
           <view v-else class="brow">
             <view class="bav">🤖</view>
             <view class="bubble ai">
+              <view class="ai-badge">AI生成</view>
               <!-- 整句直接给（如「没听清，可以再说一遍或改用打字」） -->
               <template v-if="m.text">
                 <view class="bb-line">{{ m.text }}</view>
@@ -173,6 +177,9 @@
         <view id="cart-col-bottom" style="height: 8px;"></view>
       </view>
     </scroll-view>
+
+    <!-- 合规（2026-10-04）：AI 生成内容提示条（微信《人工智能生成合成内容标识办法》）-->
+    <view class="ai-gen-bar">🤖 内容由人工智能（AI）生成，请核对后下单</view>
 
     <!-- ⑪ 吸底输入栏：🎤 按住说话 + 输入框 + 发送 -->
     <view class="dinput">
@@ -744,6 +751,19 @@ onShareAppMessage(() => ({
   padding: 6px 9px; border-radius: 8px; margin-bottom: 7px;
 }
 .notice-line { display: block; }
+
+/* ── 合规（2026-10-04）：AI 生成合成内容显著标识（微信《人工智能生成合成内容标识办法》）── */
+.notice-line.ai-notice { color: #C41E3A; font-weight: 700; }
+.ai-badge {
+  display: inline-block; margin-bottom: 4px; padding: 1px 6px; border-radius: 4px;
+  background: #FFF1F0; color: #CF1322; border: 1px solid #FFCCC7;
+  font-size: 9.5px; line-height: 1.5;
+}
+.ai-gen-bar {
+  position: fixed; left: 0; right: 0; bottom: calc(116px + env(safe-area-inset-bottom));
+  background: #FFF7E6; color: #874D00; font-size: 10.5px; line-height: 1.45;
+  padding: 3px 12px; z-index: 20; border-top: 1px solid #FFE7BA;
+}
 
 /* ── 对话气泡 ── */
 .brow { display: flex; margin-bottom: 6px; align-items: flex-start; gap: 6px; }

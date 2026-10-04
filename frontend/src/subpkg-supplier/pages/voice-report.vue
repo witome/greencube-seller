@@ -1,6 +1,8 @@
 <template>
   <view class="page">
     <!-- ══════════ 说话（原型②屏；确认/结果已抽到 components/VoiceConfirm.vue，卡X）══════════ -->
+    <!-- 合规（2026-10-04）：AI 生成合成内容标识（微信《人工智能生成合成内容标识办法》）-->
+    <view class="notice-ai-gen">🤖 识别与解析结果由人工智能（AI）生成，请核对后再提交</view>
     <view class="notice">🎙️ 说一句人话就能改价 / 报量 —— 说清「哪个菜、多少钱、有多少」<br>该审核的仍然走审核（改价要运营过目），日可供量免审即时生效</view>
 
     <!-- 没听清 / 反问提示（兜底 A：连说两次不行 → 提示改用打字） -->
@@ -193,6 +195,8 @@ onUnload(stopVoiceIfNeeded)
 /* 卡V：说话态留白 = 底部固定条实高（约 230rpx）+ 安全区 + 余量，滚到底例句卡不被压住 */
 .page-pad.tall { height: calc(300rpx + env(safe-area-inset-bottom)); }
 
+/* 合规（2026-10-04）：AI 生成合成内容标识 */
+.notice-ai-gen { background: #FFF1F0; border: 1px solid #FFCCC7; color: #CF1322; font-size: 24rpx; line-height: 1.6; padding: 14rpx 20rpx; border-radius: 12rpx; margin-bottom: 16rpx; }
 .notice { background: #E6F9F0; color: #00995A; font-size: 24rpx; line-height: 1.7; padding: 16rpx 20rpx; border-radius: 12rpx; margin-bottom: 20rpx; }
 
 /* 底部固定条（卡V；视觉沿用商品管理页 .voice-bar 同一套） */

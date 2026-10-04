@@ -82,7 +82,7 @@
 
         <!-- 展开：单条表单同款字段与顺序 -->
         <view v-if="d.open" class="bc-body">
-          <view v-if="d.phase === 'done' && (d.ai.name || d.ai.category || d.ai.weigh)" class="ai-flash"><text>✨</text> AI 已识别这张照片，已帮你填好下面 3 项，请核对</view>
+          <view v-if="d.phase === 'done' && (d.ai.name || d.ai.category || d.ai.weigh)" class="ai-flash"><text>✨</text> 以下内容由人工智能（AI）生成，已帮你填好下面 3 项，请核对</view>
           <view v-else-if="d.phase === 'warn'" class="muted" style="margin-bottom:6px;">AI 没认出这张照片，手动填写也一样能提交（和单条链路同一兜底口径）</view>
 
           <view class="form-row"><view class="fr-l">商品名称</view><view class="fr-r"><input v-model="d.form.name" class="ipt" :class="{ 'ipt-ai': d.ai.name }" placeholder="如：山东大姜（老姜）" @input="d.ai.name = false" /></view></view>

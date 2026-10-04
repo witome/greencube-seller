@@ -11,6 +11,8 @@
       </view>
 
       <view class="vc-body">
+        <!-- 合规（2026-10-04）：AI 生成合成内容显著标识（微信《人工智能生成合成内容标识办法》）-->
+        <view class="vc-ai-gen">🤖 以下内容由人工智能（AI）生成，请核对后再提交</view>
         <!-- ══════════ 确认（原型③屏，最关键的一屏）══════════ -->
         <template v-if="phase === 'confirm'">
           <view class="draft-h">识别原文：「{{ rawText }}」</view>
@@ -295,6 +297,8 @@ function again() {
 .vc-x { font-size: 34rpx; color: #8A9099; padding: 0 8rpx; line-height: 1; }
 .vc-x.disabled { opacity: 0.35; }
 /* 内容自适应高度、封顶 85vh 内（头部约 100rpx）：内部滚动，草稿卡+三选一+候选多长都不撑爆 */
+/* 合规（2026-10-04）：AI 生成合成内容显著标识 */
+.vc-ai-gen { background: #FFF1F0; border: 1px solid #FFCCC7; color: #CF1322; font-size: 24rpx; line-height: 1.6; padding: 14rpx 18rpx; border-radius: 12rpx; margin: 8rpx 0 16rpx; }
 .vc-body { max-height: calc(85vh - 100rpx); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8rpx 24rpx 0; box-sizing: border-box; }
 
 .tip-warn { background: #FFF8E8; border: 1px solid #FFE3A3; color: #8A5A00; font-size: 26rpx; line-height: 1.6; padding: 16rpx 20rpx; border-radius: 12rpx; margin-bottom: 20rpx; }
