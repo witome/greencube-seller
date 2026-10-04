@@ -1,7 +1,7 @@
 <template>
   <view class="page">
     <!-- 权限边界提示 -->
-    <view class="notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</view>
+    <view class="notice">📝 新商品与品名/单位/备注等变更需运营审核后生效；供货价与日可供量审核通过后可自行调整、即时生效。销售价由平台维护，您不可见</view>
 
     <!-- 搜索 + 状态筛选 -->
     <view class="card">
@@ -904,8 +904,21 @@ async function submitEdit() {
 
   if (!Object.keys(changes).length) { uni.showToast({ title: '未填写任何变更内容', icon: 'none' }); return }
 
-  await supplierApi.applyChange(editTarget.value.id, { changes })
-  uni.showToast({ title: '变更已提交，等待审核', icon: 'none' })
+  // 卡CB（2026-10-04）：按「实际改了什么」分流
+  // ① 只改了供货价/日可供量 → 免审即时生效（不进审核队列）
+  // ② 含品名/单位/备注 → 走变更审核；若同时夹带了价量，提示要说明价量未即时生效
+  const changeKeys = Object.keys(changes)
+  const isPriceKey = (k) => k === 'supplyPrice' || k === 'dailySupply'
+  const allPrice = changeKeys.every(isPriceKey)
+  const mixedPrice = !allPrice && changeKeys.some(isPriceKey)
+
+  if (allPrice) {
+    await supplierApi.quickPrice(editTarget.value.id, changes)
+    uni.showToast({ title: '已生效（免审核）', icon: 'none' })
+  } else {
+    await supplierApi.applyChange(editTarget.value.id, { changes })
+    uni.showToast({ title: mixedPrice ? '含需审核项，已一并提交审核' : '已提交，等待审核', icon: 'none' })
+  }
   editTarget.value = null
   load()
 }

@@ -5,6 +5,7 @@ import { ApplyGoodsDto } from './dto/apply-goods.dto'
 import { EditPendingApplyDto } from './dto/edit-pending-apply.dto'
 import { ChangeGoodsDto } from './dto/change-goods.dto'
 import { QuickStockDto } from './dto/quick-stock.dto'
+import { QuickPriceDto } from './dto/quick-price.dto' // 卡CB（2026-10-04）：供货价+日可供量免审
 import { AuditService } from '../audit/audit.service'
 import { UpdateStatusDto } from './dto/update-status.dto'
 // 卡BV-1（2026-10-03）：计量单位校验（放行集合 = 启用中的单位 ∪ 当前正在使用的单位）
@@ -449,6 +450,97 @@ export class SupplierGoodsService {
     })
 
     return { productId, dailySupply: dto.dailySupply, effectiveImmediately: true }
+  }
+
+  // ────────────────────────────────────────
+  // ⚡ 供应商自改「供货价 + 日可供量」（免审核，即时生效，卡CB 2026-10-04）
+  // 大辉拍板：只对「供货价 + 日可供量」免审；品名/单位/备注仍走审核；
+  // 不建 ProductApplication（免审 = 不进审核队列），审计照写（铁律 3）
+  // ────────────────────────────────────────
+  async quickPrice(userId: bigint, productId: number, dto: QuickPriceDto) {
+    const supplier = await this.getSupplier(userId)
+
+    const link = await this.prisma.productSupplierLink.findUnique({
+      where: { productId_supplierId: { productId: BigInt(productId), supplierId: supplier.id } },
+      include: { product: true },
+    })
+    if (!link) throw new BizException(ErrorCode.FORBIDDEN, '该商品不属于本供应商')
+
+    // 两个字段都没传 → 参数错
+    if (dto.supplyPrice === undefined && dto.dailySupply === undefined) {
+      throw new BizException(ErrorCode.PARAM_ERROR, '请至少填写供货价或日可供量')
+    }
+
+    const product = link.product
+    if (product.status !== ProductStatus.ON_SALE) {
+      throw new BizException(ErrorCode.PRODUCT_OFF_SHELF, '仅已上架商品可调整价格/可供量')
+    }
+
+    // 与「含价量的在审变更」互斥：在审变更若含 supplyPrice/dailySupply → 拦；
+    // 只含品名/单位/备注 → 放行（不冲突）
+    const inProgress = await this.prisma.productApplication.findFirst({
+      where: { productId: BigInt(productId), type: 2, status: 0 },
+    })
+    if (inProgress) {
+      const payload = (inProgress.payload ?? {}) as Record<string, unknown>
+      if (payload.supplyPrice !== undefined || payload.dailySupply !== undefined) {
+        throw new BizException(ErrorCode.CHANGE_IN_PROGRESS, '该商品有正在审核的价格/可供量变更，请等审核完成后再调整')
+      }
+    }
+
+    const before = {
+      supplierId: Number(supplier.id),
+      supplyPrice: Number(link.supplyPrice),
+      dailySupply: Number(link.dailySupply),
+      salePrice: Number(product.salePrice),
+    }
+
+    const linkUpdate: any = {}
+    if (dto.supplyPrice !== undefined) linkUpdate.supplyPrice = dto.supplyPrice
+    if (dto.dailySupply !== undefined) linkUpdate.dailySupply = dto.dailySupply
+
+    // 改供货价 → 按加价比例重算销售价，口径与审核通过路径一模一样
+    // （admin-goods.service.ts reviewChange：Math.round(newSupplyPrice * (1 + markupRate) * 100) / 100）
+    // markupRate / markupOverridden 一律不动
+    let newSalePrice: number | null = null
+    const productUpdate: any = {}
+    if (dto.supplyPrice !== undefined) {
+      newSalePrice = Math.round(dto.supplyPrice * (1 + Number(product.markupRate)) * 100) / 100
+      productUpdate.salePrice = newSalePrice
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.productSupplierLink.update({ where: { id: link.id }, data: linkUpdate }),
+      ...(newSalePrice !== null
+        ? [this.prisma.product.update({ where: { id: product.id }, data: productUpdate })]
+        : []),
+    ])
+
+    const after = {
+      supplierId: Number(supplier.id),
+      supplyPrice: dto.supplyPrice !== undefined ? dto.supplyPrice : before.supplyPrice,
+      dailySupply: dto.dailySupply !== undefined ? dto.dailySupply : before.dailySupply,
+      salePrice: newSalePrice !== null ? newSalePrice : before.salePrice,
+    }
+
+    // 铁律 3：免审即时改价 → 关键操作，全量写审计（沿用 quickStock 写法）
+    await this.audit.log({
+      operatorId: userId,
+      action: 'QUICK_UPDATE_SUPPLY_PRICE',
+      entity: 'product',
+      entityId: productId,
+      before,
+      after,
+    })
+
+    // 改到什么就回什么（返回改后生效值）
+    return {
+      productId,
+      supplyPrice: after.supplyPrice,
+      dailySupply: after.dailySupply,
+      salePrice: after.salePrice,
+      effectiveImmediately: true,
+    }
   }
 
   // ────────────────────────────────────────

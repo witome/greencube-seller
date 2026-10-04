@@ -70,7 +70,7 @@ export const buyerApi = {
   updateProfile: (data) => put('/buyer/profile', data),
   // 审核催办（返回 { urged, nextFollowHours }）
   urgeVerify: () => post('/buyer/urge-verify'),
-  // 首页内容一次取全（横幅/公告/今日推荐位，2026-09-11 首页接口化卡）
+  // 首页内容一次取全（横幅/公告/今日特价位，2026-09-11 首页接口化卡）
   getHomeContent: () => get('/buyer/home-content'),
 
   // 卡AC（2026-09-30）：自助注销 —— 先看能不能注销（canCancel + blockers），确认后再提交
@@ -126,6 +126,7 @@ export const supplierApi = {
   submitGoods: (data) => post('/supplier-goods/apply', data), // 新品提交（审核制）
   applyChange: (productId, data) => post(`/supplier-goods/${productId}/change`, data),
   quickStock: (productId, dailySupply) => put(`/supplier-goods/${productId}/stock`, { dailySupply }), // 免审即时生效
+  quickPrice: (productId, data) => put(`/supplier-goods/${productId}/price`, data), // 卡CB：审核通过后改价免审即时生效
   // 履约
   getStockList: (date) => get('/supplier-fulfill/stock-list', { date }),
   ackStock: (orderId) => post('/supplier-fulfill/ack', { orderId }), // 卡BJ：收到，开始备货（接单，幂等）

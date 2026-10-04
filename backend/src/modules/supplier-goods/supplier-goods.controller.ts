@@ -4,6 +4,7 @@ import { ApplyGoodsDto } from './dto/apply-goods.dto'
 import { EditPendingApplyDto } from './dto/edit-pending-apply.dto'
 import { ChangeGoodsDto } from './dto/change-goods.dto'
 import { QuickStockDto } from './dto/quick-stock.dto'
+import { QuickPriceDto } from './dto/quick-price.dto' // 卡CB（2026-10-04）：供货价+日可供量免审
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
@@ -58,6 +59,13 @@ export class SupplierGoodsController {
   @Roles(Role.SUPPLIER)
   async quickStock(@CurrentUser('userId') userId: bigint, @Param('productId') productId: string, @Body() dto: QuickStockDto) {
     return this.service.quickStock(userId, Number(productId), dto)
+  }
+
+  /// ⚡ 自改供货价+日可供量（免审即时生效，卡CB 2026-10-04：不建 ProductApplication，写审计）
+  @Put(':productId/price')
+  @Roles(Role.SUPPLIER)
+  async quickPrice(@CurrentUser('userId') userId: bigint, @Param('productId') productId: string, @Body() dto: QuickPriceDto) {
+    return this.service.quickPrice(userId, Number(productId), dto)
   }
 
   /// 📷 换封面（免审即时生效，卡Z1：照片不涉价格口径，不走审核队列）
