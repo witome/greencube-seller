@@ -243,6 +243,7 @@ const load = async () => {
   cart.value = data.list || []
   // 合计只认 GET /cart 的后端返回值，不在前端重算
   totalAmount.value = money(data.totalAmount)
+  syncTargetsAfterLoad()
 }
 
 const editingCartItemId = ref(null)
@@ -302,6 +303,17 @@ const commitQtyEdit = async (it) => {
 const targetQty = reactive({}) // cartItemId -> 本地目标数量
 const rowBusy = {} // cartItemId -> true（该行 PUT 在飞）
 
+// 卡CD-2（2026-10-04）：本地目标值只是「服务端还没确认的那个意图」的临时占位。
+// 每次 load() 拿到服务端真值后收口：在飞的行（用户正在点的）保留目标值，绝不能丢；
+// 其余行的目标值全部作废 —— 显示与下次 +N 的基准都回到服务端真值。
+// 这正是「AI 助手改量 / 另一台设备改量」能正确反映到界面与后续操作的关键。
+const syncTargetsAfterLoad = () => {
+  Object.keys(targetQty).forEach((id) => {
+    if (rowBusy[id]) return // 该行 PUT 在飞，不动
+    delete targetQty[id]
+  })
+}
+
 const changeQty = async (it, delta) => {
   finishQtyEdit()
   const id = it.cartItemId
@@ -333,7 +345,9 @@ const flushRow = async (id) => {
         await remove({ cartItemId: id })
         break
       }
-      if (Number(row.qty) === target) break // 服务端已追上目标
+      // 卡CD-2：服务端已追上目标 → 本地目标值使命完成，立刻作废（收敛即清），
+      // 否则它会继续骗显示、并当下次 +N 的基准去覆盖服务端新真值
+      if (Number(row.qty) === target) { delete targetQty[id]; break }
       try {
         // PUT /cart/:id 是覆盖语义，直接覆盖为本地目标值
         await buyerApi.updateCart(id, target)
@@ -578,6 +592,9 @@ onUnload(() => {
   visible.value = false
   // ⚠️ 必须 off：页面反复进出会重复注册同一个监听 → 一次事件触发 N 遍 load()
   uni.$off('ai-draft-synced', onDraftSynced)
+  // 卡CD-2：targetQty/rowBusy 都是内存态，离页清空，防下次进页面拿到上一轮残留
+  Object.keys(targetQty).forEach((id) => delete targetQty[id])
+  Object.keys(rowBusy).forEach((id) => delete rowBusy[id])
 })
 
 onLoad(async () => {
