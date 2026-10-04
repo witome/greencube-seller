@@ -25,6 +25,13 @@
       </div>
     </div>
 
+    <!-- 卡BP-2：手机专线在线状态（config.gateway；online = 180 秒内有心跳） -->
+    <div v-if="config && config.gateway" class="rm-gw" :class="config.gateway.online ? 'rm-gw-on' : 'rm-gw-off'">
+      <template v-if="config.gateway.online">手机专线：在线（{{ fmtAgo(config.gateway.lastHeartbeatAt) }}心跳）</template>
+      <template v-else-if="config.gateway.lastHeartbeatAt">手机专线：离线，请人工跟进</template>
+      <template v-else>手机专线：从未上线</template>
+    </div>
+
     <!-- 设置摘要条（list.settings + config.callerNumber） -->
     <div v-if="settings" class="rm-setbar">
       <span class="rm-setbar-em">⚙️</span>
@@ -112,6 +119,38 @@
       <el-empty v-if="!rows.length && !loading" description="暂无备货中订单" />
     </el-card>
 
+    <!-- 卡BP-2：手机专线设置（卡BP-1 新四字段；保存走既有 PUT /admin/supplier-notify/config，与现有字段一起提交） -->
+    <el-card shadow="never" style="margin-top: 12px">
+      <template #header>📱 手机专线设置</template>
+      <div class="rm-phone-row">
+        <span class="rm-phone-k">通道</span>
+        <el-radio-group v-model="phoneForm.channel">
+          <el-radio value="phone">手机专线</el-radio>
+          <el-radio value="aliyun">云语音</el-radio>
+          <el-radio value="off">关闭</el-radio>
+        </el-radio-group>
+      </div>
+      <div class="rm-phone-row">
+        <span class="rm-phone-k">响铃秒数</span>
+        <el-input-number v-model="phoneForm.ringSeconds" :step="1" :precision="0" size="small" />
+        <span class="rm-phone-unit">秒（合法范围 1~30，非法值由后端拒绝）</span>
+      </div>
+      <div class="rm-phone-row">
+        <span class="rm-phone-k">接通后挂断</span>
+        <el-input-number v-model="phoneForm.hangupAfterAnswerSeconds" :step="1" :precision="0" size="small" />
+        <span class="rm-phone-unit">秒（合法范围 0~30，0 = 接通后不自动挂断）</span>
+      </div>
+      <div class="rm-phone-row">
+        <span class="rm-phone-k">提醒专号</span>
+        <el-input v-model="phoneForm.gatewayPhoneNo" size="small" style="width: 200px" maxlength="20" placeholder="留空则供应商端不显示" />
+        <span class="rm-phone-unit">≤20 字符，仅供展示与复制，不是拨打目标</span>
+      </div>
+      <div style="margin-top: 14px; display: flex; align-items: center; gap: 10px">
+        <el-button type="primary" size="small" :loading="phoneSaving" @click="savePhoneLine">保存手机专线设置</el-button>
+        <span class="rm-phone-unit">保存与现有催办设置一起提交；后端校验失败（400）时错误信息会原样弹出</span>
+      </div>
+    </el-card>
+
     <!-- 拨打记录抽屉（原型 S2b）：每一通的台账（时间 / 自动还是人工 / 结果 / callId） -->
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="420px">
       <div v-loading="recordsLoading">
@@ -123,6 +162,8 @@
             <small>{{ fmtFull(r.at) }}</small>
             <small v-if="r.note">{{ r.note }}</small>
             <small v-if="r.callId" class="rm-rec-callid">callId: {{ r.callId }}</small>
+            <!-- 卡BP-2：台账补三项（通道 / 是否接通 / 时长） -->
+            <small>通道：{{ channelLabel(r.channel) }} · {{ r.result === 'connected' ? '已接通' : '未接通' }} · 时长 {{ r.durationSec != null ? r.durationSec + ' 秒' : '—' }}</small>
           </div>
           <div class="rm-rec-result" :style="{ color: resultColor(r.result) }">{{ resultLabel(r.result) }}</div>
         </div>
@@ -133,7 +174,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../api/request'
@@ -156,11 +197,13 @@ const config = ref(null)
 const todayStats = computed(() => config.value?.todayStats || { calls: 0, connected: 0, needManual: 0 })
 
 // 「结果」列中文映射（照原型/任务书冻结口径）
+// 卡BP-2：补手机专线新值 dispatched；no_answer 文案按卡BP-2 口径改为「未接听」；其余原值不动
 const RESULT_MAP = {
   dry_run: '演练模式未真拨',
   initiated: '已发起（等回执）',
+  dispatched: '已派发',
   connected: '已接通',
-  no_answer: '未接通',
+  no_answer: '未接听',
   failed: '拨打失败',
   skipped_no_phone: '手机号为空',
   skipped_ack_call_off: '供应商已关闭电话提醒',
@@ -170,13 +213,27 @@ const resultLabel = (r) => (r == null ? '未拨打' : RESULT_MAP[r] || r)
 const resultTagType = (r) => {
   if (r === 'connected') return 'success'
   if (r === 'no_answer' || r === 'failed') return 'danger'
-  if (r === 'initiated' || r === 'dry_run') return 'warning'
+  if (r === 'initiated' || r === 'dry_run' || r === 'dispatched') return 'warning'
   return 'info'
 }
 const resultColor = (r) => {
   if (r === 'connected') return '#00a05c'
   if (r === 'no_answer' || r === 'failed') return '#fa5151'
   return '#909399'
+}
+
+// 卡BP-2：台账通道映射（其他值原样显示，空显示 —）
+const CHANNEL_MAP = { phone: '我的手机', aliyun: '云语音' }
+const channelLabel = (c) => (c == null ? '—' : CHANNEL_MAP[c] || c)
+
+// 卡BP-2：心跳相对时间（「3 分钟前」等，配合在线文案「在线（xx 前心跳）」）
+const fmtAgo = (iso) => {
+  if (!iso) return ''
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (s < 60) return `${s} 秒前`
+  if (s < 3600) return `${Math.floor(s / 60)} 分钟前`
+  if (s < 86400) return `${Math.floor(s / 3600)} 小时前`
+  return `${Math.floor(s / 86400)} 天前`
 }
 
 // 统计：待备货=全部行；超时=分钟数≥阈值且未接单未停止；需人工=nextAction==='manual'
@@ -220,6 +277,8 @@ async function fetchAll() {
     rows.value = listRes.rows || []
     settings.value = listRes.settings || null
     if (cfg) config.value = cfg
+    // 卡BP-2：手机专线表单只在首次拿到 config 时初始化一次（列表每分钟刷新，不能反复覆盖用户正在编辑的值）
+    if (config.value && !phoneFormInited.value) syncPhoneForm()
   } catch (e) { /* 已提示 */ } finally {
     loading.value = false
   }
@@ -287,6 +346,54 @@ onMounted(() => {
 onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
+
+// ── 卡BP-2：手机专线设置（channel / ringSeconds / hangupAfterAnswerSeconds / gatewayPhoneNo） ──
+// 保存走既有 PUT /admin/supplier-notify/config：既有字段原样带回一起提交，避免把现有配置冲掉。
+// 前端不做 1~30 钳制（el-input-number 不设 min/max），0/99 等非法值直接到后端 → 400 → request 拦截器原样 toast。
+const phoneForm = reactive({ channel: 'phone', ringSeconds: 5, hangupAfterAnswerSeconds: 2, gatewayPhoneNo: '' })
+const phoneFormInited = ref(false)
+const phoneSaving = ref(false)
+
+function syncPhoneForm() {
+  const c = config.value || {}
+  phoneForm.channel = c.channel || 'phone'
+  phoneForm.ringSeconds = c.ringSeconds ?? 5
+  phoneForm.hangupAfterAnswerSeconds = c.hangupAfterAnswerSeconds ?? 2
+  phoneForm.gatewayPhoneNo = c.gatewayPhoneNo || ''
+  phoneFormInited.value = true
+}
+
+async function savePhoneLine() {
+  const c = config.value || {}
+  phoneSaving.value = true
+  try {
+    config.value = await request.put('/admin/supplier-notify/config', {
+      // 既有字段（从当前 config 原样带回，与四新字段一起提交）
+      enabled: c.enabled,
+      thresholdMinutes: c.thresholdMinutes,
+      secondGapMinutes: c.secondGapMinutes,
+      maxCalls: c.maxCalls,
+      quietEnabled: c.quietEnabled,
+      quietStart: c.quietStart,
+      quietEnd: c.quietEnd,
+      // 卡BP-1 新四字段
+      channel: phoneForm.channel,
+      ringSeconds: phoneForm.ringSeconds,
+      hangupAfterAnswerSeconds: phoneForm.hangupAfterAnswerSeconds,
+      gatewayPhoneNo: String(phoneForm.gatewayPhoneNo || '').trim() === '' ? null : String(phoneForm.gatewayPhoneNo).trim(),
+    })
+    syncPhoneForm()
+    ElMessage.success('手机专线设置已保存')
+  } catch (e) {
+    // 卡BP-2：400 的错误信息原样提示。后端 class-validator 的 msg 是数组，
+    // request 拦截器把数组直接传给 ElMessage 会弹「空框」（ElMessage 把数组当 options 展开），这里兜底合并成一句
+    const m = e?.response?.data?.msg ?? e?.message
+    const text = Array.isArray(m) ? m.join('；') : m
+    if (text) ElMessage.error(text)
+  } finally {
+    phoneSaving.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -389,5 +496,45 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+}
+/* ── 卡BP-2：手机专线在线状态 ── */
+.rm-gw {
+  display: inline-block;
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.rm-gw-on {
+  background: #f0fff6;
+  border: 1px solid #b7ebc9;
+  color: #00a05c;
+}
+.rm-gw-off {
+  background: #fff3f3;
+  border: 1px solid #ffd9d9;
+  color: #fa5151;
+}
+/* ── 卡BP-2：手机专线设置卡 ── */
+.rm-phone-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.rm-phone-row:first-of-type {
+  margin-top: 0;
+}
+.rm-phone-k {
+  width: 90px;
+  color: #606266;
+  text-align: right;
+  flex-shrink: 0;
+}
+.rm-phone-unit {
+  font-size: 12px;
+  color: #909399;
 }
 </style>

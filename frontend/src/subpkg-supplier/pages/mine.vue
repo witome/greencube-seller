@@ -23,6 +23,12 @@
         <view class="li-main"><view class="li-t">📞  电话提醒</view><view class="li-d">超 {{ notify.thresholdMinutes }} 分钟未接单，系统打电话给你</view></view>
         <switch :key="notify.ackCallEnabled ? 'on' : 'off'" :checked="notify.ackCallEnabled" color="#00b96b" @change="onNotifyToggle" />
       </view>
+      <!-- 卡BP-2：提醒专号存备注引导（号码只来自 GET /supplier-notify/me；reminderPhoneNo 为空 → 整行不显示；
+           serviceHotline 为空 → 只省略客服那句，不整行隐藏）。本号仅展示与复制，不是拨打目标 -->
+      <view v-if="notify.reminderPhoneNo" class="bp2-hint">
+        <view class="bp2-hint-tx">新订单提醒电话是 {{ notify.reminderPhoneNo }}，请存为「辉崧鲜配新订单提醒」；本号仅用于提醒，请勿回拨<text v-if="notify.serviceHotline">，有事请拨客服 {{ notify.serviceHotline }}</text>。</view>
+        <view class="bp2-hint-copy" @tap="copyReminderNo">复制号码</view>
+      </view>
     </view>
 
     <!-- 身份切换 -->
@@ -112,6 +118,14 @@ const onNotifyToggle = async (e) => {
     t('设置失败，请重试')
   }
 }
+
+// ─── 卡BP-2（2026-10-04）：复制提醒专号（本号仅展示与复制，拨号目标永远是供应商自己的手机）───
+const copyReminderNo = () => {
+  uni.setClipboardData({
+    data: notify.value.reminderPhoneNo,
+    success: () => t('号码已复制，请存为「辉崧鲜配新订单提醒」'),
+  })
+}
 </script>
 
 <style lang="scss" scoped>
@@ -120,4 +134,8 @@ const onNotifyToggle = async (e) => {
 .avatar { width: 48px; height: 48px; border-radius: 50%; background: #e6f9f0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
 .user-name { font-size: 16px; font-weight: 700; color: $text-title; }
 .user-phone { font-size: 12px; color: $text-second; margin-top: 3px; }
+/* 卡BP-2：提醒专号引导行（次文字观感对齐 .li-t / .li-d；缩进对齐上方开关行的文字） */
+.bp2-hint { display: flex; align-items: flex-start; gap: 10px; padding: 0 4px 2px 72px; }
+.bp2-hint-tx { flex: 1; font-size: $font-sm; color: $text-second; line-height: 1.6; }
+.bp2-hint-copy { flex-shrink: 0; font-size: $font-sm; color: $link; padding: 0 6px; }
 </style>
