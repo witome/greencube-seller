@@ -18,11 +18,7 @@
         </view>
       </view>
       <!-- 卡BN-3：未接单且已超阈值 → 红字提示（明细下方、按钮上方；阈值/createdAt 取不到不显示，不出 NaN） -->
-      <!-- 卡BP-2：提示条带上提醒专号（reminderPhoneNo 为空 → 维持原文案） -->
-      <view v-if="!o.ackAt && overThreshold(o)" class="sc-unacked">
-        <template v-if="reminderPhoneNo">已超过 {{ notifyThreshold }} 分钟未接单，系统已用提醒专号 {{ reminderPhoneNo }} 打电话提醒你。请尽快接单，避免耽误配送。</template>
-        <template v-else>已超过 {{ notifyThreshold }} 分钟未接单，系统已打电话提醒你。请尽快接单，避免耽误配送。</template>
-      </view>
+      <view v-if="!o.ackAt && overThreshold(o)" class="sc-unacked">已超过 {{ notifyThreshold }} 分钟未接单，系统已打电话提醒你。请尽快接单，避免耽误配送。</view>
       <view class="sc-btns">
         <!-- 卡BJ：未接单 → 主按钮「收到，开始备货」（醒目实心绿）；接单后恢复原来的两个按钮 -->
         <template v-if="!o.ackAt">
@@ -104,16 +100,12 @@ onShow(async () => {
 // ─── 卡BN-3（2026-10-02）：未接单超阈值红字提示 ───
 // 阈值进页拉一次缓存（onShow 拉一次，不轮询）；取不到 → null → 提示一律不显示
 const notifyThreshold = ref(null)
-// 卡BP-2：提醒专号（只来自 GET /supplier-notify/me 的 reminderPhoneNo，为空 → 提示条维持原文案）
-const reminderPhoneNo = ref('')
 onShow(async () => {
   try {
     const me = await supplierApi.getNotifySetting()
     notifyThreshold.value = (me && me.thresholdMinutes != null) ? me.thresholdMinutes : null
-    reminderPhoneNo.value = (me && me.reminderPhoneNo) || ''
   } catch (e) {
     notifyThreshold.value = null
-    reminderPhoneNo.value = ''
   }
 })
 // 判据与后端口径一致：minutesUnacked = now - createdAt，>= thresholdMinutes 即超时；
