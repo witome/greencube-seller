@@ -28,6 +28,8 @@
       <view class="pbtn primary" @tap="showForm = !showForm">
         {{ showForm ? '收起表单' : '＋ 提交新商品' }}
       </view>
+      <!-- 卡BW-1：并列新增次入口「连拍上架」（只加这一个按钮 + 跳转，老入口一字不改） -->
+      <view class="pbtn ghostg" @tap="goBatchListing">📷 连拍上架（一次多张）</view>
     </view>
     <view v-if="showForm" class="card">
       <view class="card-title">🆕 提交新商品</view>
@@ -456,6 +458,11 @@ async function loadUnits() {
 }
 
 const showForm = ref(false)
+
+// ── 卡BW-1：连拍上架入口（只加跳转，别的不动）──
+function goBatchListing() {
+  uni.navigateTo({ url: '/subpkg-supplier/pages/batch-listing' })
+}
 
 // ── 卡BP：拍照快速上架 · AI 识别（2026-10-02）──
 // 封面上传成功 → POST /ai/supplier/recognize-goods → 预填 名称/分类/计量 三项（绿底可改）。
@@ -909,6 +916,8 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .filter-chips { margin-top: 8px; }
+/* 卡BW-1：连拍上架次按钮（原型 ghostg：浅绿描边） */
+.pbtn.ghostg { background: #E6F9F0; color: $brand-deep; border: 1px solid #B6E4CF; }
 /* 卡BV-2：已停用单位的兜底标注（老商品当前单位被停用 → chip 保留该项 + 灰字「（已停用）」） */
 .chip-off { color: #C0C4CC; font-size: 10px; margin-left: 1px; }
 .act-link { display: inline; color: $brand-deep; font-size: 12px; font-weight: 600; margin-left: 8px; }

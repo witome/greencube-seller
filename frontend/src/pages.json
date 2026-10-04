@@ -30,6 +30,7 @@
         { "path": "pages/stock-list", "style": { "navigationBarTitleText": "备货单" } },
         { "path": "pages/stock-declare", "style": { "navigationBarTitleText": "申报备货" } },
         { "path": "pages/goods-manage", "style": { "navigationBarTitleText": "商品管理" } },
+        { "path": "pages/batch-listing", "style": { "navigationBarTitleText": "连拍上架" } },
         { "path": "pages/voice-report", "style": { "navigationBarTitleText": "语音报量 / 改价" } },
         { "path": "pages/handover", "style": { "navigationBarTitleText": "交接确认" } },
         { "path": "pages/finance", "style": { "navigationBarTitleText": "历史与应付" } },
