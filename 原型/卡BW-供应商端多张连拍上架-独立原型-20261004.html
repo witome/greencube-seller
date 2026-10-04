@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>卡BW-供应商端多张连拍上架-独立原型-20261004</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  body { background: #EEF1F4; color: #1F2329; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+  /* ============ 画布与页签导航 ============ */
+  .hd { padding: 26px 30px 10px; max-width: 1240px; }
+  .hd h1 { font-size: 20px; }
+  .hd h1 span { font-size: 12.5px; color: #8A9099; font-weight: 400; margin-left: 10px; }
+  .hd .sub { font-size: 13px; color: #6B7280; margin-top: 8px; line-height: 1.85; max-width: 1180px; }
+  .hd .sub b { color: #1F2329; }
+  .hd .sub code, .note code, .legend code { background: #E9EDF1; border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+
+  .tabs { position: sticky; top: 0; z-index: 50; background: rgba(238,241,244,.94); backdrop-filter: blur(6px);
+          border-bottom: 1px solid #DDE2E8; padding: 10px 30px; display: flex; flex-wrap: wrap; gap: 8px; max-width: 1240px; }
+  .tab { font-size: 12px; padding: 5px 13px; border-radius: 999px; background: #fff; color: #4E5969; border: 1px solid #E4E7EB; cursor: pointer; user-select: none; }
+  .tab:hover { border-color: #00B96B; color: #00995A; }
+  .tab.core { background: #E6F9F0; color: #00995A; border-color: #B6E4CF; font-weight: 600; }
+  .tab.fb { background: #FFF3E6; color: #C87000; border-color: #F5D9B8; }
+
+  .stage { max-width: 1240px; padding: 6px 30px 40px; }
+  section { padding-top: 34px; }
+  .sec-t { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .sec-t em { font-style: normal; color: #C87000; font-size: 13px; font-weight: 400; margin-left: 8px; }
+  .sec-d { font-size: 12.5px; color: #6B7280; line-height: 1.8; margin-bottom: 14px; max-width: 980px; }
+  .sec-d b { color: #1F2329; }
+
+  .row { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 16px; }
+
+  .fig { display: flex; flex-direction: column; flex: 0 0 auto; width: 356px; }
+  .fig-cap { font-size: 13px; font-weight: 700; margin: 0 0 8px; line-height: 1.55; }
+  .fig-cap span { font-weight: 400; color: #8A9099; font-size: 11px; display: block; margin-top: 2px; }
+  .fig-cap em { font-style: normal; color: #C87000; }
+
+  .note { font-size: 11px; color: #6B7280; line-height: 1.8; margin-top: 10px; max-width: 356px; }
+  .note .t { font-size: 12px; font-weight: 700; color: #1F2329; margin-bottom: 3px; display: block; }
+  .note b { color: #1F2329; }
+
+  /* ============ 手机壳（卡BW 视觉硬基准：40px 圆角） ============ */
+  .phone { width: 336px; background: #fff; border-radius: 40px; overflow: hidden; display: flex; flex-direction: column;
+           box-shadow: 0 6px 24px rgba(0,0,0,.10); flex: 0 0 auto; position: relative; }
+  .phone.h700 { height: 700px; } .phone.h760 { height: 760px; } .phone.h860 { height: 860px; }
+  .phone.h1000 { height: 1000px; } .phone.h1180 { height: 1180px; } .phone.h1300 { height: 1300px; }
+
+  .phone-bar { height: 34px; background: #00B96B; color: #fff; display: flex; align-items: center; justify-content: center;
+               font-size: 13px; flex: 0 0 auto; position: relative; }
+  .capsule { position: absolute; right: 14px; top: 9px; width: 58px; height: 17px; border: 1px solid rgba(255,255,255,.7);
+             border-radius: 10px; display: flex; align-items: center; justify-content: space-around; }
+  .capsule span { width: 5px; height: 5px; border-radius: 50%; background: #fff; display: block; }
+  .phone-title { height: 44px; background: #fff; padding: 0 12px; font-size: 15px; font-weight: 600; display: flex;
+                 align-items: center; border-bottom: 1px solid #F0F1F3; flex: 0 0 auto; }
+  .phone-title .back { color: #00B96B; font-weight: 400; font-size: 14px; margin-right: 6px; }
+  .phone-body { flex: 1; overflow-y: auto; background: #F5F6F8; }
+  .phone-foot { flex: 0 0 auto; background: #fff; border-top: 1px solid #F0F1F3; padding: 8px 12px 6px; }
+  .home-ind { flex: 0 0 auto; height: 16px; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .home-ind i { display: block; width: 96px; height: 4px; border-radius: 3px; background: #D5DAE0; }
+
+  /* ============ 表单（照 goods-manage.vue / 卡BT） ============ */
+  .m-notice { background: #FFF9E8; color: #8A6D1A; font-size: 10px; line-height: 1.6; border-radius: 8px; padding: 7px 9px; margin: 6px 10px 0; }
+  .s-card { background: #fff; border-radius: 12px; padding: 4px 12px; margin: 8px 10px; box-shadow: 0 1px 4px rgba(26,26,26,.06); }
+  .card-title { font-size: 14px; font-weight: 700; padding: 10px 2px 6px; }
+  .f-row { display: flex; align-items: center; padding: 9px 0; border-bottom: 1px solid #F5F6F8; font-size: 13px; }
+  .f-row:last-child { border-bottom: none; }
+  .f-row.top { align-items: flex-start; }
+  .f-l { width: 72px; color: #8A9099; flex: 0 0 auto; font-size: 12px; flex-shrink: 0; }
+  .f-row.top .f-l { padding-top: 9px; }
+  .f-r { flex: 1; margin-left: 10px; min-width: 0; }
+  .s-ipt { width: 100%; min-height: 36px; height: 36px; line-height: 36px; border: 1px solid #E5E8EB; border-radius: 8px;
+           padding: 0 9px; font-size: 13px; color: #4A5261; background: #fff; font-family: inherit; }
+  .s-ipt::placeholder { color: #9AA1AB; }
+  /* AI 绿底（照单条表单 .ipt-ai）：AI 预填 = 绿底；用户改过就取消 */
+  .s-ipt.ai { border-color: #00B96B; background: #F2FBF7; }
+  .s-ipt.err { border-color: #FA5151; background: #FFFDFD; }
+  .ta { width: 100%; min-height: 44px; border: 1px solid #E5E8EB; border-radius: 8px; padding: 7px 9px; font-size: 12px;
+        color: #4A5261; resize: none; font-family: inherit; }
+  .remark-count { float: right; color: #9AA1AB; }
+  .s-muted { font-size: 11px; color: #9AA1AB; line-height: 1.6; margin-top: 4px; }
+  .s-muted.org { color: #FF8F1F; }
+  .s-err { font-size: 11px; color: #FA5151; line-height: 1.6; margin-top: 4px; font-weight: 600; }
+
+  /* chip（照 common.scss .chip / .chip.on 原值） */
+  .chip-g { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11.5px; padding: 4px 11px; border-radius: 999px; background: #F7F9FA; color: #8A9099;
+          border: 1px solid #E4E7EB; cursor: pointer; user-select: none; line-height: 1.5; }
+  .chip.on { background: #E6F9F0; color: #00B578; border-color: #00B578; font-weight: 600; }
+  .chip.sm { font-size: 10.5px; padding: 3px 9px; }
+
+  .pbtn { text-align: center; border-radius: 10px; padding: 10px 0; font-size: 13.5px; font-weight: 600; background: #00B96B; color: #fff; cursor: pointer; }
+  .pbtn.ghost { background: #fff; color: #4E5969; border: 1px solid #E5E8EB; }
+  .pbtn.ghostg { background: #fff; color: #00B96B; border: 1px solid #00B96B; }
+  .pbtn.dis { background: #C9CDD4; color: #fff; cursor: default; }
+  .row-btns { display: flex; gap: 8px; margin: 4px 10px 10px; }
+  .row-btns .pbtn { flex: 1; margin: 0; }
+
+  /* 状态标签（照 common.scss .tag g/o/r/b） */
+  .tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px; flex-shrink: 0; line-height: 1.6; }
+  .tag.g { background: #E6F9F0; color: #00B578; }
+  .tag.o { background: #FFF3E6; color: #FF8F1F; }
+  .tag.r { background: #FFEDED; color: #FA5151; }
+  .tag.b { background: #E8F1FF; color: #3B7CFF; }
+  .tag.gray { background: #F2F4F6; color: #8A9099; }
+
+  /* 列表项（照 goods-manage.vue .list-item / .li-thumb / .li-t / .li-d） */
+  .list-item { display: flex; align-items: center; background: #fff; border-radius: 12px; padding: 12px; margin: 0 10px 8px; box-shadow: 0 1px 4px rgba(26,26,26,.06); }
+  .li-thumb { width: 46px; height: 46px; border-radius: 9px; flex-shrink: 0; position: relative; margin-right: 12px; overflow: hidden; }
+  .cam-badge { position: absolute; right: 2px; bottom: 2px; width: 15px; height: 15px; border-radius: 50%; background: rgba(17,17,17,.78);
+               color: #fff; font-size: 8px; line-height: 1; display: flex; align-items: center; justify-content: center; border: 1.5px solid #fff; }
+  .li-main { flex: 1; min-width: 0; }
+  .li-t { font-size: 14px; font-weight: 600; color: #1A1A1A; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; row-gap: 2px; }
+  .li-t .act { font-size: 11px; font-weight: 600; margin-left: 2px; white-space: nowrap; }
+  .li-d { font-size: 11.5px; color: #8A9099; margin-top: 3px; line-height: 1.5; }
+
+  /* 资质证明小图位（照现状 pic-grid） */
+  .pic-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pic { width: 46px; height: 46px; border-radius: 8px; position: relative; overflow: hidden; }
+  .pic-x { position: absolute; right: 0; top: 0; width: 14px; height: 14px; background: rgba(17,17,17,.6); color: #fff;
+           font-size: 9px; line-height: 14px; text-align: center; border-radius: 0 8px 0 8px; cursor: pointer; }
+  .pic-add { width: 46px; height: 46px; border-radius: 8px; border: 1px dashed #D5DAE0; color: #9AA1AB; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
+
+  /* 居中/底部弹层（照 goods-manage.vue .mask / .sheet） */
+  .mask { position: absolute; inset: 0; background: rgba(17,17,17,.45); z-index: 5; display: flex; align-items: flex-end; }
+  .sheet { width: 100%; background: #fff; border-radius: 16px 16px 0 0; padding: 16px 16px 12px; }
+  .sheet-title { font-size: 14.5px; font-weight: 700; text-align: center; margin-bottom: 10px; }
+  .sheet-body { font-size: 12.5px; color: #4A5261; line-height: 1.9; text-align: left; }
+  .sheet-body b { color: #1F2329; }
+  .mask.center { align-items: center; justify-content: center; }
+  .modal { width: 86%; background: #fff; border-radius: 12px; padding: 16px; }
+
+  .spin { width: 12px; height: 12px; border: 2px solid #B6E4CF; border-top-color: #00B96B; border-radius: 50%; animation: rot .8s linear infinite; display: inline-block; vertical-align: -2px; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .ai-flash { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #00995A; background: #E6F9F0; border-radius: 8px; padding: 7px 10px; margin-top: 8px; }
+
+  /* ============ 连拍网格（画面2） ============ */
+  .bgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .bcell { position: relative; border-radius: 10px; overflow: hidden; aspect-ratio: 1/1; box-shadow: inset 0 0 0 1px rgba(0,0,0,.05); }
+  .bcell .idx { position: absolute; left: 4px; top: 4px; width: 16px; height: 16px; border-radius: 50%; background: rgba(17,17,17,.55);
+                color: #fff; font-size: 9px; display: flex; align-items: center; justify-content: center; }
+  .bcell .st { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 5px; font-size: 9px; line-height: 1.45; color: #fff; }
+  .st.ok { background: linear-gradient(transparent, rgba(0,181,120,.92) 42%); }
+  .st.warn { background: linear-gradient(transparent, rgba(255,143,31,.94) 42%); }
+  .st.bad { background: linear-gradient(transparent, rgba(250,81,81,.94) 42%); }
+  .st.busy { background: linear-gradient(transparent, rgba(17,17,17,.68) 42%); }
+  .st.q { background: linear-gradient(transparent, rgba(74,82,97,.72) 42%); }
+  .bcell .spin { position: absolute; left: 50%; top: 50%; margin: -8px 0 0 -8px; width: 16px; height: 16px; border-width: 2.5px; }
+  .bcell .retry { position: absolute; right: 4px; top: 4px; background: #fff; color: #FA5151; font-size: 9px; font-weight: 600;
+                  border-radius: 999px; padding: 2px 7px; box-shadow: 0 1px 4px rgba(0,0,0,.18); cursor: pointer; }
+  .bcell .rebtn { display: inline-block; margin-top: 2px; background: rgba(255,255,255,.95); color: #FA5151; font-size: 9px;
+                  font-weight: 700; border-radius: 999px; padding: 1px 8px; cursor: pointer; }
+
+  /* 汇总条 / 横幅 */
+  .sumbar { display: flex; align-items: center; gap: 6px; background: #fff; border-radius: 10px; margin: 8px 10px; padding: 9px 12px;
+            font-size: 12.5px; font-weight: 600; box-shadow: 0 1px 4px rgba(26,26,26,.06); }
+  .sumbar .n { color: #00B578; } .sumbar .w { color: #FF8F1F; }
+  .banner { display: flex; align-items: center; gap: 6px; background: #FFEDED; color: #C13515; font-size: 11.5px;
+            border-radius: 8px; padding: 8px 10px; margin: 8px 10px 0; line-height: 1.5; }
+  .banner .lk { margin-left: auto; color: #FA5151; font-weight: 700; font-size: 11px; white-space: nowrap; cursor: pointer; }
+  .banner.blue { background: #E8F1FF; color: #2A5DB0; }
+  .banner.blue .lk { color: #3B7CFF; }
+  .banner.warnc { background: #FFF9E8; color: #8A6D1A; }
+  .banner.warnc .lk { color: #C87000; }
+
+  /* 批量卡（画面3） */
+  .bcard { background: #fff; border-radius: 12px; margin: 0 10px 8px; box-shadow: 0 1px 4px rgba(26,26,26,.06); overflow: hidden; }
+  .bc-head { display: flex; align-items: center; gap: 10px; padding: 11px 12px; cursor: pointer; }
+  .bc-miss { font-size: 10.5px; color: #FA5151; font-weight: 600; margin-top: 3px; }
+  .bc-fold { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 11px; color: #9AA1AB;
+             background: #F7F9FA; cursor: pointer; }
+  .bc-body { border-top: 1px solid #F5F6F8; padding: 2px 12px 12px; display: none; }
+  .bcard.open .bc-body { display: block; }
+  .bcard.open .bc-caret { transform: rotate(180deg); }
+  .bc-caret { color: #C0C4CC; font-size: 10px; transition: transform .15s; flex-shrink: 0; }
+  .bc-sub { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; border-top: 1px dashed #F0F1F3; }
+  .bc-sub .pbtn { flex: 1; margin: 0; padding: 8px 0; font-size: 12px; }
+
+  /* 拍板对照块 */
+  .duo { display: flex; gap: 12px; flex-wrap: wrap; }
+  .duo .opt { flex: 1 1 320px; background: #fff; border-radius: 12px; border: 1px solid #E4E7EB; padding: 12px 14px; min-width: 0; }
+  .opt .opt-t { font-size: 13px; font-weight: 700; }
+  .opt .opt-t em { font-style: normal; font-size: 10.5px; color: #fff; background: #00B96B; border-radius: 999px; padding: 2px 8px; margin-left: 6px; vertical-align: 1px; }
+  .opt .opt-t em.alt { background: #8A9099; }
+  .opt .opt-d { font-size: 11.5px; color: #6B7280; line-height: 1.7; margin: 5px 0 9px; }
+  .opt.shot { background: #F5F6F8; }
+  .opt.shot .shotbox { background: #fff; border-radius: 10px; padding: 10px; font-size: 11.5px; line-height: 1.7; color: #4A5261; }
+
+  .legend { font-size: 12px; color: #6B7280; line-height: 1.95; background: #fff; border-radius: 12px; padding: 14px 18px; margin-top: 26px; }
+  .legend b { color: #1F2329; }
+  .legend .t { font-size: 13.5px; font-weight: 700; color: #1F2329; display: block; margin: 12px 0 4px; }
+  .legend .t:first-child { margin-top: 0; }
+  pre.code { background: #F7F9FA; border: 1px solid #E5E8EB; border-radius: 8px; padding: 10px 12px; font-size: 10.5px;
+             line-height: 1.65; color: #4E5969; overflow-x: auto; font-family: Consolas, "Courier New", monospace; white-space: pre; }
+
+  /* 蔬菜占位图（照卡BP渐变写法，无外部资源） */
+  .t-ginger  { background: radial-gradient(circle at 35% 30%, #f3d9a8, #d9a85a 55%, #a5742f); }
+  .t-tomato  { background: radial-gradient(circle at 32% 28%, #ff9a80, #e04530 58%, #a72c1c); }
+  .t-cabbage { background: radial-gradient(circle at 36% 30%, #e2f3c8, #93c76c 55%, #5e9440); }
+  .t-potato  { background: radial-gradient(circle at 38% 32%, #e8d3a9, #bd9457 55%, #8a6633); }
+  .t-carrot  { background: radial-gradient(circle at 34% 28%, #ffc199, #f5813f 55%, #c85a1e); }
+  .t-pepper  { background: radial-gradient(circle at 34% 30%, #a8d98a, #5da23f 55%, #35731f); }
+  .t-garlic  { background: radial-gradient(circle at 36% 30%, #d7ecc0, #8fbb63 55%, #5f8a3c); }
+  .t-lettuce { background: radial-gradient(circle at 36% 32%, #cfeaa4, #86c455 55%, #4f8a2e); }
+  .t-melon   { background: radial-gradient(circle at 34% 30%, #bfe8a0, #6fae3c 55%, #3f7a1e); }
+  .t-squash  { background: radial-gradient(circle at 36% 30%, #e9f0d2, #a9c86a 55%, #6f8f3a); }
+  .dim { filter: grayscale(.55) brightness(.85); }
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <h1>🥬 卡BW · 供应商端「多张连拍上架」<span>一次拍/选多张 → 一张照片一条草稿 → 批量核对 → 批量提交 · 2026-10-04 · 只出原型</span></h1>
+  <div class="sub">
+    品牌口径：<b>辉崧鲜配 · 供应商端</b>。现状一句话：供应商进一批菜（比如 8 样），要重复 8 遍「拍一张 → 等 AI → 核对 → 填写 → 提交」。
+    本卡把它变成 <b>「一次拍/选多张（最多 9 张）→ 一张照片一条草稿 → 一张列表里逐条核对 → 批量/单条提交」</b>。<br>
+    视觉全部沿用现有语言：<b>主色 #00B96B</b>、页面底 <code>#F5F6F8</code>、chip 平铺（<b>分类/单位绝不许用下拉</b>）、AI 只填 3 项绿底（<code>.ipt-ai</code>）、
+    供货价与日供量必须人填。老入口「＋ 提交新商品」<b>一字不改照旧保留</b>。<br>
+    可点：页签跳转；chip 单选；卡片展开/收起；<b>「全部提交」可真跑一遍</b>（确认弹层 → 逐条提交 → 结果面板）。
+  </div>
+</div>
+
+<nav class="tabs">
+  <div class="tab" data-go="s1">画面1 · 入口</div>
+  <div class="tab" data-go="s2">画面2 · 拍摄/选图+识别进度</div>
+  <div class="tab core" data-go="s3">画面3 · 批量核对列表 ★</div>
+  <div class="tab" data-go="s4">画面4 · 确认+逐条结果</div>
+  <div class="tab" data-go="s5">画面5 · 提交后回显</div>
+  <div class="tab fb" data-go="e1">兜底1 · AI 全没认出</div>
+  <div class="tab fb" data-go="e2">兜底2 · 上传失败</div>
+  <div class="tab fb" data-go="e3">兜底3 · 分类没开通</div>
+  <div class="tab fb" data-go="e4">兜底4 · 提交一半失败</div>
+  <div class="tab fb" data-go="e5">兜底5 · 上次没提交完</div>
+  <div class="tab fb" data-go="e6">兜底6 · 空态</div>
+  <div class="tab" data-go="dec">§六 五处对照（拍板）</div>
+</nav>
+
+<div class="stage">
+
+<!-- ============================================================
+     画面 1：入口 —— 商品管理页顶部，双入口并列
+============================================================ -->
+<section id="s1">
+  <div class="sec-t">画面 1 · 入口 —— 商品管理页顶部 <em>老入口与批量入口并列，一主一次</em></div>
+  <div class="sec-d">现状是 <code>＋ 提交新商品</code> 一个主按钮。本卡<b>新增第二个入口「📷 连拍上架（一次多张）」</b>，两个按钮并排（一主一次）。
+    原有单条链路<b>一字不改、照旧可用</b>（第二台手机 = 现状老表单原样，证明没被改动）。</div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">① 商品管理页顶部<span>＋ 提交新商品（主，现状原样）＋ 📷 连拍上架（次，新增）· 点「连拍上架」进画面 2</span></div>
+      <div class="phone h760">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title">商品管理</div>
+        <div class="phone-body">
+          <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+          <div class="s-card">
+            <input class="s-ipt" placeholder="🔍 搜索我的商品（名称）" style="margin-bottom:8px;" />
+            <div class="chip-g">
+              <div class="chip on">全部</div><div class="chip">待审核</div><div class="chip">在售</div><div class="chip">变更中</div><div class="chip">已下架</div><div class="chip">已驳回</div>
+            </div>
+          </div>
+
+          <!-- ★ 双入口：一主一次，并排 -->
+          <div class="row-btns" style="margin-top:8px;">
+            <div class="pbtn">＋ 提交新商品</div>
+            <div class="pbtn ghostg" data-go="s2">📷 连拍上架（一次多张）</div>
+          </div>
+          <div class="s-muted" style="margin:0 12px 8px;">左边 = 原有单条链路（一字不改）；右边 = 本卡新增的批量入口，进「连拍上架」页</div>
+
+          <div class="s-card">
+            <div class="card-title">🆕 提交新商品（老表单展开示意 · 现状原样）</div>
+            <div class="f-row top"><div class="f-l">封面图</div><div class="f-r">
+              <div class="chip-g"><div class="chip">📷 直接拍</div><div class="chip">🖼 从相册选</div></div>
+              <div class="s-muted">一次只能 1 张（现状：pickPhotos count:1）</div>
+            </div></div>
+            <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt" placeholder="如：山东大姜（老姜）" /></div></div>
+            <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt" placeholder="如 2.20（元/斤，提交后审核）" /></div></div>
+            <div class="s-muted" style="padding:6px 2px 8px;">…其余字段与现状完全一致（分类/计量/单位/备注/日供量/资质）…</div>
+          </div>
+
+          <div class="s-card" style="padding:10px 12px;">
+            <div style="font-size:12px;font-weight:700;color:#1A1A1A;">我的商品（3）</div>
+          </div>
+          <div class="list-item">
+            <div class="li-thumb t-ginger"><div class="cam-badge">📷</div></div>
+            <div class="li-main"><div class="li-t">山东大姜（老姜）<span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#3B7CFF;">⚡ 改库存</span><span class="act" style="color:#C87000;">⬇ 下架</span></div>
+              <div class="li-d">供货价 ¥4.20/斤 · 日供 200斤</div></div>
+            <span class="tag g">在售</span>
+          </div>
+          <div class="list-item">
+            <div class="li-thumb t-tomato"><div class="cam-badge">📷</div></div>
+            <div class="li-main"><div class="li-t">西红柿（粉果）<span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#3B7CFF;">⚡ 改库存</span><span class="act" style="color:#C87000;">⬇ 下架</span></div>
+              <div class="li-d">供货价 ¥3.60/斤 · 日供 150斤</div></div>
+            <span class="tag g">在售</span>
+          </div>
+          <div class="list-item">
+            <div class="li-thumb t-cabbage"><div class="cam-badge">📷</div></div>
+            <div class="li-main"><div class="li-t">大白菜<span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#3B7CFF;">⚡ 改库存</span><span class="act" style="color:#C87000;">⬇ 下架</span></div>
+              <div class="li-d">供货价 ¥1.28/斤 · 日供 300斤</div></div>
+            <span class="tag g">在售</span>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note"><span class="t">不许出现（自查）</span>老入口没被删、没被改交互；批量入口没有遮住/挤掉老入口；本屏只画供应商端。</div>
+    </div>
+
+    <div class="col">
+      <div class="fig">
+        <div class="fig-cap">② 老链路不变证明<span>单条提交：一次 1 张 → AI 填 3 项 → 人填价格/日供 → 单条提交，全部照旧</span></div>
+        <div class="phone h700">
+          <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+          <div class="phone-title"><span class="back">‹</span>商品管理</div>
+          <div class="phone-body">
+            <div class="m-notice">📝 新商品与商品信息变更均需运营审核后生效；日可供量可快速调整、即时生效。销售价由平台维护，您不可见</div>
+            <div class="s-card">
+              <div class="card-title">🆕 提交新商品（现状原样 · 未改）</div>
+              <div class="f-row top"><div class="f-l">封面图</div><div class="f-r">
+                <div class="cover" style="position:relative;width:100%;height:96px;border-radius:10px;" >
+                  <div class="t-ginger" style="position:absolute;inset:0;border-radius:10px;"></div>
+                  <div style="position:absolute;right:8px;top:8px;background:rgba(17,17,17,.72);color:#fff;font-size:10px;padding:3px 8px;border-radius:999px;">📷 已拍 · 点击重拍</div>
+                </div>
+                <div class="ai-flash"><span>✨</span> AI 已识别，已帮你填好下面 3 项，请核对</div>
+                <div class="chip-g" style="margin-top:8px;"><div class="chip">📷 重拍</div><div class="chip">🖼 换一张</div></div>
+              </div></div>
+              <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt ai" value="山东大姜（老姜）" /></div></div>
+              <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+                <div class="chip-g"><div class="chip">叶菜类</div><div class="chip on">根茎类</div><div class="chip">葱蒜类</div></div>
+                <div class="s-muted">AI 选的是「根茎类」，认错了点别的分类即可</div>
+              </div></div>
+              <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r"><div class="chip-g"><div class="chip on">称重</div><div class="chip">固定规格</div></div></div></div>
+              <div class="f-row top"><div class="f-l">单位</div><div class="f-r"><div class="chip-g"><div class="chip on">斤</div><div class="chip">公斤</div><div class="chip">袋</div><div class="chip">箱</div><div class="chip">瓶</div><div class="chip">件</div></div></div></div>
+              <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt" value="4.20" /></div></div>
+              <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt" value="200" /></div></div>
+            </div>
+            <div class="row-btns"><div class="pbtn">提交申请</div></div>
+          </div>
+          <div class="home-ind"><i></i></div>
+        </div>
+      </div>
+      <div class="note"><span class="t">口径</span>批量入口只在「提交新商品」场景加；「编辑/改库存/下架」等老功能与批量无关，不动。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     画面 2：拍摄/选择 + 上传识别进度
+============================================================ -->
+<section id="s2">
+  <div class="sec-t">画面 2 · 拍摄/选择 + 上传识别进度 <em>一格一态 · 串行排队 · 已完成 5/9</em></div>
+  <div class="sec-d">点「连拍上架」进入。顶部一张大按钮 <code>📷 拍摄 / 从相册选择（最多 9 张）</code>；选完出<b>3 列进度网格</b>，
+    每格状态逐个可区分：<b>上传中 / 识别中 / ✅已填好 / ⚠️没认出来 / ❌上传失败</b>。
+    上传+AI 识别<b>一张一张排队</b>（并发会打爆后端），网格下方 <code>已完成 5 / 9</code> 与「＋ 继续添加」。</div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">① 选完 9 张后的进度网格<span>第 4 张识别中、第 9 张上传中、第 5/6 张排队 —— 串行，不是 9 张一起</span></div>
+      <div class="phone h860">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>连拍上架</div>
+        <div class="phone-body">
+          <div class="row-btns" style="margin-top:10px;"><div class="pbtn" id="pickMore">📷 拍摄 / 从相册选择（最多 9 张）</div></div>
+          <div class="s-muted" style="margin:0 12px;">一次最多 <b>9 张</b>（微信硬上限）。选完逐张上传 + AI 识别，一张一张排队。</div>
+
+          <div class="s-card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+              <span>本批照片</span><span style="font-size:11px;color:#9AA1AB;" id="doneLine">已完成 5 / 9</span>
+            </div>
+            <div class="bgrid" id="bgrid">
+              <div class="bcell t-ginger"><div class="idx">1</div><div class="st ok"><b>✅ 已填好</b><br>AI 已填 3 项</div></div>
+              <div class="bcell t-tomato"><div class="idx">2</div><div class="st ok"><b>✅ 已填好</b><br>AI 已填 3 项</div></div>
+              <div class="bcell t-cabbage"><div class="idx">3</div><div class="st ok"><b>✅ 已填好</b><br>AI 已填 3 项</div></div>
+              <div class="bcell t-potato dim"><div class="idx">4</div><div class="spin"></div><div class="st busy"><b>识别中…</b><br>正在认这张</div></div>
+              <div class="bcell t-carrot dim"><div class="idx">5</div><div class="st q"><b>排队中</b><br>等第 4 张做完</div></div>
+              <div class="bcell t-pepper dim"><div class="idx">6</div><div class="st q"><b>排队中</b><br>等第 4 张做完</div></div>
+              <div class="bcell t-garlic"><div class="idx">7</div><div class="st warn"><b>⚠️ 没认出来</b><br>可手填</div></div>
+              <div class="bcell t-lettuce dim"><div class="idx">8</div><div class="st bad"><b>❌ 上传失败</b><br>网络断了</div><div class="rebtn" data-act="retry">重试</div></div>
+              <div class="bcell t-squash dim"><div class="idx">9</div><div class="spin"></div><div class="st busy"><b>上传中…</b><br>压缩 → 上传</div></div>
+            </div>
+            <div class="chip-g" style="margin-top:10px;"><div class="chip" data-act="add">＋ 继续添加（剩余 4 张）</div></div>
+            <div class="s-muted">超过 9 张会提示：<b style="color:#8A6D1A;">「一次最多 9 张，多的请再发起一批」</b></div>
+          </div>
+
+          <div class="s-card">
+            <div class="card-title">处理完进批量核对</div>
+            <div class="s-muted" style="margin:0 0 8px;">全部格子出结果后自动进入画面 3 的核对列表（每张照片一条草稿）。</div>
+            <div class="pbtn ghostg" data-go="s3">先看核对列表 ›</div>
+          </div>
+          <div style="height:10px;"></div>
+        </div>
+        <div class="phone-foot"><div class="pbtn dis">识别中，请稍候…</div></div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note"><span class="t">排队口径</span>上传+识别<b>串行</b>（复用 <code>utils/photo-upload.js</code>，别再写一套选图）；
+        进度用「已完成 N / 总数」表达；失败格有「重试」，不挡后面排队。</div>
+    </div>
+
+    <div class="col">
+      <div class="fig">
+        <div class="fig-cap">② 超过 9 张的拦截提示<span>微信 chooseImage 硬上限 9 张 —— 这是 §六 对照①的「唯一可行项」，画出来给大辉确认</span></div>
+        <div class="phone h700">
+          <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+          <div class="phone-title"><span class="back">‹</span>连拍上架</div>
+          <div class="phone-body">
+            <div class="row-btns" style="margin-top:10px;"><div class="pbtn ghost">📷 拍摄 / 从相册选择（最多 9 张）</div></div>
+            <div class="s-card">
+              <div class="card-title">已经选满 9 张</div>
+              <div class="s-err" style="font-size:12px;">⚠️ 一次最多 9 张，多的请再发起一批</div>
+              <div class="s-muted">再点添加只会弹这条提示；想上更多菜，点「＋ 再发起一批」重新走一遍（两批互不影响）。</div>
+            </div>
+            <div class="row-btns"><div class="pbtn ghost">＋ 再发起一批</div><div class="pbtn" data-go="s3">去核对（9 条）</div></div>
+            <div class="m-notice">为什么是 9 张：微信 <code>chooseImage</code> 单次上限就是 9，改不了；改成多批是唯一合规做法。</div>
+          </div>
+          <div class="phone-foot"><div class="pbtn">去批量核对（9 条）</div></div>
+          <div class="home-ind"><i></i></div>
+        </div>
+      </div>
+      <div class="note"><span class="t">对照①（§六）</span>一次最多几张 → <b>9 张（微信硬上限，改不了），多的分两批</b>。此项没有第二种可行做法，画出拦截文案供确认。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     画面 3：批量核对列表（核心屏）
+============================================================ -->
+<section id="s3">
+  <div class="sec-t">画面 3 · 批量核对列表 <em>★ 核心屏 · 一张照片 = 一条商品卡</em></div>
+  <div class="sec-d">照片处理完自动进入。<b>一张照片 = 一条商品卡</b>，从上往下排；收起只显示「缩略图 + 名称 + 一行关键值 + 状态角标」，
+    展开就是现有「提交新商品」<b>同一套字段、顺序一字不改</b>。AI 预填的 3 项<b>绿底</b>，用户改过就取消绿底；
+    供货价、日供量<b>必须人填</b>（无绿底）。待补全的卡<b>红字点出缺哪一项</b>。</div>
+  <div class="row">
+
+    <!-- ① 列表总览 -->
+    <div class="fig" style="width:356px;">
+      <div class="fig-cap">① 批量核对列表<span>共 9 条 · 可提交 6 · 待补全 3（含 1 条 AI 没认出来还没动过）· 底部「全部提交（6 条）」可真跑</span></div>
+      <div class="phone h1300" id="phList">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>连拍上架 · 核对</div>
+        <div class="phone-body">
+          <div class="banner blue" style="margin-top:10px;">🗒 本批共用资质证明 × 2 张<span class="lk" data-act="noop">改</span></div>
+          <div class="s-muted" style="margin:4px 12px 0;">同一批货通常同一份检疫证，提交时附到每一条（§六 对照②，也可单条单独改 → 看右③）</div>
+
+          <div class="sumbar">共 <b>9</b> 条 · <span class="n">可提交 6</span> · <span class="w">待补全 3</span><span style="margin-left:auto;font-size:10.5px;color:#9AA1AB;">点卡片展开</span></div>
+
+          <!-- 卡1 收起 ✅ -->
+          <div class="bcard" data-toggle>
+            <div class="bc-head">
+              <div class="li-thumb t-ginger" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main">
+                <div class="li-t">山东大姜（老姜）<span class="tag g">✅ 可提交</span></div>
+                <div class="li-d">供货价 ¥4.20/斤 · 日供 200斤</div>
+              </div>
+              <span class="bc-caret">▾</span>
+            </div>
+            <div class="bc-body">
+              <div class="f-row top"><div class="f-l">封面图</div><div class="f-r">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div class="li-thumb t-ginger" style="width:44px;height:44px;margin:0;"></div>
+                  <div><div class="s-muted" style="margin:0;">本张照片即封面</div><div class="chip-g" style="margin-top:4px;"><div class="chip sm">📷 重拍</div><div class="chip sm">🖼 换一张</div></div></div>
+                </div>
+              </div></div>
+              <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt ai" value="山东大姜（老姜）" data-ai /></div></div>
+              <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+                <div class="chip-g"><div class="chip">叶菜类</div><div class="chip on">根茎类</div><div class="chip">葱蒜类</div></div>
+              </div></div>
+              <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r"><div class="chip-g"><div class="chip on">称重</div><div class="chip">固定规格</div></div></div></div>
+              <div class="f-row top"><div class="f-l">单位</div><div class="f-r"><div class="chip-g"><div class="chip on">斤</div><div class="chip">公斤</div><div class="chip">袋</div><div class="chip">箱</div><div class="chip">瓶</div></div></div></div>
+              <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r"><textarea class="ta" maxlength="12" placeholder="如：今天刚到的老姜（可不填）"></textarea><div class="s-muted">会显示在采购方商品名下方（灰字），可不填；最多 12 字<span class="remark-count">0/12</span></div></div></div>
+              <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt" value="4.20" placeholder="如 4.20（元/斤，提交后审核）" /></div></div>
+              <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt" value="200" placeholder="如 200（斤）" /></div></div>
+              <div class="f-row top"><div class="f-l">资质证明</div><div class="f-r">
+                <div class="pic-grid"><div class="pic" style="background:#EDEFEA;"></div><div class="pic" style="background:#F3F1E9;"></div><div class="pic-add">＋</div></div>
+                <div class="s-muted">已带入「本批共用」2 张；营业执照、检疫合格证等（肉类/水产必填，最多 5 张）</div>
+              </div></div>
+              <div class="bc-sub"><div class="pbtn ghost">删除这条</div><div class="pbtn ghostg" data-act="single">单独提交</div></div>
+            </div>
+          </div>
+
+          <!-- 卡2 收起 ✅ -->
+          <div class="bcard" data-toggle>
+            <div class="bc-head">
+              <div class="li-thumb t-tomato" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main"><div class="li-t">西红柿（粉果）<span class="tag g">✅ 可提交</span></div>
+                <div class="li-d">供货价 ¥3.60/斤 · 日供 150斤</div></div>
+              <span class="bc-caret">▾</span>
+            </div>
+            <div class="bc-body"><div class="s-muted" style="padding:6px 0;">（同①，字段一致）</div>
+              <div class="bc-sub"><div class="pbtn ghostg" data-act="single">单独提交</div></div></div>
+          </div>
+
+          <!-- 卡3 收起 ✅ -->
+          <div class="bcard" data-toggle>
+            <div class="bc-head">
+              <div class="li-thumb t-cabbage" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main"><div class="li-t">大白菜<span class="tag g">✅ 可提交</span></div>
+                <div class="li-d">供货价 ¥1.28/斤 · 日供 300斤</div></div>
+              <span class="bc-caret">▾</span>
+            </div>
+            <div class="bc-body"><div class="s-muted" style="padding:6px 0;">（同①，字段一致）</div>
+              <div class="bc-sub"><div class="pbtn ghostg" data-act="single">单独提交</div></div></div>
+          </div>
+
+          <!-- 卡4 待补全 缺供货价 -->
+          <div class="bcard" data-toggle>
+            <div class="bc-head">
+              <div class="li-thumb t-carrot" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main">
+                <div class="li-t">胡萝卜（带缨）<span class="tag o">⚠️ 待补全</span></div>
+                <div class="li-d">供货价 ¥2.40/斤 · 日供 180斤</div>
+                <div class="bc-miss">缺供货价</div>
+              </div>
+              <span class="bc-caret">▾</span>
+            </div>
+            <div class="bc-body"><div class="s-err">供货价还没填，AI 不碰价格 —— 必须人填才能提交</div>
+              <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt err" placeholder="如 2.40（元/斤，提交后审核）" /></div></div>
+              <div class="bc-sub"><div class="pbtn ghostg" data-act="single">补完单独提交</div></div></div>
+          </div>
+
+          <!-- 卡5 未填（AI 没认出来） -->
+          <div class="bcard" data-toggle>
+            <div class="bc-head">
+              <div class="li-thumb t-melon" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main">
+                <div class="li-t">（AI 没认出来）<span class="tag gray">⬜ 未填</span></div>
+                <div class="li-d">还没动过 · 点开手填也一样能提交</div>
+              </div>
+              <span class="bc-caret">▾</span>
+            </div>
+            <div class="bc-body">
+              <div class="s-muted">AI 没认出这张照片，手动填写也一样能提交（和单条链路同一兜底口径）</div>
+              <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt" placeholder="如：苦瓜（加油瓜）" /></div></div>
+              <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r"><div class="chip-g"><div class="chip">叶菜类</div><div class="chip">根茎类</div><div class="chip">葱蒜类</div></div></div></div>
+              <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt" placeholder="元/斤，提交后审核" /></div></div>
+              <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt" placeholder="如 200（斤）" /></div></div>
+              <div class="bc-sub"><div class="pbtn ghost">放弃这条</div><div class="pbtn ghostg" data-act="single">填完单独提交</div></div>
+            </div>
+          </div>
+
+          <div class="bc-fold">收起的 4 条：✅ 3 条 · ⚠️ 待补全 2 条<span style="color:#00B96B;">展开全部 ▾</span></div>
+          <div style="height:12px;"></div>
+        </div>
+        <div class="phone-foot">
+          <div class="pbtn" id="btnAll">全部提交（6 条）</div>
+          <div class="s-muted" style="text-align:center;margin-top:4px;">待补全的 3 条不会提交，会留在列表里</div>
+        </div>
+        <div class="home-ind"><i></i></div>
+
+        <!-- 二次确认弹层（可真跑） -->
+        <div class="mask" id="maskAll" style="display:none;">
+          <div class="sheet">
+            <div class="sheet-title">确认批量提交？</div>
+            <div class="sheet-body">
+              · 将提交 <b>6 条商品</b>，全部走运营审核（和单条提交一样）<br>
+              · 待补全的 <b>3 条不会提交</b>，会留在列表里<br>
+              · 本批共用资质证明 × 2 张（每条都会带上）
+            </div>
+            <div class="row-btns" style="margin-top:12px;">
+              <div class="pbtn ghost" data-act="cancel">再想想</div>
+              <div class="pbtn" data-act="confirmAll">确认提交（6 条）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note"><span class="t">状态角标口径</span><b>✅ 可提交</b>（必填齐了）/ <b>⚠️ 待补全</b>（缺必填，红字点出缺哪项）/
+        <b>⬜ 未填</b>（AI 没认出来还没动过）/ <b>⏳ 提交中 · ✅ 已提交 · ❌ 提交失败</b>（提交期三态，见画面4）。</div>
+    </div>
+
+    <!-- ② 展开态：AI 绿底 + 人填 -->
+    <div class="col">
+      <div class="fig">
+        <div class="fig-cap">② 单条展开（✅ 可提交）<span>AI 填的 3 项<b>绿底</b>；供货价/日供量<b>人填无绿底</b> —— 批量绝不许「一键全填好」</span></div>
+        <div class="phone h1000">
+          <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+          <div class="phone-title"><span class="back">‹</span>连拍上架 · 核对</div>
+          <div class="phone-body">
+            <div class="sumbar">共 <b>9</b> 条 · <span class="n">可提交 6</span> · <span class="w">待补全 3</span></div>
+            <div class="bcard open">
+              <div class="bc-head" style="cursor:default;">
+                <div class="li-thumb t-ginger" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+                <div class="li-main"><div class="li-t">山东大姜（老姜）<span class="tag g">✅ 可提交</span></div>
+                  <div class="li-d">第 1 张照片 · 供货价 ¥4.20/斤 · 日供 200斤</div></div>
+              </div>
+              <div class="bc-body">
+                <div class="f-row top"><div class="f-l">封面图</div><div class="f-r">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="li-thumb t-ginger" style="width:44px;height:44px;margin:0;"></div>
+                    <div><div class="s-muted" style="margin:0;">照片本身就是封面</div><div class="chip-g" style="margin-top:4px;"><div class="chip sm">📷 重拍</div><div class="chip sm">🖼 换一张</div></div></div>
+                  </div>
+                  <div class="ai-flash"><span>✨</span> AI 已识别这张照片，已帮你填好下面 3 项，请核对</div>
+                </div></div>
+                <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt ai" value="山东大姜（老姜）" data-ai /></div></div>
+                <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+                  <div class="chip-g"><div class="chip">叶菜类</div><div class="chip on">根茎类</div><div class="chip">葱蒜类</div><div class="chip">茄果类</div></div>
+                  <div class="s-muted">AI 选的是「根茎类」，认错了点别的分类即可</div>
+                </div></div>
+                <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r"><div class="chip-g"><div class="chip on">称重</div><div class="chip">固定规格</div></div></div></div>
+                <div class="f-row top"><div class="f-l">单位</div><div class="f-r">
+                  <div class="chip-g">
+                    <div class="chip on">斤</div><div class="chip">公斤</div><div class="chip">袋</div><div class="chip">桶</div><div class="chip">箱</div><div class="chip">瓶</div><div class="chip">件</div><div class="chip">把</div><div class="chip">个</div><div class="chip">块</div><div class="chip">板</div><div class="chip">盒</div><div class="chip">包</div><div class="chip">罐</div><div class="chip">扎</div><div class="chip">提</div><div class="chip">捆</div><div class="chip">筐</div>
+                  </div>
+                  <div class="s-muted">单位由平台维护，只能从上面选；AI 不猜单位，默认按分类给「斤」</div>
+                </div></div>
+                <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r">
+                  <textarea class="ta" maxlength="12">今天刚到的老姜，辣味足</textarea>
+                  <div class="s-muted">会显示在采购方商品名下方（灰字），可不填；最多 12 字<span class="remark-count">11/12</span></div>
+                </div></div>
+                <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt" value="4.20" placeholder="如 4.20（元/斤，提交后审核）" /></div></div>
+                <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt" value="200" placeholder="如 200（斤）" /></div></div>
+                <div class="f-row top"><div class="f-l">资质证明</div><div class="f-r">
+                  <div class="pic-grid"><div class="pic" style="background:#EDEFEA;"></div><div class="pic" style="background:#F3F1E9;"></div><div class="pic-add">＋</div></div>
+                  <div class="s-muted">已带入「本批共用」2 张，可单条再单独加（最多 5 张）</div>
+                </div></div>
+                <div class="bc-sub"><div class="pbtn ghost">删除这条</div><div class="pbtn ghostg" data-act="single">单独提交</div></div>
+              </div>
+            </div>
+            <div class="s-card" style="padding:10px 12px;">
+              <div class="s-muted" style="margin:0;">· 绿底只出现在<b style="color:#00995A;">名称 / 分类 / 计量方式</b>三项 —— AI 只填这 3 项<br>· 供货价、日供量<b>必须人填</b>（无绿底就是人填的证据）<br>· 单位 AI 不猜，给默认值即可改</div>
+            </div>
+          </div>
+          <div class="phone-foot"><div class="pbtn" data-go="s4">全部提交（6 条）</div></div>
+          <div class="home-ind"><i></i></div>
+        </div>
+      </div>
+
+      <!-- ③ 待补全展开 -->
+      <div class="fig" style="margin-top:2px;">
+        <div class="fig-cap">③ 单条展开（⚠️ 待补全）<span>红字直接点名缺哪一项；补上即可提交，不影响其他条</span></div>
+        <div class="phone h760">
+          <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+          <div class="phone-title"><span class="back">‹</span>连拍上架 · 核对</div>
+          <div class="phone-body">
+            <div class="sumbar">共 <b>9</b> 条 · <span class="n">可提交 6</span> · <span class="w">待补全 3</span></div>
+            <div class="bcard open">
+              <div class="bc-head" style="cursor:default;">
+                <div class="li-thumb t-carrot" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+                <div class="li-main"><div class="li-t">胡萝卜（带缨）<span class="tag o">⚠️ 待补全</span></div>
+                  <div class="bc-miss">缺供货价、缺日可供量</div></div>
+              </div>
+              <div class="bc-body">
+                <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt ai" value="胡萝卜（带缨）" data-ai /></div></div>
+                <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r"><div class="chip-g"><div class="chip">叶菜类</div><div class="chip on">根茎类</div><div class="chip">葱蒜类</div></div></div></div>
+                <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r"><div class="chip-g"><div class="chip on">称重</div><div class="chip">固定规格</div></div></div></div>
+                <div class="f-row top"><div class="f-l">单位</div><div class="f-r"><div class="chip-g"><div class="chip on">斤</div><div class="chip">公斤</div><div class="chip">袋</div><div class="chip">箱</div></div></div></div>
+                <div class="f-row top"><div class="f-l">商品备注</div><div class="f-r"><textarea class="ta" maxlength="12"></textarea><div class="s-muted">最多 12 字<span class="remark-count">0/12</span></div></div></div>
+                <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt err" placeholder="如 2.40（元/斤，提交后审核）" /><div class="s-err">缺供货价 —— 必填，AI 不碰价格</div></div></div>
+                <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt err" placeholder="如 200（斤）" /><div class="s-err">缺日可供量 —— 必填</div></div></div>
+                <div class="f-row top"><div class="f-l">资质证明</div><div class="f-r">
+                  <div class="pic-grid"><div class="pic" style="background:#EDEFEA;"></div><div class="pic" style="background:#F3F1E9;"></div><div class="pic-add">＋</div></div>
+                </div></div>
+                <div class="bc-sub"><div class="pbtn ghost">删除这条</div><div class="pbtn ghostg" data-act="single">补完单独提交</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-foot">
+            <div class="pbtn dis">全部提交（6 条）</div>
+            <div class="s-muted" style="text-align:center;margin-top:4px;">这条没填完，不挡其他 6 条批量提交</div>
+          </div>
+          <div class="home-ind"><i></i></div>
+        </div>
+      </div>
+      <div class="note"><span class="t">对照④（§六）</span>提交方式 <b>两种都给</b>：底部「全部提交」＋ 每条卡内「单独提交」。两种入口在②③里都能看到。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     画面 4：批量提交确认 + 逐条结果
+============================================================ -->
+<section id="s4">
+  <div class="sec-t">画面 4 · 批量提交确认 + 逐条结果 <em>确认弹层 → 逐条回显 → 结果面板</em></div>
+  <div class="sec-d">点「全部提交」先弹<b>二次确认</b>（写清楚条数、待补全不提交、共用资质）；提交过程<b>逐条串行</b>，每条回显
+    <code>提交中…</code> → <code>✅ 已提交</code> / <code>❌ 失败 + 原因</code>；全跑完出<b>结果面板</b>，失败条可单条重试。</div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">① 二次确认弹层<span>三句话讲清楚：提交几条、待补全怎么办、资质怎么带</span></div>
+      <div class="phone h700">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>连拍上架 · 核对</div>
+        <div class="phone-body">
+          <div class="sumbar" style="margin-top:10px;">共 <b>9</b> 条 · <span class="n">可提交 6</span> · <span class="w">待补全 3</span></div>
+          <div class="mask" style="position:relative;inset:auto;margin:10px;border-radius:12px;background:rgba(17,17,17,.45);align-items:flex-end;overflow:hidden;height:420px;">
+            <div class="sheet">
+              <div class="sheet-title">确认批量提交？</div>
+              <div class="sheet-body">
+                · 将提交 <b>6 条商品</b>，全部走运营审核（和单条提交一样）<br>
+                · 待补全的 <b>3 条不会提交</b>，会留在列表里<br>
+                · 本批共用资质证明 × 2 张
+              </div>
+              <div class="row-btns" style="margin-top:12px;">
+                <div class="pbtn ghost">再想想</div>
+                <div class="pbtn">确认提交（6 条）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-foot"><div class="pbtn ghost">返回核对列表</div></div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note"><span class="t">为什么逐条</span>第一版<b>不新增后端接口</b>，前端逐条调现有 <code>POST /supplier-goods/apply</code>；审核口径与单条提交完全一致。</div>
+    </div>
+
+    <div class="col">
+      <div class="fig">
+        <div class="fig-cap">② 逐条提交中<span>串行一条一条来；失败不影响已成功的，失败条留在列表可重试</span></div>
+        <div class="phone h860">
+          <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+          <div class="phone-title"><span class="back">‹</span>批量提交中</div>
+          <div class="phone-body">
+            <div class="sumbar" style="margin-top:10px;"><span class="spin"></span> 正在提交 <b>4</b> / 6 条 · 已成功 3</div>
+            <div class="list-item">
+              <div class="li-thumb t-ginger" style="width:40px;height:40px;"></div>
+              <div class="li-main"><div class="li-t" style="font-size:13px;">山东大姜（老姜）<span class="tag g">✅ 已提交</span></div><div class="li-d">待运营审核</div></div>
+            </div>
+            <div class="list-item">
+              <div class="li-thumb t-tomato" style="width:40px;height:40px;"></div>
+              <div class="li-main"><div class="li-t" style="font-size:13px;">西红柿（粉果）<span class="tag g">✅ 已提交</span></div><div class="li-d">待运营审核</div></div>
+            </div>
+            <div class="list-item">
+              <div class="li-thumb t-cabbage" style="width:40px;height:40px;"></div>
+              <div class="li-main"><div class="li-t" style="font-size:13px;">大白菜<span class="tag g">✅ 已提交</span></div><div class="li-d">待运营审核</div></div>
+            </div>
+            <div class="list-item">
+              <div class="li-thumb t-potato" style="width:40px;height:40px;"></div>
+              <div class="li-main"><div class="li-t" style="font-size:13px;">土豆（黄心）<span class="tag b"><span class="spin" style="border-color:#C9DBFF;border-top-color:#3B7CFF;"></span> 提交中…</span></div><div class="li-d">正在调 /supplier-goods/apply</div></div>
+            </div>
+            <div class="list-item">
+              <div class="li-thumb t-carrot" style="width:40px;height:40px;"></div>
+              <div class="li-main"><div class="li-t" style="font-size:13px;">胡萝卜（带缨）<span class="tag gray">⏳ 排队中</span></div><div class="li-d">等上一条跑完</div></div>
+            </div>
+            <div class="list-item">
+              <div class="li-thumb t-garlic" style="width:40px;height:40px;"></div>
+              <div class="li-main"><div class="li-t" style="font-size:13px;">蒜苗（红根）<span class="tag gray">⏳ 排队中</span></div><div class="li-d">等上一条跑完</div></div>
+            </div>
+            <div class="banner warnc" style="margin-top:10px;">待补全的 3 条不参与本批提交，提交完会留在核对列表里</div>
+          </div>
+          <div class="phone-foot"><div class="pbtn dis">提交中，请不要退出…</div></div>
+          <div class="home-ind"><i></i></div>
+        </div>
+      </div>
+
+      <div class="fig">
+        <div class="fig-cap">③ 结果面板（全跑完）<span>成功 5 条 · 失败 1 条；失败可单条重试；已成功的不会被回滚</span></div>
+        <div class="phone h760">
+          <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+          <div class="phone-title"><span class="back">‹</span>批量提交结果</div>
+          <div class="phone-body">
+            <div class="s-card" style="text-align:center;padding:18px 12px 14px;">
+              <div style="font-size:22px;font-weight:800;color:#1A1A1A;">成功 <span style="color:#00B578;">5</span> 条 · 失败 <span style="color:#FA5151;">1</span> 条</div>
+              <div class="s-muted" style="margin-top:6px;">成功条数已生成 5 条「待审核」申请，与本批的 6 条差 1 条失败</div>
+            </div>
+            <div class="list-item" style="border:1px solid #FFD3D3;background:#FFFBFB;">
+              <div class="li-thumb t-potato" style="width:40px;height:40px;"></div>
+              <div class="li-main">
+                <div class="li-t" style="font-size:13px;">土豆（黄心）<span class="tag r">❌ 提交失败</span></div>
+                <div class="li-d" style="color:#FA5151;">失败原因：该分类未授权（运营还没给你的店开通「根茎类」以外的分类）</div>
+              </div>
+              <div class="pbtn ghostg" style="flex:0 0 auto;padding:7px 14px;font-size:12px;" data-act="noop">单条重试</div>
+            </div>
+            <div class="list-item">
+              <div class="li-thumb t-ginger" style="width:40px;height:40px;"></div>
+              <div class="li-main"><div class="li-t" style="font-size:13px;">山东大姜（老姜）<span class="tag g">✅ 已提交</span></div><div class="li-d">待运营审核</div></div>
+            </div>
+            <div class="banner" style="margin-top:10px;">已成功的 5 条<b>不会回滚</b>；失败的那条留在核对列表里，补好还能单独再交</div>
+            <div class="row-btns" style="margin-top:10px;">
+              <div class="pbtn ghost">回到核对列表</div>
+              <div class="pbtn" data-go="s5">返回商品列表</div>
+            </div>
+          </div>
+          <div class="home-ind"><i></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     画面 5：提交后回显
+============================================================ -->
+<section id="s5">
+  <div class="sec-t">画面 5 · 提交后回显 —— 我的商品列表 <em>本批 6 条都进列表 · 全部「待审核」· 标出「本批新提交」</em></div>
+  <div class="sec-d">回到「我的商品」：本批成功的条目全部出现，状态都是<b>「待审核」</b>，用<b>浅绿底 + 角标</b>标出「本批新提交」，一眼能看清刚交了哪些。</div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">① 商品列表（本批新提交高亮）<span>浅绿底 + 「本批」角标 = 本批连拍提交的；老商品无高亮，对照明显</span></div>
+      <div class="phone h1180">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title">商品管理</div>
+        <div class="phone-body">
+          <div class="banner blue" style="margin-top:10px;">✅ 本批连拍已提交 5 条，全部待运营审核<span class="lk" data-go="s3">回看本批</span></div>
+          <div class="s-card">
+            <input class="s-ipt" placeholder="🔍 搜索我的商品（名称）" style="margin-bottom:8px;" />
+            <div class="chip-g"><div class="chip on">全部</div><div class="chip">待审核</div><div class="chip">在售</div><div class="chip">变更中</div><div class="chip">已下架</div><div class="chip">已驳回</div></div>
+          </div>
+
+          <div class="s-card" style="padding:10px 12px;"><div style="font-size:12px;font-weight:700;color:#1A1A1A;">我的商品（8）</div></div>
+
+          <div class="list-item" style="background:#F2FBF7;">
+            <div class="li-thumb t-ginger"><div class="cam-badge">📷</div></div>
+            <div class="li-main">
+              <div class="li-t">山东大姜（老姜）<span class="tag b" style="background:#DFF5EA;color:#00995A;">本批</span><span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#FA5151;">🗑 删除</span></div>
+              <div class="li-d">供货价 ¥4.20/斤 · 日供 200斤 · 今天 09:41 连拍提交</div>
+            </div>
+            <span class="tag o">待审核</span>
+          </div>
+          <div class="list-item" style="background:#F2FBF7;">
+            <div class="li-thumb t-tomato"><div class="cam-badge">📷</div></div>
+            <div class="li-main">
+              <div class="li-t">西红柿（粉果）<span class="tag b" style="background:#DFF5EA;color:#00995A;">本批</span><span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#FA5151;">🗑 删除</span></div>
+              <div class="li-d">供货价 ¥3.60/斤 · 日供 150斤 · 今天 09:41 连拍提交</div>
+            </div>
+            <span class="tag o">待审核</span>
+          </div>
+          <div class="list-item" style="background:#F2FBF7;">
+            <div class="li-thumb t-cabbage"><div class="cam-badge">📷</div></div>
+            <div class="li-main">
+              <div class="li-t">大白菜<span class="tag b" style="background:#DFF5EA;color:#00995A;">本批</span><span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#FA5151;">🗑 删除</span></div>
+              <div class="li-d">供货价 ¥1.28/斤 · 日供 300斤 · 今天 09:41 连拍提交</div>
+            </div>
+            <span class="tag o">待审核</span>
+          </div>
+          <div class="list-item" style="background:#F2FBF7;">
+            <div class="li-thumb t-potato"><div class="cam-badge">📷</div></div>
+            <div class="li-main">
+              <div class="li-t">土豆（黄心）<span class="tag b" style="background:#DFF5EA;color:#00995A;">本批</span><span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#FA5151;">🗑 删除</span></div>
+              <div class="li-d">供货价 ¥2.10/斤 · 日供 250斤 · 今天 09:41 连拍提交</div>
+            </div>
+            <span class="tag o">待审核</span>
+          </div>
+          <div class="list-item" style="background:#F2FBF7;">
+            <div class="li-thumb t-carrot"><div class="cam-badge">📷</div></div>
+            <div class="li-main">
+              <div class="li-t">胡萝卜（带缨）<span class="tag b" style="background:#DFF5EA;color:#00995A;">本批</span><span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#FA5151;">🗑 删除</span></div>
+              <div class="li-d">供货价 ¥2.40/斤 · 日供 180斤 · 今天 09:41 连拍提交</div>
+            </div>
+            <span class="tag o">待审核</span>
+          </div>
+          <div class="list-item" style="background:#F2FBF7;">
+            <div class="li-thumb t-garlic"><div class="cam-badge">📷</div></div>
+            <div class="li-main">
+              <div class="li-t">蒜苗（红根）<span class="tag b" style="background:#DFF5EA;color:#00995A;">本批</span><span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#FA5151;">🗑 删除</span></div>
+              <div class="li-d">供货价 ¥3.60/斤 · 日供 60斤 · 今天 09:41 连拍提交</div>
+            </div>
+            <span class="tag o">待审核</span>
+          </div>
+
+          <div class="list-item">
+            <div class="li-thumb t-lettuce"><div class="cam-badge">📷</div></div>
+            <div class="li-main"><div class="li-t">生菜<span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#3B7CFF;">⚡ 改库存</span><span class="act" style="color:#C87000;">⬇ 下架</span></div>
+              <div class="li-d">供货价 ¥2.00/斤 · 日供 80斤</div></div>
+            <span class="tag g">在售</span>
+          </div>
+          <div class="list-item">
+            <div class="li-thumb t-squash"><div class="cam-badge">📷</div></div>
+            <div class="li-main"><div class="li-t">西葫芦<span class="act" style="color:#00B578;">✏️ 编辑</span><span class="act" style="color:#3B7CFF;">⚡ 改库存</span><span class="act" style="color:#FA5151;">🗑 删除</span></div>
+              <div class="li-d">供货价 ¥2.60/斤 · 日供 90斤 · 上次驳回：图片不清晰</div></div>
+            <span class="tag r">已驳回</span>
+          </div>
+
+          <div class="s-card" style="padding:10px 12px;">
+            <div class="s-muted" style="margin:0;">· 本批 6 条里 5 条成功进列表；失败的那条（土豆前一次未授权分类）重试成功后也会出现在这里<br>· 状态、操作按钮与单条提交完全一致（待审核 = ✏️ 编辑 / 🗑 删除）</div>
+          </div>
+        </div>
+        <div class="phone-foot">
+          <div class="row-btns" style="margin:0;">
+            <div class="pbtn">＋ 提交新商品</div>
+            <div class="pbtn ghostg">📷 连拍上架（一次多张）</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note"><span class="t">口径</span>逐条调 <code>POST /supplier-goods/apply</code>，每条各自生成一条待审申请 —— 列表里就是<b> 6 条独立商品</b>，不是打包记录。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     兜底态 1~6
+============================================================ -->
+<section id="e1">
+  <div class="sec-t">兜底态 1 · AI 一个都没认出来 <em>9 张全 ⚠️ · 可逐条手填，也可放弃</em></div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">识别全失败 → 核对列表全「未填」<span>底部提示：照片没认出来，可以逐条手填，也可以放弃（不阻断、不报错）</span></div>
+      <div class="phone h860">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>连拍上架 · 核对</div>
+        <div class="phone-body">
+          <div class="banner warnc" style="margin-top:10px;">⚠️ 9 张照片都没认出来，可以逐条手填，也可以放弃<span class="lk">放弃本批</span></div>
+          <div class="sumbar">共 <b>9</b> 条 · <span class="n">可提交 0</span> · <span class="w">待补全 9</span></div>
+          <div class="bcard" data-toggle>
+            <div class="bc-head"><div class="li-thumb t-ginger dim" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main"><div class="li-t">（AI 没认出来）<span class="tag gray">⬜ 未填</span></div><div class="li-d">第 1 张 · 手动填写也一样能提交</div></div><span class="bc-caret">▾</span></div>
+          </div>
+          <div class="bcard" data-toggle>
+            <div class="bc-head"><div class="li-thumb t-tomato dim" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main"><div class="li-t">（AI 没认出来）<span class="tag gray">⬜ 未填</span></div><div class="li-d">第 2 张 · 手动填写也一样能提交</div></div><span class="bc-caret">▾</span></div>
+          </div>
+          <div class="bcard" data-toggle>
+            <div class="bc-head"><div class="li-thumb t-cabbage dim" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main"><div class="li-t">（AI 没认出来）<span class="tag gray">⬜ 未填</span></div><div class="li-d">第 3 张 · 手动填写也一样能提交</div></div><span class="bc-caret">▾</span></div>
+          </div>
+          <div class="bc-fold">其余 6 张同样「未填 · 可手填」<span style="color:#00B96B;">展开全部 ▾</span></div>
+          <div class="s-card" style="padding:10px 12px;">
+            <div class="s-muted" style="margin:0;">· AI 失败<b>不阻断</b>：和单条链路同一兜底口径（「手动填写也一样能提交」）<br>· 手填 3 项（名称/分类/计量方式）后照常批量提交<br>· 「放弃本批」只清掉这一批草稿，不产生任何半成品数据</div>
+          </div>
+        </div>
+        <div class="phone-foot">
+          <div class="row-btns" style="margin:0;">
+            <div class="pbtn ghost" data-act="noop">放弃本批</div>
+            <div class="pbtn dis">全部提交（0 条）</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="e2">
+  <div class="sec-t">兜底态 2 · 上传失败（网络断 / 图片过大） <em>红角标 + 重试 · 顶部横幅</em></div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">2 张没传上<span>失败格红角标 +「重试 / 删掉」；顶部横幅点名数量；其他张照常排队识别，不互相挡</span></div>
+      <div class="phone h860">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>连拍上架</div>
+        <div class="phone-body">
+          <div class="banner" style="margin-top:10px;">⚠️ 2 张没传上，重试或删掉<span class="lk">全部重试</span></div>
+          <div class="s-card" style="margin-top:8px;">
+            <div class="card-title" style="display:flex;justify-content:space-between;"><span>本批照片</span><span style="font-size:11px;color:#9AA1AB;">已完成 7 / 9</span></div>
+            <div class="bgrid">
+              <div class="bcell t-ginger"><div class="idx">1</div><div class="st ok"><b>✅ 已填好</b></div></div>
+              <div class="bcell t-tomato"><div class="idx">2</div><div class="st ok"><b>✅ 已填好</b></div></div>
+              <div class="bcell t-cabbage"><div class="idx">3</div><div class="st ok"><b>✅ 已填好</b></div></div>
+              <div class="bcell t-potato"><div class="idx">4</div><div class="st ok"><b>✅ 已填好</b></div></div>
+              <div class="bcell t-carrot dim"><div class="idx">5</div><div class="st bad"><b>❌ 上传失败</b><br>图片超过 300KB 压缩失败</div><div class="rebtn">重试</div></div>
+              <div class="bcell t-pepper dim"><div class="idx">6</div><div class="st bad"><b>❌ 上传失败</b><br>网络断开</div><div class="rebtn">重试</div></div>
+              <div class="bcell t-garlic"><div class="idx">7</div><div class="st ok"><b>✅ 已填好</b></div></div>
+              <div class="bcell t-lettuce"><div class="idx">8</div><div class="st ok"><b>✅ 已填好</b></div></div>
+              <div class="bcell t-squash"><div class="idx">9</div><div class="st ok"><b>✅ 已填好</b></div></div>
+            </div>
+            <div class="chip-g" style="margin-top:10px;"><div class="chip" data-act="noop">＋ 继续添加（剩余 0 张）</div></div>
+            <div class="s-muted">失败的两张不挡其他张；重试或长按删掉后可继续添加补位。</div>
+          </div>
+          <div class="row-btns"><div class="pbtn ghost" data-act="noop">删掉失败 2 张</div><div class="pbtn" data-go="s3">先核对已成功的 7 条</div></div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note"><span class="t">链路对照</span>现状 <code>image-compress ≤300KB → POST /upload/image（base64）</code>；失败多半是网络断/压缩失败 —— 所以给「重试」而不是直接进核对。</div>
+    </div>
+  </div>
+</section>
+
+<section id="e3">
+  <div class="sec-t">兜底态 3 · 分类没开通 <em>「暂无授权分类，请联系运营开通」</em></div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">该供应商没有任何授权分类<span>分类区显示灰字（现状文案），整条标 ⚠️ 待补全；其余条不受影响</span></div>
+      <div class="phone h860">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>连拍上架 · 核对</div>
+        <div class="phone-body">
+          <div class="sumbar" style="margin-top:10px;">共 <b>2</b> 条 · <span class="n">可提交 1</span> · <span class="w">待补全 1</span></div>
+          <div class="bcard open">
+            <div class="bc-head" style="cursor:default;">
+              <div class="li-thumb t-melon" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main"><div class="li-t">苦瓜<span class="tag o">⚠️ 待补全</span></div><div class="bc-miss">缺分类（当前账号暂无授权分类）</div></div>
+            </div>
+            <div class="bc-body">
+              <div class="f-row"><div class="f-l">商品名称</div><div class="f-r"><input class="s-ipt ai" value="苦瓜" data-ai /></div></div>
+              <div class="f-row top"><div class="f-l">商品分类</div><div class="f-r">
+                <div class="s-muted" style="margin:2px 0 4px;">暂无授权分类，请联系运营开通</div>
+                <div class="chip-g" style="opacity:.45;"><div class="chip" style="cursor:default;">（无可用分类）</div></div>
+              </div></div>
+              <div class="f-row top"><div class="f-l">计量方式</div><div class="f-r"><div class="chip-g"><div class="chip on">称重</div><div class="chip">固定规格</div></div></div></div>
+              <div class="f-row"><div class="f-l">供货价</div><div class="f-r"><input class="s-ipt" value="2.80" /></div></div>
+              <div class="f-row"><div class="f-l">日可供量</div><div class="f-r"><input class="s-ipt" value="60" /></div></div>
+              <div class="bc-sub"><div class="pbtn ghost" data-act="noop">放弃这条</div></div>
+            </div>
+          </div>
+          <div class="bcard" data-toggle>
+            <div class="bc-head"><div class="li-thumb t-ginger" style="width:40px;height:40px;"><div class="cam-badge">📷</div></div>
+              <div class="li-main"><div class="li-t">山东大姜（老姜）<span class="tag g">✅ 可提交</span></div><div class="li-d">供货价 ¥4.20/斤 · 日供 200斤</div></div><span class="bc-caret">▾</span></div>
+          </div>
+          <div class="banner warnc" style="margin-top:8px;">没有授权分类就交不了 —— 现状文案「暂无授权分类，请联系运营开通」，这条只能放弃或等运营开通后再交</div>
+        </div>
+        <div class="phone-foot"><div class="pbtn" data-act="noop">全部提交（1 条）</div></div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note"><span class="t">为什么画这个</span>分类下拉（现状 <code>:83</code>）供应商本来就可能没授权分类；批量链路里 AI 给的 categoryId 也<b>必须落在已授权分类内</b>，否则丢掉 → 变成这条的「缺分类」。</div>
+    </div>
+  </div>
+</section>
+
+<section id="e4">
+  <div class="sec-t">兜底态 4 · 提交到一半失败 <em>哪条失败 + 原因 · 已成功的不回滚</em></div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">提交 6 条，第 4 条失败<span>失败原因写清楚（如「该分类未授权」）；前 3 条已成功，<b>绝不回滚</b></span></div>
+      <div class="phone h860">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>批量提交结果</div>
+        <div class="phone-body">
+          <div class="s-card" style="text-align:center;padding:16px 12px 12px;margin-top:10px;">
+            <div style="font-size:20px;font-weight:800;">成功 <span style="color:#00B578;">3</span> 条 · 失败 <span style="color:#FA5151;">1</span> 条 · 还有 2 条待补全未参与</div>
+          </div>
+          <div class="list-item" style="border:1px solid #FFD3D3;background:#FFFBFB;">
+            <div class="li-thumb t-potato" style="width:40px;height:40px;"></div>
+            <div class="li-main">
+              <div class="li-t" style="font-size:13px;">土豆（黄心）<span class="tag r">❌ 提交失败</span></div>
+              <div class="li-d" style="color:#FA5151;">原因：该分类未授权 —— 请联系运营开通，或改选其他分类后重试</div>
+            </div>
+            <div class="pbtn ghostg" style="flex:0 0 auto;padding:7px 12px;font-size:12px;" data-act="noop">单条重试</div>
+          </div>
+          <div class="list-item">
+            <div class="li-thumb t-ginger" style="width:40px;height:40px;"></div>
+            <div class="li-main"><div class="li-t" style="font-size:13px;">山东大姜（老姜）<span class="tag g">✅ 已提交</span></div><div class="li-d">待运营审核 · 不受第 4 条失败影响</div></div>
+          </div>
+          <div class="list-item">
+            <div class="li-thumb t-tomato" style="width:40px;height:40px;"></div>
+            <div class="li-main"><div class="li-t" style="font-size:13px;">西红柿（粉果）<span class="tag g">✅ 已提交</span></div><div class="li-d">待运营审核</div></div>
+          </div>
+          <div class="list-item">
+            <div class="li-thumb t-cabbage" style="width:40px;height:40px;"></div>
+            <div class="li-main"><div class="li-t" style="font-size:13px;">大白菜<span class="tag g">✅ 已提交</span></div><div class="li-d">待运营审核</div></div>
+          </div>
+          <div class="banner warnc" style="margin-top:8px;">失败条<b>留在核对列表</b>可单独重试；已成功的 3 条已生成待审申请，<b>不会被回滚</b></div>
+          <div class="row-btns" style="margin-top:8px;">
+            <div class="pbtn ghost" data-act="noop">回到核对列表（处理失败条）</div>
+            <div class="pbtn" data-go="s5">返回商品列表</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="e5">
+  <div class="sec-t">兜底态 5 · 中途退出 —— 上次没提交完 <em>提示态 · §六 对照③「草稿要不要保留」</em></div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">A · 默认建议：一期先不做草稿保留<span>进入连拍页时检测到上次没提交完 → 顶部提示「上次有 3 条没提交完，继续？」；离开就没了（无草稿落库）</span></div>
+      <div class="phone h760">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>连拍上架</div>
+        <div class="phone-body">
+          <div class="banner blue" style="margin-top:10px;">🗒 上次有 3 条没提交完，继续？<span class="lk">放弃</span></div>
+          <div class="s-card" style="margin-top:8px;">
+            <div class="card-title" style="display:flex;justify-content:space-between;"><span>上次那 3 条</span><span style="font-size:11px;color:#9AA1AB;">⚠️ 一期不保留草稿 · 离开就没了</span></div>
+            <div class="s-muted" style="margin:0 0 8px;">点「继续」也只在本页内存里接着填（和刚才同一份草稿）；整页退出后<b>不会</b>再找回。</div>
+            <div class="banner warnc" style="margin:0;">一期口径：草稿只在前端内存，<b>不落库、不产生半成品商品</b></div>
+          </div>
+          <div class="row-btns" style="margin-top:10px;">
+            <div class="pbtn ghost" data-act="noop">放弃，重新拍</div>
+            <div class="pbtn">继续填那 3 条</div>
+          </div>
+          <div class="row-btns"><div class="pbtn ghost">📷 拍摄 / 从相册选择（最多 9 张）</div></div>
+          <div class="s-card" style="padding:10px 12px;">
+            <div class="s-muted" style="margin:0;">这条提示<b>只在进入时弹一次</b>，可忽略；忽略后直接走正常连拍流程。</div>
+          </div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+      <div class="note"><span class="t">对照③（§六）</span>草稿要不要保留 → <b>一期先不做</b>（离开就没了），但必须画出这条提示让大辉选。B 选项见右。</div>
+    </div>
+
+    <div class="col">
+      <div class="fig">
+        <div class="fig-cap">B · 对照：如果保留草稿（二期可选）<span>给出「已保存 3 条 · 明天接着填」的样子 —— 仅作对照，默认一期不做</span></div>
+        <div class="phone h700">
+          <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+          <div class="phone-title"><span class="back">‹</span>连拍上架</div>
+          <div class="phone-body">
+            <div class="banner blue" style="margin-top:10px;">🗒 已为你保存上次没提交完的 3 条<span class="lk">清掉</span></div>
+            <div class="s-card" style="margin-top:8px;">
+              <div class="card-title">草稿（3）· 保存于 10-03 16:20</div>
+              <div class="list-item" style="margin:0 0 6px;box-shadow:none;background:#F7F9FA;">
+                <div class="li-thumb t-carrot dim" style="width:38px;height:38px;"></div>
+                <div class="li-main"><div class="li-t" style="font-size:12.5px;">胡萝卜（带缨）<span class="tag o">缺供货价</span></div><div class="li-d">照片已压好 · 填一半</div></div>
+              </div>
+              <div class="list-item" style="margin:0 0 6px;box-shadow:none;background:#F7F9FA;">
+                <div class="li-thumb t-melon dim" style="width:38px;height:38px;"></div>
+                <div class="li-main"><div class="li-t" style="font-size:12.5px;">（没认出来）<span class="tag gray">未填</span></div><div class="li-d">照片已压好</div></div>
+              </div>
+              <div class="list-item" style="margin:0;box-shadow:none;background:#F7F9FA;">
+                <div class="li-thumb t-squash dim" style="width:38px;height:38px;"></div>
+                <div class="li-main"><div class="li-t" style="font-size:12.5px;">西葫芦（细花）<span class="tag g">可提交</span></div><div class="li-d">就差点确认</div></div>
+              </div>
+            </div>
+            <div class="row-btns"><div class="pbtn">接着填这 3 条</div><div class="pbtn ghost">不要了，重新拍</div></div>
+            <div class="m-notice">若选 B（保留草稿）：需要本地缓存（或服务端草稿表）+ 失效策略（如 24 小时）—— 成本比 A 高，故默认一期不做。</div>
+          </div>
+          <div class="home-ind"><i></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="e6">
+  <div class="sec-t">兜底态 6 · 空态 <em>一张都没选时不许白屏</em></div>
+  <div class="row">
+    <div class="fig">
+      <div class="fig-cap">还没选任何照片<span>引导文案 + 两个选图入口；不空白、不报错</span></div>
+      <div class="phone h700">
+        <div class="phone-bar">9:41 <div class="capsule"><span></span><span></span></div></div>
+        <div class="phone-title"><span class="back">‹</span>连拍上架</div>
+        <div class="phone-body">
+          <div class="row-btns" style="margin-top:10px;"><div class="pbtn" data-act="noop">📷 拍摄 / 从相册选择（最多 9 张）</div></div>
+          <div class="s-card" style="text-align:center;padding:34px 16px 30px;">
+            <div style="font-size:44px;line-height:1;">🥬🥕🍅</div>
+            <div style="font-size:14.5px;font-weight:700;margin-top:12px;">一次拍一筐，别一张一张来</div>
+            <div class="s-muted" style="margin-top:8px;">进一批菜就把这一批全拍进来，<br>每张照片会自动生成一条商品草稿，<br>AI 帮你填名称/分类/计量方式，价格自己核一遍就行。</div>
+            <div class="chip-g" style="justify-content:center;margin-top:14px;">
+              <div class="chip" data-act="noop">📷 直接拍</div>
+              <div class="chip" data-act="noop">🖼 从相册选</div>
+            </div>
+            <div class="s-muted" style="margin-top:12px;">最多 9 张 · 一张照片 = 一个商品</div>
+          </div>
+          <div class="m-notice">空态不许白屏：没有照片时给出「这功能是干嘛的 + 怎么开始」。</div>
+        </div>
+        <div class="home-ind"><i></i></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     §六 五处对照（拍板区）
+============================================================ -->
+<section id="dec">
+  <div class="sec-t">§六 · 原型里留给大辉拍板的五处对照 <em>看过就能点头 · 默认建议已按卡片画出</em></div>
+  <div class="sec-d">每处对照都是<b>两个选项同时画出来</b>（或明确说明唯一可行），方便对着屏幕选。下面对照块里的片段就是原型正文里用的<b>原始 HTML</b>。</div>
+
+  <div class="duo">
+    <div class="opt">
+      <div class="opt-t">对照① 一次最多几张 <em>默认 9 张</em></div>
+      <div class="opt-d">微信 <code>chooseImage</code> 硬上限 9 张，<b>改不了</b>；多的分两批。此项无第二种可行做法 —— 原型画出「选满后再添加」的拦截文案。</div>
+      <pre class="code">&lt;div class="s-err" style="font-size:12px;"&gt;⚠️ 一次最多 9 张，多的请再发起一批&lt;/div&gt;
+&lt;div class="s-muted"&gt;再点添加只会弹这条提示；想上更多菜，
+点「＋ 再发起一批」重新走一遍（两批互不影响）。&lt;/div&gt;</pre>
+      <div class="opt shot"><div class="shotbox">对应画面：画面2-②「超过 9 张的拦截提示」</div></div>
+    </div>
+
+    <div class="opt">
+      <div class="opt-t">对照② 资质证明怎么带 <em>默认：本批共用</em><em class="alt">也允许单条单独改</em></div>
+      <div class="opt-d">肉类/水产必填，同一批货通常同一份检疫证 → 批量页顶部加可选的「本批共用资质证明」，提交时附到每一条；每条卡内仍保留自己的「资质证明」行可单独改。</div>
+      <pre class="code">&lt;div class="banner blue"&gt;🗒 本批共用资质证明 × 2 张
+  &lt;span class="lk"&gt;改&lt;/span&gt;&lt;/div&gt;
+&lt;div class="s-muted"&gt;同一批货通常同一份检疫证，提交时附到每一条
+（§六 对照②，也可单条单独改）&lt;/div&gt;
+
+&lt;!-- 每条卡内的资质行（单条单独改） --&gt;
+&lt;div class="f-row top"&gt;&lt;div class="f-l"&gt;资质证明&lt;/div&gt;&lt;div class="f-r"&gt;
+  &lt;div class="pic-grid"&gt;
+    &lt;div class="pic" style="background:#EDEFEA;"&gt;&lt;/div&gt;
+    &lt;div class="pic" style="background:#F3F1E9;"&gt;&lt;/div&gt;
+    &lt;div class="pic-add"&gt;＋&lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="s-muted"&gt;已带入「本批共用」2 张，可单条再单独加
+  （最多 5 张）&lt;/div&gt;
+&lt;/div&gt;&lt;/div&gt;</pre>
+      <div class="opt shot"><div class="shotbox">对应画面：画面3-①顶部横幅 + 画面3-②资质行</div></div>
+    </div>
+
+    <div class="opt">
+      <div class="opt-t">对照③ 草稿要不要保留 <em>默认：一期先不做</em><em class="alt">提示态必须画</em></div>
+      <div class="opt-d">一期草稿只在前端内存，离开就没了；但「上次没提交完」的提示态必须画出来让大辉选。A = 只画提示；B = 保留草稿（二期，需本地缓存+失效策略）。</div>
+      <pre class="code">&lt;!-- A · 一期（默认）：只画提示，不真存 --&gt;
+&lt;div class="banner blue"&gt;🗒 上次有 3 条没提交完，继续？
+  &lt;span class="lk"&gt;放弃&lt;/span&gt;&lt;/div&gt;
+&lt;div class="s-muted"&gt;点「继续」也只在本页内存里接着填
+（和刚才同一份草稿）；整页退出后&lt;b&gt;不会&lt;/b&gt;再找回。&lt;/div&gt;
+
+&lt;!-- B · 对照：保留草稿（二期可选） --&gt;
+&lt;div class="banner blue"&gt;🗒 已为你保存上次没提交完的 3 条
+  &lt;span class="lk"&gt;清掉&lt;/span&gt;&lt;/div&gt;</pre>
+      <div class="opt shot"><div class="shotbox">对应画面：兜底态5 A / B 两台手机</div></div>
+    </div>
+
+    <div class="opt">
+      <div class="opt-t">对照④ 提交方式 <em>两种都给</em></div>
+      <div class="opt-d">底部固定「全部提交（N 条）」＋ 每条卡内「单独提交」，两个入口并存，不是二选一。</div>
+      <pre class="code">&lt;!-- 底部固定（phone-foot，常驻） --&gt;
+&lt;div class="phone-foot"&gt;
+  &lt;div class="pbtn"&gt;全部提交（6 条）&lt;/div&gt;
+  &lt;div class="s-muted"&gt;待补全的 3 条不会提交，会留在列表里&lt;/div&gt;
+&lt;/div&gt;
+
+&lt;!-- 每条卡内的次按钮 --&gt;
+&lt;div class="bc-sub"&gt;
+  &lt;div class="pbtn ghost"&gt;删除这条&lt;/div&gt;
+  &lt;div class="pbtn ghostg" data-act="single"&gt;单独提交&lt;/div&gt;
+&lt;/div&gt;</pre>
+      <div class="opt shot"><div class="shotbox">对应画面：画面3-①底部 + 画面3-②③卡内</div></div>
+    </div>
+
+    <div class="opt">
+      <div class="opt-t">对照⑤ 照片与商品的关系 <em>默认：一张照片 = 一个商品</em></div>
+      <div class="opt-d">不做「一张照片里多个商品」。每张照片独立生成一条草稿卡，封面就是这张照片本身；不支持一图拆多品。</div>
+      <pre class="code">&lt;!-- 一张照片 = 一条商品卡（缩略图即封面，从上往下排） --&gt;
+&lt;div class="bcard"&gt;
+  &lt;div class="bc-head"&gt;
+    &lt;div class="li-thumb t-ginger"&gt;&lt;div class="cam-badge"&gt;📷&lt;/div&gt;&lt;/div&gt;
+    &lt;div class="li-main"&gt;
+      &lt;div class="li-t"&gt;山东大姜（老姜）&lt;span class="tag g"&gt;✅ 可提交&lt;/span&gt;&lt;/div&gt;
+      &lt;div class="li-d"&gt;供货价 ¥4.20/斤 · 日供 200斤&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;span class="bc-caret"&gt;▾&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;!-- 展开态里： --&gt;
+  &lt;div class="s-muted"&gt;照片本身就是封面&lt;/div&gt;
+&lt;/div&gt;</pre>
+      <div class="opt shot"><div class="shotbox">对应画面：画面3-①九条卡、每卡封面行</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="legend">
+  <span class="t">对齐说明（与现状表逐行核过）</span>
+  ① 封面图现状一次只能 1 张（<code>goods-manage.vue:34-66</code>，<code>pickPhotos({count:1})</code>）→ 本卡把「一次 1 张」扩成「一次最多 9 张」，<b>只发生在新增的连拍入口里</b>，老入口照旧。<br>
+  ② AI 三态文案照现状原样用（loading「AI 正在识别照片，约 2~3 秒…」/ done「✨ AI 已识别，已帮你填好下面 3 项，请核对」/ fail「AI 没认出这张照片，手动填写也一样能提交」）。AI 只回填 <b>name / categoryId（限已授权分类）/ weighType</b> 三项。<br>
+  ③ 一个商品 = 一次 <code>POST /supplier-goods/apply</code>；批量提交就是前端<b>逐条</b>调它，第一版<b>不新增后端接口</b>。<br>
+  ④ 多图选择器复用 <code>utils/photo-upload.js</code> 的 <code>pickPhotos({count})</code>（<code>MAX_PHOTOS = 9</code> 现成），<b>不新写选图逻辑</b>。<br>
+  ⑤ 计量单位是<b>平铺 chip</b>（卡BV-1/BV-2 已上生产，选项来自 <code>GET /units</code> 只出启用中的），<b>绝不许下拉</b>；分类同理平铺 chip、只出现该供应商已授权分类。<br>
+  ⑥ 图片链路照现状：本地压缩 ≤300KB → <code>POST /upload/image</code>（base64）→ 返回 <code>/uploads/xxx</code>。<br>
+  ⑦ 商品列表现状逐条渲染、无勾选无批量 → 本卡<b>没有</b>在列表页加任何勾选/批量操作，批量只发生在「连拍上架」流程内部（画面 2→3→4）。
+
+  <span class="t">与现状不一致 / 拿不准的地方（报告口径）</span>
+  · 手机壳圆角：卡面写 <b>40px</b>，两份参照原型（卡BP/卡BT）是 <b>26px</b> —— 按卡面的「视觉硬基准」用 40px，如以参照原型为准改回 26px 只动这一个数。<br>
+  · 画面2 顶部大按钮与「＋ 再发起一批」「去核对」属于<b>流程导航按钮</b>，不是新业务字段；如果连导航按钮也算"新增"，请指出，原型上可退化为纯文字步骤条。<br>
+  · 画面5 列表项里「本批」角标 + 浅绿底是<b>新增的视觉标记</b>（卡面要求"视觉上能标一下本批新提交"），具体样式（底色 vs 角标）可再定。<br>
+  · 结果面板里失败原因示例「该分类未授权」按兜底态4给的例子写；真实接口失败文案以后端为准。<br>
+  · 兜底态1 的「放弃本批」按钮：卡面只说「可以放弃」，按钮文案是我按语义补的，未新增任何业务功能。<br>
+  · 草稿（对照③）按「一期不做」画了提示态 + 对照 B；若大辉选 B，二期需要本地缓存或服务端草稿表 + 失效策略。<br>
+  · 供货价/日供量的 placeholder 跟随单位（如「元/斤」「（斤）」），照卡BV-2 口径。
+</div>
+
+</div><!-- /stage -->
+
+<script>
+(function () {
+  /* ---------- 页签跳转 ---------- */
+  function go(id) {
+    var el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-go]') : null;
+    if (t) { go(t.getAttribute('data-go')); return; }
+
+    /* chip 单选（同组内） */
+    var chip = e.target.closest ? e.target.closest('.chip-g .chip') : null;
+    if (chip && !chip.hasAttribute('data-act')) {
+      var g = chip.parentNode;
+      Array.prototype.forEach.call(g.querySelectorAll('.chip'), function (c) { c.classList.remove('on'); });
+      chip.classList.add('on');
+      /* 用户改过 → 取消同卡内该字段的 AI 绿底（名称/分类/计量方式） */
+      var card = chip.closest('.bc-body');
+      if (card && g.querySelector('.s-muted') && /AI 选的是/.test(g.parentNode.textContent)) {
+        var nameIpt = card.querySelector('.s-ipt.ai');
+        if (nameIpt) nameIpt.classList.remove('ai');
+      }
+      return;
+    }
+
+    /* 输入过 AI 绿底字段 → 取消绿底（用户改过就取消） */
+    var ipt = e.target;
+    if (ipt && ipt.classList && ipt.classList.contains('ai') && (e.type === 'input')) {
+      ipt.classList.remove('ai');
+    }
+
+    /* 卡片展开/收起 */
+    var head = e.target.closest ? e.target.closest('[data-toggle] .bc-head') : null;
+    if (head) { head.parentNode.classList.toggle('open'); return; }
+    var fold = e.target.closest ? e.target.closest('.bc-fold') : null;
+    if (fold) {
+      var sec = fold.closest('section') || document;
+      Array.prototype.forEach.call(sec.querySelectorAll('.bcard'), function (c) { c.classList.add('open'); });
+      return;
+    }
+
+    /* 继续添加：满 9 张拦截 */
+    var add = e.target.closest ? e.target.closest('[data-act="add"]') : null;
+    if (add) {
+      var grid = document.getElementById('bgrid');
+      if (grid && grid.children.length >= 9) {
+        add.textContent = '⚠️ 一次最多 9 张，多的请再发起一批';
+        add.classList.add('on');
+        setTimeout(function () {
+          add.textContent = '＋ 继续添加（剩余 ' + Math.max(0, 9 - grid.children.length) + ' 张）';
+          add.classList.remove('on');
+        }, 2200);
+      }
+      return;
+    }
+
+    /* 上传失败重试：恢复为识别中 */
+    var retry = e.target.closest ? e.target.closest('.rebtn[data-act="retry"]') : null;
+    if (retry) {
+      var cell = retry.closest('.bcell');
+      cell.classList.remove('dim');
+      var st = cell.querySelector('.st');
+      st.className = 'st busy';
+      st.innerHTML = '<b>识别中…</b><br>重新上传成功';
+      retry.remove();
+      var done = document.getElementById('doneLine');
+      if (done) done.textContent = '已完成 6 / 9';
+      return;
+    }
+
+    /* 批量提交真跑（画面3-①） */
+    var allBtn = e.target.closest ? e.target.closest('#btnAll') : null;
+    if (allBtn) {
+      var m0 = document.getElementById('maskAll');
+      if (m0) m0.style.display = 'flex';
+      return;
+    }
+    var act = e.target.closest ? e.target.closest('[data-act]') : null;
+    if (!act) return;
+    var a = act.getAttribute('data-act');
+    if (a === 'noop') { act.style.opacity = .6; setTimeout(function(){ act.style.opacity = ''; }, 500); return; }
+    if (a === 'single') {
+      act.textContent = '✅ 已单独提交';
+      act.classList.remove('ghostg'); act.classList.add('ghost');
+      return;
+    }
+    if (a === 'cancel') {
+      var m1 = document.getElementById('maskAll'); if (m1) m1.style.display = 'none';
+      return;
+    }
+    if (a === 'confirmAll') {
+      var mask = document.getElementById('maskAll');
+      var btn = document.getElementById('btnAll');
+      if (mask) mask.style.display = 'none';
+      if (!btn) return;
+      var seq = [
+        ['土豆（黄心）', false, ''],
+        ['胡萝卜（带缨）', false, ''],
+        ['苦瓜（加油瓜）', false, ''],
+        ['山东大姜（老姜）', true, ''],
+        ['西红柿（粉果）', true, ''],
+        ['大白菜', true, '']
+      ];
+      var i = 0, ok = 0;
+      function step() {
+        if (i >= seq.length) {
+          btn.textContent = '✅ 成功 5 条 · ❌ 失败 1 条（见画面4-③）';
+          btn.classList.remove('pbtn'); btn.classList.add('pbtn', 'ghostg');
+          setTimeout(function(){ go('s4'); }, 900);
+          return;
+        }
+        var item = seq[i];
+        if (item[1]) { ok++; btn.textContent = '提交中 ' + ok + ' / 6 …（逐条串行）'; }
+        else { btn.textContent = '第 ' + (i + 1) + ' 条失败（示例）… 继续下一条'; }
+        i++;
+        setTimeout(step, 550);
+      }
+      step();
+      return;
+    }
+  });
+
+  /* 备注字数 */
+  document.addEventListener('input', function (e) {
+    var ta = e.target;
+    if (ta && ta.classList && ta.classList.contains('ta')) {
+      var cnt = ta.parentNode.querySelector('.remark-count');
+      if (cnt) cnt.textContent = (ta.value || '').length + '/12';
+      var body = ta.closest('.bc-body');
+      if (body) { var ai = body.querySelector('.f-l'); } /* noop: 备注 AI 不填 */
+    }
+    if (ta && ta.classList && ta.classList.contains('ai')) ta.classList.remove('ai');
+  });
+
+  /* 页签高亮 */
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  var secs = tabs.map(function (t) { return document.getElementById(t.getAttribute('data-go')); });
+  window.addEventListener('scroll', function () {
+    var y = window.scrollY + 120, cur = 0;
+    secs.forEach(function (s, i) { if (s && s.offsetTop <= y) cur = i; });
+    tabs.forEach(function (t, i) { t.style.borderColor = i === cur ? '#00B96B' : ''; t.style.color = i === cur ? '#00995A' : ''; });
+  });
+})();
+</script>
+</body>
+</html>
