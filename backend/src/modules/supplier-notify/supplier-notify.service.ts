@@ -6,11 +6,25 @@ import { AuditService } from '../audit/audit.service'
 import {
   DEFAULT_SUPPLIER_ACK_REMINDER,
   SUPPLIER_ACK_REMINDER_KEY,
+  SUPPLIER_NOTIFY_GATEWAY_STATE_KEY,
   SupplierAckReminderConfig,
   inQuietWindow,
   validateReminderConfig,
 } from './notify-config'
 import { dialTts, isVmsConfigured, maskPhone, queryCallDetail } from './vms.adapter'
+
+/** 卡BP-1：网关取件返回项（phone 明文仅出现在该响应里；台账/日志一律 maskPhone） */
+export interface PendingDialItem {
+  dialId: string
+  orderId: number
+  supplierId: number
+  phone: string
+  supplierName: string | null
+  shopName: string | null
+  minutesUnacked: number
+  ringSeconds: number
+  hangupAfterAnswerSeconds: number
+}
 
 /**
  * 卡BN-1（2026-10-02）：供应商未接单电话催办（后端）
@@ -41,7 +55,15 @@ export class SupplierNotifyService {
     return { ...DEFAULT_SUPPLIER_ACK_REMINDER, ...(row.value as Partial<SupplierAckReminderConfig>) }
   }
 
-  /** GET/PUT config 的统一返回：{ ...配置, vmsConfigured, callerNumber, templateId, launchAt, todayStats } */
+  /** 网关心跳状态：online = 最近一次心跳在 180 秒内（卡BP-1） */
+  private async gatewayState(): Promise<{ online: boolean; lastHeartbeatAt: string | null }> {
+    const row = await this.prisma.platformConfig.findUnique({ where: { key: SUPPLIER_NOTIFY_GATEWAY_STATE_KEY } })
+    const at = (row?.value as any)?.at ?? null
+    const online = !!at && Date.now() - new Date(at).getTime() < 180 * 1000
+    return { online, lastHeartbeatAt: at }
+  }
+
+  /** GET/PUT config 的统一返回：{ ...配置, vmsConfigured, callerNumber, templateId, launchAt, todayStats, gateway } */
   async getAdminConfig() {
     const cfg = await this.getRawConfig()
     return {
@@ -50,6 +72,7 @@ export class SupplierNotifyService {
       callerNumber: process.env.ALIYUN_VMS_CALLER_NUMBER || null, // 可回显（非密钥）
       templateId: process.env.ALIYUN_VMS_TTS_CODE || null, // 可回显（非密钥）；AK 绝不回显
       todayStats: await this.todayStats(cfg),
+      gateway: await this.gatewayState(), // 卡BP-1：网关在线状态
     }
   }
 
@@ -67,6 +90,13 @@ export class SupplierNotifyService {
       quietEnabled: body.quietEnabled ?? (before ?? DEFAULT_SUPPLIER_ACK_REMINDER).quietEnabled,
       quietStart: body.quietStart ?? (before ?? DEFAULT_SUPPLIER_ACK_REMINDER).quietStart,
       quietEnd: body.quietEnd ?? (before ?? DEFAULT_SUPPLIER_ACK_REMINDER).quietEnd,
+      // ── 卡BP-1 新增四字段（旧存量行可能缺字段，逐个兜默认值） ──
+      channel: body.channel ?? (before as any)?.channel ?? DEFAULT_SUPPLIER_ACK_REMINDER.channel,
+      ringSeconds: body.ringSeconds ?? (before as any)?.ringSeconds ?? DEFAULT_SUPPLIER_ACK_REMINDER.ringSeconds,
+      hangupAfterAnswerSeconds:
+        body.hangupAfterAnswerSeconds ?? (before as any)?.hangupAfterAnswerSeconds ?? DEFAULT_SUPPLIER_ACK_REMINDER.hangupAfterAnswerSeconds,
+      gatewayPhoneNo:
+        body.gatewayPhoneNo !== undefined ? body.gatewayPhoneNo : ((before as any)?.gatewayPhoneNo ?? DEFAULT_SUPPLIER_ACK_REMINDER.gatewayPhoneNo),
       // ★ 首次保存写入保存时刻；之后任何保存不许改（历史单拨打分界线）
       launchAt: before?.launchAt ?? new Date().toISOString(),
     }
@@ -137,7 +167,7 @@ export class SupplierNotifyService {
       const sids = [...new Set(o.items.map((it) => it.supplierId).filter((id): id is bigint => id !== null))]
       for (const sid of sids) pairs.push({ orderId: o.id, supplierId: sid })
     }
-    if (!pairs.length) return { settings: { ...cfg, quietNow }, rows: [] }
+    if (!pairs.length) return { settings: { ...cfg, quietNow, gateway: await this.gatewayState() }, rows: [] }
 
     const orderMap = new Map(orders.map((o) => [Number(o.id), o]))
     const supplierIds = [...new Set(pairs.map((p) => p.supplierId))]
@@ -205,7 +235,7 @@ export class SupplierNotifyService {
         nextAction,
       }
     })
-    return { settings: { ...cfg, quietNow }, rows }
+    return { settings: { ...cfg, quietNow, gateway: await this.gatewayState() }, rows }
   }
 
   /** 台账查询：每一通（auto/manual）一条；orderId/supplierId 可选过滤 */
@@ -221,8 +251,10 @@ export class SupplierNotifyService {
           at: r.createdAt.toISOString(),
           supplierId: a?.supplierId ?? null,
           mode: a?.mode ?? null,
+          channel: a?.channel ?? null,
           result: a?.result ?? null,
           callId: a?.callId ?? null,
+          dialId: a?.dialId ?? null,
           note: a?.note ?? null,
         }
       })
@@ -341,23 +373,30 @@ export class SupplierNotifyService {
   }
 
   /**
-   * 扫描核心。返回 { candidates, called, dryRun, real, skipped: {...}, ... }
+   * 扫描核心。返回 { candidates, called, dryRun, real, dispatchPending, skipped: {...}, ... }
    * skipped 细分：belowThreshold / stopped / maxReached / gapWait / quiet / ackCallOff / noPhone / acked
+   *
+   * 卡BP-1（2026-10-04）：扫描不再固定直拨 —— 按 cfg.channel 分路：
+   *   phone  → 只判定、只统计 dispatchPending（登记待派发），不拨不计数；计数+台账由网关 pendingDial 取件时写；
+   *   aliyun → 保持原 dialTts 直拨行为（旧通道原样保留）；
+   *   off    → 什么都不做。
+   * 判定七条与候选装载抽成 loadCandidates / judgePair，与网关取件共用同一份（不许出现第二份判定）。
    */
   async runScan() {
     const zeroSkipped = { belowThreshold: 0, stopped: 0, maxReached: 0, gapWait: 0, quiet: 0, ackCallOff: 0, noPhone: 0, acked: 0 }
     const cfg = await this.getRawConfig()
-    const now = new Date()
-    const quietNow = cfg.quietEnabled && inQuietWindow(now, cfg.quietStart, cfg.quietEnd)
+    const quietNow = cfg.quietEnabled && inQuietWindow(new Date(), cfg.quietStart, cfg.quietEnd)
     const base = {
       enabled: cfg.enabled,
       maxCalls: cfg.maxCalls,
+      channel: cfg.channel ?? ('phone' as const),
       quietNow,
       launchAt: cfg.launchAt,
       candidates: 0,
       called: 0,
       dryRun: 0,
       real: 0,
+      dispatchPending: 0,
       skipped: { ...zeroSkipped },
     }
     // 两个总刹车：总开关关 / maxCalls=0（只提醒运营、完全不拨）
@@ -366,59 +405,23 @@ export class SupplierNotifyService {
     if (this.running) return { ...base, reentered: true }
     this.running = true
     try {
-      const nowMs = now.getTime()
-      const since = nowMs - 24 * 3600 * 1000
-      const launchMs = new Date(cfg.launchAt).getTime()
-      // ★ 历史单不拨打：createdAt >= launchAt；只回看 24 小时
-      const from = new Date(Math.max(launchMs, since))
-      const orders = await this.prisma.order.findMany({
-        where: { status: 30, createdAt: { gte: from } },
-        select: { id: true, createdAt: true, items: { select: { supplierId: true } } },
-      })
+      const ctx = await this.loadCandidates(cfg)
+      base.candidates = ctx.pairs.length
+      if (!ctx.pairs.length) return { ...base, totalOff: false }
 
-      const pairs: { orderId: bigint; supplierId: bigint; createdAt: Date }[] = []
-      for (const o of orders) {
-        const sids = [...new Set(o.items.map((it) => it.supplierId).filter((id): id is bigint => id !== null))]
-        for (const sid of sids) pairs.push({ orderId: o.id, supplierId: sid, createdAt: o.createdAt })
-      }
-      base.candidates = pairs.length
-      if (!pairs.length) return { ...base, totalOff: false }
-
-      const supplierIds = [...new Set(pairs.map((p) => p.supplierId))]
-      const suppliers = await this.prisma.supplier.findMany({
-        where: { id: { in: supplierIds } },
-        select: { id: true, ackCallEnabled: true, user: { select: { phone: true } } },
-      })
-      const supMap = new Map(suppliers.map((s) => [Number(s.id), s]))
-      const acks = await this.prisma.orderSupplierAck.findMany({ where: { orderId: { in: orders.map((o) => o.id) } } })
-      const ackMap = new Map(acks.map((a) => [`${Number(a.orderId)}:${Number(a.supplierId)}`, a]))
-
-      for (const p of pairs) {
-        const key = `${Number(p.orderId)}:${Number(p.supplierId)}`
-        const ack = ackMap.get(key)
-        if (ack?.ackAt) { base.skipped.acked++; continue } // 已接单
-        const minutes = (nowMs - p.createdAt.getTime()) / 60000
-        if (minutes < cfg.thresholdMinutes) { base.skipped.belowThreshold++; continue } // 未达阈值
-        if (ack?.remindStopped === 1) { base.skipped.stopped++; continue } // 运营已处理
-        const remindCount = ack?.remindCount ?? 0
-        if (remindCount >= cfg.maxCalls) { base.skipped.maxReached++; continue } // 达上限 → 转人工
-        // 第 2 通间隔从「上次拨打」起算
-        if (remindCount >= 1 && ack?.lastRemindAt && nowMs - ack.lastRemindAt.getTime() < cfg.secondGapMinutes * 60000) {
-          base.skipped.gapWait++
-          continue
-        }
-        if (quietNow) { base.skipped.quiet++; continue } // 免打扰时段不拨（过点也不回头打）
-        const sup = supMap.get(Number(p.supplierId))
-        if (sup && sup.ackCallEnabled === 0) { base.skipped.ackCallOff++; continue } // 供应商自关，不占次数
-        const phone = sup?.user?.phone || null
-        if (!phone) { base.skipped.noPhone++; continue } // 无手机号：只提醒运营，不占次数
-
-        // → 拨打（dry-run 或真拨）
-        const r = await dialTts(phone)
+      for (const p of ctx.pairs) {
+        const skip = this.judgePair(p, ctx)
+        if (skip) { base.skipped[skip]++; continue }
+        // 卡BP-1：手机专线通道 —— 扫描命中只登记待派发，等网关来取；不拨不占次数
+        if (base.channel === 'phone') { base.dispatchPending++; continue }
+        if (base.channel === 'off') continue // 通道关闭：不派发不计数
+        // → channel === 'aliyun'：原直拨路径（dry-run 或真拨）
+        const phone = ctx.supMap.get(Number(p.supplierId))?.user?.phone || null
+        const r = await dialTts(phone!)
         await this.prisma.orderSupplierAck.upsert({
           where: { orderId_supplierId: { orderId: p.orderId, supplierId: p.supplierId } },
-          update: { remindCount: { increment: 1 }, lastRemindAt: now },
-          create: { orderId: p.orderId, supplierId: p.supplierId, remindCount: 1, lastRemindAt: now },
+          update: { remindCount: { increment: 1 }, lastRemindAt: ctx.now },
+          create: { orderId: p.orderId, supplierId: p.supplierId, remindCount: 1, lastRemindAt: ctx.now },
         })
         await this.writeCallRecord({ orderId: p.orderId, supplierId: p.supplierId, mode: 'auto', operatorId: 0n, ...r })
         base.called++
@@ -429,6 +432,165 @@ export class SupplierNotifyService {
     } finally {
       this.running = false
     }
+  }
+
+  // ────────────────────────────────────────
+  // 卡BP-1：候选装载 + 七条判定（扫描与网关取件共用，唯一一份）
+  // ────────────────────────────────────────
+
+  /**
+   * 装载候选上下文：备货中(status=30)订单×供应商对（只回看 24h 且 createdAt >= launchAt）、
+   * 供应商档案（含手机号/开关）、接单 ack 行、免打扰判定。
+   * client 可传事务客户端（pendingDial 在一个事务里完成装载+判定+登记）。
+   */
+  private async loadCandidates(cfg: SupplierAckReminderConfig, client?: any) {
+    const db = client || this.prisma
+    const now = new Date()
+    const quietNow = cfg.quietEnabled && inQuietWindow(now, cfg.quietStart, cfg.quietEnd)
+    const nowMs = now.getTime()
+    const since = nowMs - 24 * 3600 * 1000
+    // ★ 历史单不拨打：createdAt >= launchAt；只回看 24 小时
+    const from = new Date(Math.max(new Date(cfg.launchAt).getTime(), since))
+    const orders = await db.order.findMany({
+      where: { status: 30, createdAt: { gte: from } },
+      select: { id: true, createdAt: true, items: { select: { supplierId: true } }, purchaser: { select: { shopName: true } } },
+    })
+    const pairs: { orderId: bigint; supplierId: bigint; createdAt: Date; shopName: string | null }[] = []
+    for (const o of orders) {
+      const sids: bigint[] = [...new Set<bigint>(o.items.map((it: any) => it.supplierId).filter((id: any): id is bigint => id !== null))]
+      for (const sid of sids) pairs.push({ orderId: o.id, supplierId: sid, createdAt: o.createdAt, shopName: o.purchaser?.shopName ?? null })
+    }
+    const supplierIds = [...new Set(pairs.map((p) => p.supplierId))]
+    const suppliers = await db.supplier.findMany({
+      where: { id: { in: supplierIds } },
+      select: { id: true, stallName: true, ackCallEnabled: true, user: { select: { phone: true } } },
+    })
+    const supMap = new Map<number, { id: bigint; stallName: string; ackCallEnabled: number; user: { phone: string | null } }>(
+      suppliers.map((s: any) => [Number(s.id), s]),
+    )
+    const acks = await db.orderSupplierAck.findMany({ where: { orderId: { in: orders.map((o: any) => o.id) } } })
+    const ackMap = new Map<string, any>(acks.map((a: any) => [`${Number(a.orderId)}:${Number(a.supplierId)}`, a]))
+    return { cfg, now, nowMs, quietNow, pairs, supMap, ackMap }
+  }
+
+  /** 七条判定（与扫描同序）：返回 null = 通过（可拨打/可派发）；否则返回跳过原因 */
+  private judgePair(
+    p: { orderId: bigint; supplierId: bigint; createdAt: Date },
+    ctx: { cfg: SupplierAckReminderConfig; nowMs: number; quietNow: boolean; ackMap: Map<string, any>; supMap: Map<number, any> },
+  ): 'acked' | 'belowThreshold' | 'stopped' | 'maxReached' | 'gapWait' | 'quiet' | 'ackCallOff' | 'noPhone' | null {
+    const { cfg, nowMs, quietNow, ackMap, supMap } = ctx
+    const ack = ackMap.get(`${Number(p.orderId)}:${Number(p.supplierId)}`)
+    if (ack?.ackAt) return 'acked' // 已接单
+    const minutes = (nowMs - p.createdAt.getTime()) / 60000
+    if (minutes < cfg.thresholdMinutes) return 'belowThreshold' // 未达阈值
+    if (ack?.remindStopped === 1) return 'stopped' // 运营已处理
+    const remindCount = ack?.remindCount ?? 0
+    if (remindCount >= cfg.maxCalls) return 'maxReached' // 达上限 → 转人工
+    // 第 2 通间隔从「上次拨打」起算
+    if (remindCount >= 1 && ack?.lastRemindAt && nowMs - ack.lastRemindAt.getTime() < cfg.secondGapMinutes * 60000) return 'gapWait'
+    if (quietNow) return 'quiet' // 免打扰时段不拨（过点也不回头打）
+    const sup = supMap.get(Number(p.supplierId))
+    if (sup && sup.ackCallEnabled === 0) return 'ackCallOff' // 供应商自关，不占次数
+    if (!sup?.user?.phone) return 'noPhone' // 无手机号：只提醒运营，不占次数
+    return null
+  }
+
+  // ────────────────────────────────────────
+  // 卡BP-1：手机专线网关（派发 / 回报 / 心跳）
+  // ────────────────────────────────────────
+
+  /** 网关取件：在**一个事务**里挑出最多 limit 条候选（判定与扫描共用 judgePair），逐条登记派发：
+   *   remindCount += 1、lastRemindAt = now、写台账 SUPPLIER_NOTIFY_CALL
+   *   （payload {mode:'auto', channel:'phone', result:'dispatched', dialId, at}，手机号只记 maskPhone）。
+   * 返回给网关的数组是**唯一允许明文手机号出现**的地方（网关要拨号）。
+   * channel='off' / 'aliyun' ⇒ 永远返回空数组（off=关闭；aliyun 走扫描直拨，不经网关）。
+   */
+  async pendingDial(limit: number): Promise<PendingDialItem[]> {
+    const cfg = await this.getRawConfig()
+    if (cfg.channel !== 'phone') return []
+    const take = Math.min(Math.max(1, Math.floor(limit) || 5), 50)
+    return this.prisma.$transaction(async (tx) => {
+      const ctx = await this.loadCandidates(cfg, tx)
+      const picked: typeof ctx.pairs = []
+      for (const p of ctx.pairs) {
+        if (picked.length >= take) break
+        if (this.judgePair(p, ctx) === null) picked.push(p)
+      }
+      const out: PendingDialItem[] = []
+      for (const p of picked) {
+        const sup = ctx.supMap.get(Number(p.supplierId))
+        const phone = sup?.user?.phone || null
+        if (!phone) continue // 判定已保证有号；防御再拦
+        const dialId = `${p.orderId}_${p.supplierId}_${Date.now()}`
+        await tx.orderSupplierAck.upsert({
+          where: { orderId_supplierId: { orderId: p.orderId, supplierId: p.supplierId } },
+          update: { remindCount: { increment: 1 }, lastRemindAt: ctx.now },
+          create: { orderId: p.orderId, supplierId: p.supplierId, remindCount: 1, lastRemindAt: ctx.now },
+        })
+        await this.audit.log(
+          {
+            operatorId: 0n,
+            action: 'SUPPLIER_NOTIFY_CALL',
+            entity: 'supplier_notify',
+            entityId: p.orderId,
+            after: {
+              orderId: Number(p.orderId),
+              supplierId: Number(p.supplierId),
+              mode: 'auto',
+              channel: 'phone',
+              result: 'dispatched',
+              dialId,
+              phone: maskPhone(phone), // 台账只记脱敏号码
+              at: ctx.now.toISOString(),
+            },
+          },
+          tx,
+        )
+        out.push({
+          dialId,
+          orderId: Number(p.orderId),
+          supplierId: Number(p.supplierId),
+          phone, // 明文仅在此响应里
+          supplierName: sup?.stallName ?? null,
+          shopName: p.shopName ?? null,
+          minutesUnacked: Math.floor((ctx.nowMs - p.createdAt.getTime()) / 60000),
+          ringSeconds: cfg.ringSeconds,
+          hangupAfterAnswerSeconds: cfg.hangupAfterAnswerSeconds,
+        })
+      }
+      return out
+    })
+  }
+
+  /** 网关回报拨打结果：result ∈ dispatched | connected | no_answer | failed（枚举由网关 DTO 校验，非法 → 400） */
+  async reportResult(dto: { dialId: string; result: string; durationSec?: number | null; cause?: string | null }) {
+    await this.audit.log({
+      operatorId: 0n,
+      action: 'SUPPLIER_NOTIFY_CALL',
+      entity: 'supplier_notify',
+      entityId: 0,
+      after: {
+        mode: 'auto',
+        channel: 'phone',
+        dialId: dto.dialId,
+        result: dto.result,
+        durationSec: dto.durationSec ?? null,
+        cause: dto.cause ?? null,
+        at: new Date().toISOString(),
+      },
+    })
+    return { ok: true, dialId: dto.dialId, result: dto.result }
+  }
+
+  /** 网关心跳：{at} 写 platform_config.supplier_notify_gateway_state；180 秒内有值 = 在线 */
+  async heartbeat() {
+    const at = new Date().toISOString()
+    await this.prisma.platformConfig.upsert({
+      where: { key: SUPPLIER_NOTIFY_GATEWAY_STATE_KEY },
+      update: { value: { at } },
+      create: { key: SUPPLIER_NOTIFY_GATEWAY_STATE_KEY, value: { at } },
+    })
+    return { ok: true, at }
   }
 
   /** 写一通拨打台账（= 一条 audit_log：action=SUPPLIER_NOTIFY_CALL，after 携带明细） */
