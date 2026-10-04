@@ -97,6 +97,9 @@ export class SupplierNotifyService {
         body.hangupAfterAnswerSeconds ?? (before as any)?.hangupAfterAnswerSeconds ?? DEFAULT_SUPPLIER_ACK_REMINDER.hangupAfterAnswerSeconds,
       gatewayPhoneNo:
         body.gatewayPhoneNo !== undefined ? body.gatewayPhoneNo : ((before as any)?.gatewayPhoneNo ?? DEFAULT_SUPPLIER_ACK_REMINDER.gatewayPhoneNo),
+      // ── Hermes 复核收口：同一供应商冷却分钟数 ──
+      supplierGapMinutes:
+        body.supplierGapMinutes ?? (before as any)?.supplierGapMinutes ?? DEFAULT_SUPPLIER_ACK_REMINDER.supplierGapMinutes,
       // ★ 首次保存写入保存时刻；之后任何保存不许改（历史单拨打分界线）
       launchAt: before?.launchAt ?? new Date().toISOString(),
     }
@@ -509,6 +512,23 @@ export class SupplierNotifyService {
   // 卡BP-1：手机专线网关（派发 / 回报 / 心跳）
   // ────────────────────────────────────────
 
+  /**
+   * 供应商冷却判定（Hermes 复核收口）：该供应商在本轮候选里任何一单于 gapMs 内被提醒过 → true。
+   * 数据源 = ackMap（仅覆盖回看窗口内的订单），够用；跨窗口的历史提醒由 remindCount/maxCalls 兜。
+   */
+  private supplierInGap(
+    ctx: { nowMs: number; ackMap: Map<string, any> },
+    supplierId: number,
+    gapMs: number,
+  ): boolean {
+    const suffix = ':' + supplierId
+    for (const [k, a] of ctx.ackMap) {
+      if (!k.endsWith(suffix)) continue
+      if (a?.lastRemindAt && ctx.nowMs - new Date(a.lastRemindAt).getTime() < gapMs) return true
+    }
+    return false
+  }
+
   /** 网关取件：在**一个事务**里挑出最多 limit 条候选（判定与扫描共用 judgePair），逐条登记派发：
    *   remindCount += 1、lastRemindAt = now、写台账 SUPPLIER_NOTIFY_CALL
    *   （payload {mode:'auto', channel:'phone', result:'dispatched', dialId, at}，手机号只记 maskPhone）。
@@ -521,10 +541,18 @@ export class SupplierNotifyService {
     const take = Math.min(Math.max(1, Math.floor(limit) || 5), 50)
     return this.prisma.$transaction(async (tx) => {
       const ctx = await this.loadCandidates(cfg, tx)
+      // Hermes 复核收口（端到端实测发现）：同一个供应商名下多张单不能被连打多通 ——
+      // ①一轮内同一供应商只取一单（取最久未处理的那张）②该供应商若在 supplierGapMinutes 内被提醒过，整轮跳过。
+      const gapMs = (cfg.supplierGapMinutes ?? 10) * 60000
+      const ordered = [...ctx.pairs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       const picked: typeof ctx.pairs = []
-      for (const p of ctx.pairs) {
+      const usedSuppliers = new Set<number>()
+      for (const p of ordered) {
         if (picked.length >= take) break
-        if (this.judgePair(p, ctx) === null) picked.push(p)
+        const sidKey = Number(p.supplierId)
+        if (usedSuppliers.has(sidKey)) continue // 本轮该供应商已选走一单
+        if (this.supplierInGap(ctx, sidKey, gapMs)) continue // 供应商冷却中
+        if (this.judgePair(p, ctx) === null) { picked.push(p); usedSuppliers.add(sidKey) }
       }
       const out: PendingDialItem[] = []
       for (const p of picked) {
@@ -574,12 +602,19 @@ export class SupplierNotifyService {
 
   /** 网关回报拨打结果：result ∈ dispatched | connected | no_answer | failed（枚举由网关 DTO 校验，非法 → 400） */
   async reportResult(dto: { dialId: string; result: string; durationSec?: number | null; cause?: string | null }) {
+    // Hermes 复核收口：dialId 形如 `${orderId}_${supplierId}_${ts}` —— 回报行也要带归属，
+    // 否则台账里这一行 supplierId 为空，按供应商筛记录时会漏掉它（端到端实测发现）。
+    const m = /^(\d+)_(\d+)_\d+$/.exec(String(dto.dialId || ''))
+    const orderId = m ? BigInt(m[1]) : null
+    const supplierId = m ? BigInt(m[2]) : null
     await this.audit.log({
       operatorId: 0n,
       action: 'SUPPLIER_NOTIFY_CALL',
       entity: 'supplier_notify',
-      entityId: 0,
+      entityId: orderId ?? 0n,
       after: {
+        orderId: orderId ? Number(orderId) : null,
+        supplierId: supplierId ? Number(supplierId) : null,
         mode: 'auto',
         channel: 'phone',
         dialId: dto.dialId,

@@ -15,6 +15,8 @@ export class NotifyConfigPutDto {
   @IsOptional() @IsInt({ message: 'ringSeconds 必须为整数' }) @Min(1, { message: 'ringSeconds 必须为 1-30 的整数' }) @Max(30, { message: 'ringSeconds 必须为 1-30 的整数' }) ringSeconds?: number
   @IsOptional() @IsInt({ message: 'hangupAfterAnswerSeconds 必须为整数' }) @Min(0, { message: 'hangupAfterAnswerSeconds 必须为 0-30 的整数' }) @Max(30, { message: 'hangupAfterAnswerSeconds 必须为 0-30 的整数' }) hangupAfterAnswerSeconds?: number
   @IsOptional() @IsString({ message: 'gatewayPhoneNo 必须为字符串' }) @MaxLength(20, { message: 'gatewayPhoneNo 不能超过 20 字符' }) gatewayPhoneNo?: string | null
+  // ── Hermes 复核收口（2026-10-04，端到端实测发现）：同一供应商冷却分钟数（防多单连打）──
+  @IsOptional() @IsInt({ message: 'supplierGapMinutes 必须为整数' }) @Min(1, { message: 'supplierGapMinutes 必须为 1-1440 的整数' }) @Max(1440, { message: 'supplierGapMinutes 必须为 1-1440 的整数' }) supplierGapMinutes?: number
 }
 
 export class NotifyPairDto {

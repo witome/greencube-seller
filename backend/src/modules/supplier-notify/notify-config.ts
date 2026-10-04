@@ -34,6 +34,8 @@ export interface SupplierAckReminderConfig {
   hangupAfterAnswerSeconds: number
   /** 网关侧手机号（可空、≤20 字符，仅用于展示与复制，不是拨打目标） */
   gatewayPhoneNo: string | null
+  /** 同一供应商的提醒冷却（分钟，默认 10）：防止一个供应商名下多张单被连打多通（1~1440） */
+  supplierGapMinutes: number
 }
 
 export const DEFAULT_SUPPLIER_ACK_REMINDER: SupplierAckReminderConfig = {
@@ -49,6 +51,7 @@ export const DEFAULT_SUPPLIER_ACK_REMINDER: SupplierAckReminderConfig = {
   ringSeconds: 5,
   hangupAfterAnswerSeconds: 2,
   gatewayPhoneNo: null,
+  supplierGapMinutes: 10,
 }
 
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -70,6 +73,7 @@ export function validateReminderConfig(cfg: SupplierAckReminderConfig): void {
   if (!NOTIFY_CHANNELS.includes(cfg.channel)) throw new BizException(ErrorCode.PARAM_ERROR, 'channel 必须为 phone | aliyun | off')
   intIn(cfg.ringSeconds, 1, 30, 'ringSeconds')
   intIn(cfg.hangupAfterAnswerSeconds, 0, 30, 'hangupAfterAnswerSeconds')
+  intIn(cfg.supplierGapMinutes, 1, 1440, 'supplierGapMinutes')
   if (cfg.gatewayPhoneNo !== null && cfg.gatewayPhoneNo !== undefined) {
     if (typeof cfg.gatewayPhoneNo !== 'string' || cfg.gatewayPhoneNo.length > 20) {
       throw new BizException(ErrorCode.PARAM_ERROR, 'gatewayPhoneNo 必须为不超过 20 字符的字符串')
