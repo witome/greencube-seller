@@ -74,7 +74,7 @@ export class AdminFinanceController {
     return this.service.updatePayQr(userId, dto)
   }
 
-  /// 读取首页内容（横幅 / 公告 / 今日推荐位，platform_config KV）
+  /// 读取首页内容（横幅 / 公告 / 今日特价位，platform_config KV）
   @Get('home-content')
   @Roles(Role.ADMIN)
   async getHomeContent() {

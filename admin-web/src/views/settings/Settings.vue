@@ -97,14 +97,14 @@
           <el-input v-model="homeForm.notice.text" maxlength="100" show-word-limit size="small" style="width:320px;margin-left:12px" placeholder="公告内容（最长 100 字）" :disabled="!homeForm.notice.enabled" />
         </div>
 
-        <el-divider content-position="left">今日推荐位（按顺序展示，最多 10 个；清空 → 首页显示空态）</el-divider>
+        <el-divider content-position="left">今日特价位（按顺序展示，最多 10 个；清空 → 首页显示空态）</el-divider>
         <div class="admin-settings-row">
           <el-select v-model="pendingProductId" placeholder="选择在售商品" size="small" style="width:280px" filterable @change="addRecommend">
             <el-option v-for="p in onSaleProducts" :key="p.id" :label="`${p.name}（¥${p.salePrice}/${p.unit}）`" :value="p.id" :disabled="homeForm.recommendationIds.includes(p.id)" />
           </el-select>
           <span class="admin-settings-unit">已选 {{ homeForm.recommendationIds.length }} 个（下方可排序）</span>
         </div>
-        <el-table :data="recommendRows" size="small" style="margin-top:10px;" empty-text="尚未配置推荐商品">
+        <el-table :data="recommendRows" size="small" style="margin-top:10px;" empty-text="尚未配置特价商品">
           <el-table-column type="index" label="顺序" width="70" />
           <el-table-column prop="name" label="商品" />
           <el-table-column label="售价" width="120">
@@ -342,7 +342,7 @@ const savingQr = ref(false)
 const pendingQrBase64 = ref('')
 const qrFileInput = ref(null)
 
-// ── 首页内容（配送说明/公告/今日推荐位 + 卡BA-2：滚动横幅图/常用功能/客服电话） ──
+// ── 首页内容（配送说明/公告/今日特价位 + 卡BA-2：滚动横幅图/常用功能/客服电话） ──
 const MAX_BANNER = 10
 const MAX_FEATURE = 8
 const SERVICE_HOTLINE_RE = /^$|^1[3-9]\d{9}$|^\d{3,4}-?\d{7,8}$/

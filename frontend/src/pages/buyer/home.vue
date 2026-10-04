@@ -47,9 +47,9 @@
       </view>
     </view>
 
-    <!-- ⑤ 今日推荐商品（接口化：home_recommendations KV 商品 id 有序数组，后端按序返回在售商品；空 → 空态，绝无假数据兜底） -->
+    <!-- ⑤ 今日特价商品（接口化：home_recommendations KV 商品 id 有序数组，后端按序返回在售商品；空 → 空态，绝无假数据兜底） -->
     <view class="buyer-home-title">
-      <text>今日推荐</text>
+      <text>今日特价</text>
       <view class="buyer-home-more" @tap="goTab('/pages/buyer/goods')">更多 ›</view>
     </view>
     <view class="buyer-home-rec">
@@ -59,7 +59,7 @@
           <view class="buyer-home-rec-body"><view class="buyer-home-skeleton-line"></view><view class="buyer-home-skeleton-line buyer-home-skeleton-line--short"></view><view class="buyer-home-skeleton-line buyer-home-skeleton-line--price"></view></view>
         </view>
       </template>
-      <view v-else-if="!recs.length" class="buyer-home-empty buyer-home-rec-empty">暂无推荐，去商品页逛逛 ›</view>
+      <view v-else-if="!recs.length" class="buyer-home-empty buyer-home-rec-empty">暂无特价商品，去商品页逛逛 ›</view>
       <template v-else>
         <view v-for="g in recs" :key="g.id" class="buyer-home-rec-card" @tap="goDetail(g.id)">
           <view class="buyer-home-rec-img">{{ emojiOf(g.name) }}</view>
@@ -128,7 +128,7 @@ const todo = () => uni.showToast({ title: '功能建设中', icon: 'none' })
 
 const needRegister = ref(false)
 
-// ── 首页内容（GET /buyer/home-content 一次取全：横幅/公告/今日推荐位）──
+// ── 首页内容（GET /buyer/home-content 一次取全：横幅/公告/今日特价位）──
 const banner = ref({ title: '', subtitle: '' })
 const platformNotice = ref('') // null/空 → 不渲染（运营停用或未配置公告时）
 
@@ -162,7 +162,7 @@ const onFeature = (f) => {
   return todo()
 }
 
-// ── 今日推荐 ──
+// ── 今日特价 ──
 const recsLoading = ref(true)
 const recs = ref([])
 
@@ -392,7 +392,7 @@ onShow(async () => {
 .buyer-home-ico-red { background: #FFEDED; }
 .buyer-home-grid-label { font-size: 12px; color: #4A5261; font-weight: 500; }
 
-/* ── 今日推荐卡片（横向三卡） ── */
+/* ── 今日特价卡片（横向三卡） ── */
 .buyer-home-rec { display: flex; gap: 10px; margin: 0 12px; }
 .buyer-home-rec-empty { flex: 1; padding: 30px 0; }
 .buyer-home-rec-card {

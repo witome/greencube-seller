@@ -66,7 +66,7 @@ export class NoticeDto {
   text?: string
 }
 
-/// 首页内容（KV 五个 key，见 service）：横幅 / 公告 / 今日推荐位 / 滚动图 / 常用功能
+/// 首页内容（KV 五个 key，见 service）：横幅 / 公告 / 今日特价位 / 滚动图 / 常用功能
 export class HomeContentDto {
   @ValidateNested()
   @Type(() => DeliveryNoteDto)

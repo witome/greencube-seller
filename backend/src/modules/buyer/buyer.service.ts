@@ -370,7 +370,7 @@ export class BuyerService {
   // 数据源 = platform_config 三个 key（运营侧 admin/finance/home-content 维护）
   //   横幅：未配置 → 中性默认文案；公告：enabled=false 或空 → null（前台不渲染）
   //   推荐位：id 有序数组 → 按顺序取在售商品，缺失/下架/非法 id 一律跳过；空 → 前台空态
-  // 卡AA（2026-09-30）：今日推荐价格按审核状态脱敏 —— 只有 purchaser 存在且
+  // 卡AA（2026-09-30）：今日特价价格按审核状态脱敏 —— 只有 purchaser 存在且
   //   accountStatus=2 才返回真实 salePrice（priceVisible=true），否则 salePrice=null。
   //   与 product.service 同一口径（各自 service 内小私有函数，口径文字对齐）。
   // ────────────────────────────────────────

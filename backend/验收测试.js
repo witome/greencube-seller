@@ -312,7 +312,7 @@ async function main() {
   // (c) 反向用例零副作用：上面用的不存在 id，运营查它仍是 4001（未因反向用例被创建/写入）
   check('反向用例未写库(不存在id经运营查仍4001)', (await call('GET', `/admin/buyers/${NA}/verify-detail`, null, at)).code === 4001)
 
-  // ── 3.8 首页内容接口化（platform_config KV：横幅/公告/今日推荐位，2026-09-11 任务卡） ──
+  // ── 3.8 首页内容接口化（platform_config KV：横幅/公告/今日特价位，2026-09-11 任务卡） ──
   console.log('\n【3.8 首页内容接口化】')
   const prodList = await call('GET', '/product/list?page=1&pageSize=10', null, bt)
   const saleIds = (prodList.data?.list || []).map(p => p.id).slice(0, 2)

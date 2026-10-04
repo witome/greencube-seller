@@ -97,7 +97,7 @@ export const financeAdminApi = {
   updateDeliveryFee: (data) => request.put('/admin/finance/delivery-fee', data),
   getPayQr: () => request.get('/admin/finance/pay-qr'),
   updatePayQr: (data) => request.put('/admin/finance/pay-qr', data),
-  // 首页内容（横幅/公告/今日推荐位，platform_config KV）
+  // 首页内容（横幅/公告/今日特价位，platform_config KV）
   getHomeContent: () => request.get('/admin/finance/home-content'),
   updateHomeContent: (data) => request.put('/admin/finance/home-content', data),
   // 每日对账（只读，按送达日）
