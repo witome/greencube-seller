@@ -537,6 +537,10 @@ export class SupplierNotifyService {
    */
   async pendingDial(limit: number): Promise<PendingDialItem[]> {
     const cfg = await this.getRawConfig()
+    // ⚠️ Hermes 复核发现（2026-10-04，生产探针）：网关取件曾绕过「总开关」——
+    //    enabled=false / maxCalls=0 只挡住了扫描（runScan），pendingDial 却照派不误。
+    //    这里与扫描同口径加回两个总刹车：任一命中 ⇒ 一律不派发（后台一关就是全停）。
+    if (!cfg.enabled || cfg.maxCalls <= 0) return []
     if (cfg.channel !== 'phone') return []
     const take = Math.min(Math.max(1, Math.floor(limit) || 5), 50)
     return this.prisma.$transaction(async (tx) => {
