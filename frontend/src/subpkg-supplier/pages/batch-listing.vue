@@ -188,6 +188,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { supplierApi, unitApi } from '@/api/modules'
 import { post, fullUrl } from '@/api/request'
 import { pickPhotos, uploadPhoto, previewPhotos, MAX_PHOTOS } from '@/utils/photo-upload'
+import { markBatch } from '@/utils/batch-session' // 卡BW-2：提交成功的 applyId 记入「本批」标记（纯内存）
 
 // ── 页内步骤切换：pick（选图+串行处理）→ review（核对+提交）──
 const step = ref('pick')
@@ -483,7 +484,9 @@ async function submitOne(d) {
   d.submitState = 'submitting'
   d.submitErr = ''
   try {
-    await supplierApi.submitGoods(buildBody(d))
+    // 卡BW-2：POST /supplier-goods/apply 返回 { applyId, status:'pending' }；成功即记入本批
+    const res = await supplierApi.submitGoods(buildBody(d))
+    if (res && res.applyId != null) markBatch([res.applyId])
     d.submitState = 'ok'
     uni.showToast({ title: '已提交，等待运营审核', icon: 'none' })
   } catch (e) {
@@ -510,7 +513,9 @@ async function doSubmitAll() {
     d.submitState = 'submitting'
     d.submitErr = ''
     try {
-      await supplierApi.submitGoods(buildBody(d))
+      // 卡BW-2：成功一条记一条（Set 累积，重试成功的也会补进去）
+      const res = await supplierApi.submitGoods(buildBody(d))
+      if (res && res.applyId != null) markBatch([res.applyId])
       d.submitState = 'ok'
     } catch (e) {
       d.submitState = 'fail'

@@ -146,7 +146,7 @@
 
     <!-- 我的商品列表 -->
     <view class="section-title">我的商品（{{ goods.length }}）</view>
-    <view v-for="g in goods" :key="g.id" class="list-item">
+    <view v-for="g in goods" :key="g.id" class="list-item" :class="{ 'row-batch': isBatch(g.applyId) }">
       <!-- 卡Z1：封面缩略图（有 cover 显真图，无 cover 回退 emoji；点相机角标换图，免审即时） -->
       <view class="li-thumb" @tap.stop="onTapCover(g)">
         <image v-if="g.cover" :src="fullUrl(g.cover)" mode="aspectFill" class="li-img" />
@@ -157,6 +157,8 @@
       <view class="li-main">
         <view class="li-t">
           {{ g.name }}
+          <!-- 卡BW-2：本批连拍提交角标（原型画面5）：只认 batch-session 内存标记的 applyId，老入口提交的永不显示 -->
+          <view v-if="isBatch(g.applyId)" class="tag-batch">本批</view>
           <!-- 卡Z2：已下架 → 编辑/改库存置灰（点了只给提示，后端本来也会拒）；
                卡BQ：待审核/已驳回两行编辑点亮（绿底描边，照原型屏4），点了走「编辑待审商品」弹层 -->
           <view class="act-link" :class="{ dim: g.status === 'off_shelf', lit: g.status === 'pending' || g.status === 'rejected' }" @tap="tapEdit(g)">✏️ 编辑</view>
@@ -404,6 +406,7 @@ import { supplierApi, unitApi } from '@/api/modules'
 import { post, put, del, fullUrl } from '@/api/request'
 import { pickPhotos, uploadPhoto, previewPhotos } from '@/utils/photo-upload'
 import { createVoiceHold } from '@/utils/voice-record'
+import { isBatch } from '@/utils/batch-session' // 卡BW-2：本批连拍提交标记（纯内存，App 运行期有效）
 import VoiceConfirm from '@/components/VoiceConfirm.vue'
 
 const goods = ref([])
@@ -936,6 +939,21 @@ onMounted(() => {
   margin-left: 6px;
   box-shadow: 0 0 0 1.5px rgba(0, 185, 107, 0.25);
 }
+/* 卡BW-2（原型画面5）：本批连拍提交条目 —— 行浅绿底 + 名称旁「本批」小角标。
+   匹配只认 batch-session 内存标记的 applyId（不用名称）；标记仅本 App 运行期有效，刷新即消失（预期） */
+.row-batch { background: #F2FBF7; }
+.tag-batch {
+  display: inline-block;
+  background: #E6F9F0;
+  color: #00995A;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
 /* 卡BQ：编辑待审商品弹层副标题（橙色小字，照原型屏4-2） */
 .pending-sub { font-size: 11px; color: #FF8F1F; margin: -6px 0 10px; line-height: 1.5; }
 .act-down.disabled, .act-del.disabled, .pbtn.disabled { opacity: 0.45; pointer-events: none; }
