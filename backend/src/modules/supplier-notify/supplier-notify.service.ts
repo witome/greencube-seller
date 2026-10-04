@@ -255,6 +255,7 @@ export class SupplierNotifyService {
           result: a?.result ?? null,
           callId: a?.callId ?? null,
           dialId: a?.dialId ?? null,
+          durationSec: a?.durationSec ?? null, // Hermes 复核收口：BP-1 已写入审计，投影补上
           note: a?.note ?? null,
         }
       })
@@ -331,7 +332,16 @@ export class SupplierNotifyService {
     const supplier = await this.prisma.supplier.findUnique({ where: { userId }, select: { id: true, ackCallEnabled: true } })
     if (!supplier) throw new BizException(ErrorCode.NOT_FOUND, '供应商不存在')
     const cfg = await this.getRawConfig()
-    return { ackCallEnabled: supplier.ackCallEnabled === 1, thresholdMinutes: cfg.thresholdMinutes }
+    // Hermes 复核收口：供应商端「我的」页需要展示"提醒专号 + 请勿回拨、有事拨客服"，
+    // 所以这里把两个号码读出来给小程序（专号来自配置，客服号来自既有 platform_config.service_hotline）。
+    const hotlineRow = await this.prisma.platformConfig.findUnique({ where: { key: 'service_hotline' } })
+    const hotline = typeof hotlineRow?.value === 'string' ? hotlineRow.value : ''
+    return {
+      ackCallEnabled: supplier.ackCallEnabled === 1,
+      thresholdMinutes: cfg.thresholdMinutes,
+      reminderPhoneNo: cfg.gatewayPhoneNo || null,
+      serviceHotline: hotline || null,
+    }
   }
 
   async updateMe(userId: bigint, dto: { ackCallEnabled: boolean }) {
