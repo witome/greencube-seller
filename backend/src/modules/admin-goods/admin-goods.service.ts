@@ -40,6 +40,14 @@ export class AdminGoodsService {
       // 卡BP（2026-10-02）：商品备注随新品申请一起审核
       remark: (a.payload as any).remark ?? null,
       submittedAt: a.createdAt.toISOString(),
+      // 卡CA（2026-10-04）：审核看图 —— 封面取「当前生效」优先（供应商换封面是免审通道，只改
+      // product.cover），申请快照兜底；images 必须归一为数组（Json 可能是 null，前端要 v-for）
+      cover: (a.product as any)?.cover ?? (a.payload as any)?.cover ?? null,
+      images: Array.isArray((a.product as any)?.images)
+        ? (a.product as any).images
+        : Array.isArray((a.payload as any)?.images)
+          ? (a.payload as any).images
+          : [],
     }))
   }
 

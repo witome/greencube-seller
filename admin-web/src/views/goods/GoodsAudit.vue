@@ -23,6 +23,65 @@
           </div>
           <el-table :data="filteredPending" v-loading="loading" stripe @selection-change="onApplySelectionChange">
             <el-table-column type="selection" width="46" />
+            <!-- 卡CA（2026-10-04）：图片列（封面 44 + 资质 22×2 + "+N"）；所有缩略图共用一个
+                 合并预览列表 photoList(row)，点哪张从哪张开始翻页；preview-teleported 防表格裁剪 -->
+            <el-table-column label="图片" width="104">
+              <template #default="{ row }">
+                <div class="ph-cell">
+                  <template v-if="photoList(row).length">
+                    <el-image
+                      v-if="row.cover"
+                      :src="row.cover"
+                      :preview-src-list="photoList(row)"
+                      :initial-index="0"
+                      :preview-teleported="true"
+                      show-progress
+                      fit="cover"
+                      class="ph-cov"
+                      title="封面 · 点击放大"
+                    >
+                      <template #error>
+                        <div class="ph-fail" title="封面加载失败">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#B3B9C2" stroke-width="1.6"/><circle cx="9" cy="10" r="1.8" fill="#B3B9C2"/><path d="M4 18l5-5 3 3 4-4 4 4" stroke="#B3B9C2" stroke-width="1.6"/><line x1="3" y1="21" x2="21" y2="3" stroke="#B3B9C2" stroke-width="1.6"/></svg>
+                        </div>
+                      </template>
+                    </el-image>
+                    <div v-else class="ph-nocov">无封面</div>
+                    <div v-if="qualThumbs(row).list.length" class="ph-qs">
+                      <el-image
+                        v-for="(src, i) in qualThumbs(row).list"
+                        :key="i"
+                        :src="src"
+                        :preview-src-list="photoList(row)"
+                        :initial-index="qualThumbs(row).start + i"
+                        :preview-teleported="true"
+                      show-progress
+                        fit="cover"
+                        class="ph-q"
+                        :title="`资质证明 ${i + 1} · 点击放大`"
+                      >
+                        <template #error><div class="ph-qerr" /></template>
+                      </el-image>
+                      <!-- 超出 2 张的资质合并为 +N：可点，从第 3 张资质开始看（角标不挡点击） -->
+                      <div v-if="qualThumbs(row).extra > 0" class="ph-more">
+                        <el-image
+                          :src="photoList(row)[qualThumbs(row).start + 2]"
+                          :preview-src-list="photoList(row)"
+                          :initial-index="qualThumbs(row).start + 2"
+                          :preview-teleported="true"
+                      show-progress
+                          fit="cover"
+                          class="ph-q"
+                          :title="`还有 ${qualThumbs(row).extra} 张资质 · 点击放大查看`"
+                        />
+                        <span class="ph-more-tag">+{{ qualThumbs(row).extra }}</span>
+                      </div>
+                    </div>
+                  </template>
+                  <span v-else class="ph-none">—</span>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column prop="name" label="商品名称" min-width="140" />
             <el-table-column prop="supplierName" label="供应商" width="120" />
             <el-table-column label="供货价" width="100">
@@ -127,6 +186,27 @@
       <p style="color:#606266; margin-bottom:12px">
         「{{ currentApply?.name }}」供货价 ¥{{ currentApply?.supplyPrice }}，请设定加价比例生成销售价。
       </p>
+      <!-- 卡CA（2026-10-04）：弹窗带图（原型画面3）—— 封面+资质全部平铺、无 +N 截断，
+           同一个合并预览列表可点开放大；无图时整块不渲染 -->
+      <div v-if="currentApply && photoList(currentApply).length" class="dlg-photos">
+        <div class="dlg-photos-t">供应商上传的图片<em>封面 + 资质证明 · 点击可放大</em></div>
+        <div class="dlg-photos-row">
+          <el-image
+            v-for="(src, i) in photoList(currentApply)"
+            :key="i"
+            :src="src"
+            :preview-src-list="photoList(currentApply)"
+            :initial-index="i"
+            :preview-teleported="true"
+            show-progress
+            fit="cover"
+            :class="i === 0 && currentApply.cover ? 'dlg-ph-cov' : 'dlg-ph-q'"
+            :title="i === 0 && currentApply.cover ? '封面 · 点击放大' : `资质证明 ${currentApply.cover ? i : i + 1} · 点击放大`"
+          >
+            <template #error><div class="ph-qerr" /></template>
+          </el-image>
+        </div>
+      </div>
       <el-form label-width="110px">
         <el-form-item label="加价比例">
           <el-input
@@ -321,6 +401,20 @@ function resetApplyFilter() { applyFilter.value = { supplierName: '', categoryId
 function resetChangeFilter() { changeFilter.value = { supplierName: '', keyword: '' } }
 function onApplySelectionChange(rows) { selectedApplies.value = rows }
 function onChangeSelectionChange(rows) { selectedChanges.value = rows }
+
+// ── 卡CA（2026-10-04）：审核看图 —— 封面+资质合并成一个预览列表（封面在前）；
+// images 后端已保证是数组，这里再兜一层，绝不让 v-for 拿到 null/undefined ──
+function photoList(row) {
+  if (!row) return []
+  const imgs = Array.isArray(row.images) ? row.images.filter(Boolean) : []
+  return row.cover ? [row.cover, ...imgs] : [...imgs]
+}
+// 图片列资质缩略格：最多排 2 张 22×22，其余合并为 +N；start = 该格在合并列表里的起始下标（有封面则资质从 1 起）
+function qualThumbs(row) {
+  const start = row && row.cover ? 1 : 0
+  const imgs = photoList(row).slice(start)
+  return { list: imgs.slice(0, 2), start, extra: Math.max(imgs.length - 2, 0) }
+}
 // 批量弹窗展示用：涉及供应商数 / 供货价区间
 const applySupplierCount = computed(() => new Set(selectedApplies.value.map((r) => r.supplierName)).size)
 const changeSupplierCount = computed(() => new Set(selectedChanges.value.map((r) => r.supplierName)).size)
@@ -619,4 +713,21 @@ onMounted(() => {
 .batch-note { color: #8a9099; font-size: 12px; margin: 12px 0 0; }
 .batch-danger { color: #f56c6c; font-size: 13px; font-weight: 600; margin: 0 0 8px; }
 .batch-list { margin: 0 0 8px; padding-left: 18px; color: #606266; font-size: 13px; max-height: 160px; overflow: auto; }
+/* 卡CA（2026-10-04）：图片列 + 放大 + 通过弹窗带图（照原型逐项） */
+.ph-cell { display: flex; align-items: center; gap: 6px; min-height: 44px; }
+.ph-cov { width: 44px; height: 44px; border-radius: 6px; border: 1px solid #ebeef2; flex: 0 0 auto; cursor: pointer; }
+.ph-qs { display: flex; flex-direction: column; flex-wrap: wrap; gap: 3px; height: 47px; align-content: flex-start; }
+.ph-q { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #ebeef2; flex: 0 0 auto; cursor: pointer; }
+.ph-more { position: relative; width: 22px; height: 22px; flex: 0 0 auto; }
+.ph-more .ph-q { border-color: #e5e8eb; }
+.ph-more-tag { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; background: rgba(242, 244, 246, 0.9); color: #8a9099; font-size: 10px; font-weight: 700; border-radius: 4px; pointer-events: none; }
+.ph-none { color: #b3b9c2; font-size: 13px; }
+.ph-nocov { width: 44px; height: 44px; border-radius: 6px; background: #f2f4f6; border: 1px solid #e5e8eb; color: #8a9099; font-size: 10px; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.3; flex: 0 0 auto; }
+.ph-fail, .ph-qerr { width: 100%; height: 100%; background: #f2f4f6; display: flex; align-items: center; justify-content: center; color: #b3b9c2; }
+.dlg-photos { background: #f7f9fa; border: 1px solid #eef1f4; border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; }
+.dlg-photos-t { font-size: 12px; font-weight: 700; color: #1f2329; margin-bottom: 8px; }
+.dlg-photos-t em { font-style: normal; font-weight: 400; color: #8a9099; font-size: 11px; margin-left: 8px; }
+.dlg-photos-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dlg-ph-cov { width: 40px; height: 40px; border-radius: 6px; border: 1px solid #ebeef2; cursor: pointer; }
+.dlg-ph-q { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #ebeef2; cursor: pointer; }
 </style>
