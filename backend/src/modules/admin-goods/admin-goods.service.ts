@@ -435,6 +435,12 @@ export class AdminGoodsService {
         markupOverridden: p.markupOverridden,
         status: p.status,
         supplierCount: p.links.length,
+        // 卡CE（2026-10-04）：运营后台商品管理列表带图 —— 与审核页（卡CA/卡CD）同一口径：
+        // cover 允许为 null；images 必须归一为数组、滤空，前端才能直接 v-for。契约只增不改。
+        cover: p.cover ?? null,
+        images: Array.isArray(p.images)
+          ? p.images.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+          : [],
         primarySupplier: primary
           ? {
               supplierId: Number(primary.supplierId),

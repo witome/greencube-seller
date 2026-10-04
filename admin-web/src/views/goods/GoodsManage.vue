@@ -21,6 +21,65 @@
       <!-- 商品表格 -->
       <el-table :data="list" v-loading="loading" stripe>
         <el-table-column prop="name" label="商品" min-width="140" />
+        <!-- 卡CE（2026-10-04）：图片列（封面 44 + 资质 22×2 + "+N"）；写法照 GoodsAudit.vue 卡CA，
+             所有缩略图共用合并预览列表 photoList(row)，点哪张从哪张开始翻页；preview-teleported 防表格裁剪 -->
+        <el-table-column label="图片" width="150">
+          <template #default="{ row }">
+            <div class="ph-cell">
+              <template v-if="photoList(row).length">
+                <el-image
+                  v-if="row.cover"
+                  :src="row.cover"
+                  :preview-src-list="photoList(row)"
+                  :initial-index="0"
+                  :preview-teleported="true"
+                  show-progress
+                  fit="cover"
+                  class="ph-cov"
+                  title="封面 · 点击放大"
+                >
+                  <template #error>
+                    <div class="ph-fail" title="封面加载失败">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#B3B9C2" stroke-width="1.6"/><circle cx="9" cy="10" r="1.8" fill="#B3B9C2"/><path d="M4 18l5-5 3 3 4-4 4 4" stroke="#B3B9C2" stroke-width="1.6"/><line x1="3" y1="21" x2="21" y2="3" stroke="#B3B9C2" stroke-width="1.6"/></svg>
+                    </div>
+                  </template>
+                </el-image>
+                <div v-else class="ph-nocov">无封面</div>
+                <div v-if="qualThumbs(row).list.length" class="ph-qs">
+                  <el-image
+                    v-for="(src, i) in qualThumbs(row).list"
+                    :key="i"
+                    :src="src"
+                    :preview-src-list="photoList(row)"
+                    :initial-index="qualThumbs(row).start + i"
+                    :preview-teleported="true"
+                    show-progress
+                    fit="cover"
+                    class="ph-q"
+                    :title="`资质证明 ${i + 1} · 点击放大`"
+                  >
+                    <template #error><div class="ph-qerr" /></template>
+                  </el-image>
+                  <!-- 超出 2 张的资质合并为 +N：可点，从第 3 张资质开始看（角标不挡点击） -->
+                  <div v-if="qualThumbs(row).extra > 0" class="ph-more">
+                    <el-image
+                      :src="photoList(row)[qualThumbs(row).start + 2]"
+                      :preview-src-list="photoList(row)"
+                      :initial-index="qualThumbs(row).start + 2"
+                      :preview-teleported="true"
+                      show-progress
+                      fit="cover"
+                      class="ph-q"
+                      :title="`还有 ${qualThumbs(row).extra} 张资质 · 点击放大查看`"
+                    />
+                    <span class="ph-more-tag">+{{ qualThumbs(row).extra }}</span>
+                  </div>
+                </div>
+              </template>
+              <span v-else class="ph-none">—</span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="分类" width="110">
           <template #default="{ row }">{{ row.categoryName || '—' }}</template>
         </el-table-column>
@@ -230,6 +289,20 @@ async function loadUnits() {
   }
 }
 
+// ── 卡CE（2026-10-04）：商品管理看图 —— 写法照 GoodsAudit.vue 卡CA：封面+资质合并成一个
+// 预览列表（封面在前）；images 再兜一层，绝不让 v-for 拿到 null/undefined ──
+function photoList(row) {
+  if (!row) return []
+  const imgs = Array.isArray(row.images) ? row.images.filter(Boolean) : []
+  return row.cover ? [row.cover, ...imgs] : [...imgs]
+}
+// 图片列资质缩略格：最多排 2 张 22×22，其余合并为 +N；start = 该格在合并列表里的起始下标（有封面则资质从 1 起）
+function qualThumbs(row) {
+  const start = row && row.cover ? 1 : 0
+  const imgs = photoList(row).slice(start)
+  return { list: imgs.slice(0, 2), start, extra: Math.max(imgs.length - 2, 0) }
+}
+
 const statusText = (s) => ({ 0: '下架', 1: '在售', 2: '变更审核中' }[s] || '未知')
 const statusType = (s) => ({ 0: 'info', 1: 'success', 2: 'warning' }[s] || 'info')
 
@@ -426,4 +499,15 @@ onMounted(async () => {
   margin-top: 4px;
   line-height: 1.7;
 }
+/* 卡CE（2026-10-04）：图片列 + 放大（照 GoodsAudit.vue 卡CA 逐项，不许第二套样式） */
+.ph-cell { display: flex; align-items: center; gap: 6px; min-height: 44px; }
+.ph-cov { width: 44px; height: 44px; border-radius: 6px; border: 1px solid #ebeef2; flex: 0 0 auto; cursor: pointer; }
+.ph-qs { display: flex; flex-direction: column; flex-wrap: wrap; gap: 3px; height: 47px; align-content: flex-start; }
+.ph-q { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #ebeef2; flex: 0 0 auto; cursor: pointer; }
+.ph-more { position: relative; width: 22px; height: 22px; flex: 0 0 auto; }
+.ph-more .ph-q { border-color: #e5e8eb; }
+.ph-more-tag { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; background: rgba(242, 244, 246, 0.9); color: #8a9099; font-size: 10px; font-weight: 700; border-radius: 4px; pointer-events: none; }
+.ph-none { color: #b3b9c2; font-size: 13px; }
+.ph-nocov { width: 44px; height: 44px; border-radius: 6px; background: #f2f4f6; border: 1px solid #e5e8eb; color: #8a9099; font-size: 10px; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.3; flex: 0 0 auto; }
+.ph-fail, .ph-qerr { width: 100%; height: 100%; background: #f2f4f6; display: flex; align-items: center; justify-content: center; color: #b3b9c2; }
 </style>
