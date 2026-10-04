@@ -21,6 +21,9 @@
       <!-- 商品表格 -->
       <el-table :data="list" v-loading="loading" stripe>
         <el-table-column prop="name" label="商品" min-width="140" />
+        <el-table-column label="分类" width="110">
+          <template #default="{ row }">{{ row.categoryName || '—' }}</template>
+        </el-table-column>
         <el-table-column label="归属供应商" min-width="130">
           <template #default="{ row }">{{ row.primarySupplier?.supplierName || '—' }}</template>
         </el-table-column>
@@ -224,7 +227,10 @@ function openEdit(row) {
   currentId.value = row.productId
   form.value = {
     name: row.name,
-    categoryId: row.categoryId ?? null,
+    // 卡BZ（2026-10-04）：列表接口现在回 categoryId，正常走第一个分支把当前分类点亮；
+    // 兜底：万一上游只给了 categoryName（老接口/其它数据源），按名字回填 id，
+    // 免得弹层分类栏又是空的、不点一下保存就被「请选择分类」拦住。
+    categoryId: row.categoryId ?? categories.value.find((c) => c.name === row.categoryName)?.id ?? null,
     weighType: row.weighType,
     unit: row.unit,
     specText: row.specText,

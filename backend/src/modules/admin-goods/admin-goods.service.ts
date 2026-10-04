@@ -406,6 +406,9 @@ export class AdminGoodsService {
       return {
         productId: Number(p.id),
         name: p.name,
+        // 卡BZ（2026-10-04）：补回 categoryId —— 原先只回 categoryName，
+        // 后台编辑弹层的分类栏拿不到 id → 恒空，且不点一次分类保存会被「请选择分类」拦住。
+        categoryId: Number(p.categoryId),
         categoryName: p.category.name,
         weighType: p.weighType,
         unit: p.unit,
@@ -525,12 +528,20 @@ export class AdminGoodsService {
   async updateProduct(productId: number, operatorId: bigint, dto: UpdateProductDto) {
     const product = await this.prisma.product.findUnique({
       where: { id: BigInt(productId) },
-      include: { links: { orderBy: { priority: 'asc' } } },
+      include: { links: { orderBy: { priority: 'asc' } }, category: true },
     })
     if (!product) throw new BizException(ErrorCode.NOT_FOUND, '商品不存在')
 
     const productUpdate: any = {}
     if (dto.name !== undefined) productUpdate.name = dto.name
+    // 卡BZ（2026-10-04）：编辑商品支持改分类（原先整个字段不存在 → 改分类静默不生效）
+    let categoryNameAfter: string | null = null
+    if (dto.categoryId !== undefined) {
+      const cat = await this.prisma.category.findUnique({ where: { id: BigInt(dto.categoryId) } })
+      if (!cat) throw new BizException(ErrorCode.PARAM_ERROR, '分类不存在')
+      productUpdate.categoryId = BigInt(dto.categoryId)
+      categoryNameAfter = cat.name
+    }
     if (dto.weighType !== undefined) productUpdate.weighType = dto.weighType
     // 卡BV-1（2026-10-03）：运营编辑商品同样校验单位。
     // 放行集合 = 启用中的单位 ∪ 该商品**当前**的单位 —— 老商品的单位被停用后，
@@ -572,8 +583,20 @@ export class AdminGoodsService {
       action: 'PRODUCT_UPDATE',
       entity: 'product',
       entityId: productId,
-      before: { name: product.name, salePrice: Number(product.salePrice), markupRate: Number(product.markupRate) },
-      after: productUpdate,
+      // 卡BZ：审计里带上分类（before/after 不能塞 BigInt，Json 列序列化会崩 → 一律 Number）
+      before: {
+        name: product.name,
+        salePrice: Number(product.salePrice),
+        markupRate: Number(product.markupRate),
+        categoryId: Number(product.categoryId),
+        categoryName: product.category?.name ?? null,
+      },
+      after: {
+        ...productUpdate,
+        ...(dto.categoryId !== undefined
+          ? { categoryId: Number(dto.categoryId), categoryName: categoryNameAfter }
+          : {}),
+      },
     })
 
     return { productId, updated: true }
