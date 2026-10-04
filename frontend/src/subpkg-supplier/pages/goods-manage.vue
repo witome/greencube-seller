@@ -140,7 +140,7 @@
         </view>
       </view>
       <view class="row-btns">
-        <view class="pbtn primary" @tap="submit">提交申请</view>
+        <view :class="['pbtn primary', { disabled: submitting }]" @tap="submit">提交申请</view>
       </view>
     </view>
 
@@ -219,7 +219,7 @@
         <input v-model="stockValue" class="ipt" type="digit" placeholder="输入新的日可供量，如 300" />
         <view class="row-btns">
           <view class="pbtn ghost" @tap="stockTarget = null">取消</view>
-          <view class="pbtn primary" @tap="saveStock">保存</view>
+          <view :class="['pbtn primary', { disabled: submitting }]" @tap="saveStock">保存</view>
         </view>
       </view>
     </view>
@@ -258,7 +258,7 @@
         </view>
         <view class="row-btns">
           <view class="pbtn ghost" @tap="editTarget = null">取消</view>
-          <view class="pbtn primary" @tap="submitEdit">提交变更</view>
+          <view :class="['pbtn primary', { disabled: submitting }]" @tap="submitEdit">提交变更</view>
         </view>
       </view>
     </view>
@@ -835,7 +835,12 @@ function selectCat(c) {
   }
 }
 
+// 卡CD（2026-10-04）：三处弹层提交（提交申请/保存库存/提交变更）共用一个进行中标记，
+// 防连点重复提交 —— submitGoods/applyChange 都是非幂等接口，连点会建出重复申请
+const submitting = ref(false)
+
 async function submit() {
+  if (submitting.value) return
   if (!form.value.name) { uni.showToast({ title: '请填写商品名称', icon: 'none' }); return }
   if (!form.value.categoryId) { uni.showToast({ title: '请选择商品分类', icon: 'none' }); return }
   const price = Number(form.value.supplyPrice)
@@ -843,27 +848,32 @@ async function submit() {
   if (!price || price <= 0) { uni.showToast({ title: '请填写正确的供货价', icon: 'none' }); return }
   if (isNaN(supply)) { uni.showToast({ title: '请填写日可供量', icon: 'none' }); return }
 
-  await supplierApi.submitGoods({
-    name: form.value.name,
-    categoryId: form.value.categoryId,
-    weighType: form.value.weighType,
-    unit: form.value.unit, // 卡BV-2：提交带上单位（后端不再兜底写死「斤」）
-    supplyPrice: price,
-    dailySupply: supply,
-    // 卡Z1：封面 + 资质证明（资质照片走 apply 已有的 images 字段，原型⑦屏口径）一并提交
-    cover: formCover.value || undefined,
-    images: formQual.value.length ? formQual.value : undefined,
-    // 卡BU：商品备注（≤12 字，随申请走运营审核）
-    remark: (form.value.remark || '').trim() || undefined,
-  })
-  uni.showToast({ title: '已提交，等待运营审核', icon: 'none' })
-  showForm.value = false
-  form.value = { name: '', categoryId: null, categoryName: '', weighType: 1, unit: '斤', supplyPrice: '', dailySupply: '', remark: '' }
-  formCover.value = ''
-  formQual.value = []
-  aiState.value = 'idle'
-  aiSuggest.value = null
-  load()
+  submitting.value = true
+  try {
+    await supplierApi.submitGoods({
+      name: form.value.name,
+      categoryId: form.value.categoryId,
+      weighType: form.value.weighType,
+      unit: form.value.unit, // 卡BV-2：提交带上单位（后端不再兜底写死「斤」）
+      supplyPrice: price,
+      dailySupply: supply,
+      // 卡Z1：封面 + 资质证明（资质照片走 apply 已有的 images 字段，原型⑦屏口径）一并提交
+      cover: formCover.value || undefined,
+      images: formQual.value.length ? formQual.value : undefined,
+      // 卡BU：商品备注（≤12 字，随申请走运营审核）
+      remark: (form.value.remark || '').trim() || undefined,
+    })
+    uni.showToast({ title: '已提交，等待运营审核', icon: 'none' })
+    showForm.value = false
+    form.value = { name: '', categoryId: null, categoryName: '', weighType: 1, unit: '斤', supplyPrice: '', dailySupply: '', remark: '' }
+    formCover.value = ''
+    formQual.value = []
+    aiState.value = 'idle'
+    aiSuggest.value = null
+    load()
+  } finally {
+    submitting.value = false
+  }
 }
 
 function openStock(g) {
@@ -872,12 +882,20 @@ function openStock(g) {
 }
 
 async function saveStock() {
+  if (submitting.value) return
   const v = Number(stockValue.value)
   if (isNaN(v) || v < 0) { uni.showToast({ title: '请输入有效数量', icon: 'none' }); return }
-  await supplierApi.quickStock(stockTarget.value.id, v)
-  uni.showToast({ title: '已生效（免审核）', icon: 'none' })
-  stockTarget.value = null
-  load()
+  submitting.value = true
+  try {
+    await supplierApi.quickStock(stockTarget.value.id, v)
+    uni.showToast({ title: '已生效（免审核）', icon: 'none' })
+    stockTarget.value = null
+    load()
+  } catch (e) {
+    // 卡CD：失败不关弹层（数量保留可改后重试），提示由 request 层统一 toast
+  } finally {
+    submitting.value = false
+  }
 }
 
 function openEdit(g) {
@@ -888,6 +906,7 @@ function openEdit(g) {
 }
 
 async function submitEdit() {
+  if (submitting.value) return
   const changes = {}
   if (editForm.value.name.trim()) changes.name = editForm.value.name.trim()
   const price = Number(editForm.value.supplyPrice)
@@ -912,15 +931,20 @@ async function submitEdit() {
   const allPrice = changeKeys.every(isPriceKey)
   const mixedPrice = !allPrice && changeKeys.some(isPriceKey)
 
-  if (allPrice) {
-    await supplierApi.quickPrice(editTarget.value.id, changes)
-    uni.showToast({ title: '已生效（免审核）', icon: 'none' })
-  } else {
-    await supplierApi.applyChange(editTarget.value.id, { changes })
-    uni.showToast({ title: mixedPrice ? '含需审核项，已一并提交审核' : '已提交，等待审核', icon: 'none' })
+  submitting.value = true
+  try {
+    if (allPrice) {
+      await supplierApi.quickPrice(editTarget.value.id, changes)
+      uni.showToast({ title: '已生效（免审核）', icon: 'none' })
+    } else {
+      await supplierApi.applyChange(editTarget.value.id, { changes })
+      uni.showToast({ title: mixedPrice ? '含需审核项，已一并提交审核' : '已提交，等待审核', icon: 'none' })
+    }
+    editTarget.value = null
+    load()
+  } finally {
+    submitting.value = false
   }
-  editTarget.value = null
-  load()
 }
 
 onMounted(() => {

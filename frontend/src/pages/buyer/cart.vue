@@ -117,7 +117,7 @@
                   @confirm="commitQtyEdit(it)"
                   @blur="commitQtyEdit(it)"
                 />
-                <text v-else class="stp-n" @tap="startQtyEdit(it)">{{ it.qty }}</text>
+                <text v-else class="stp-n" @tap="startQtyEdit(it)">{{ targetQty[it.cartItemId] != null ? targetQty[it.cartItemId] : it.qty }}</text>
                 <view class="stp-btn stp-plus" @tap="changeQty(it, 1)">＋</view>
               </view>
               <text class="dr-sub">¥{{ money(it.subtotal) }}</text>
@@ -209,7 +209,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import { watch } from 'vue'
 import { onLoad, onShow, onHide, onUnload, onShareAppMessage } from '@dcloudio/uni-app'
 import { buyerApi, authApi, demandApi } from '@/api/modules'
@@ -294,13 +294,59 @@ const commitQtyEdit = async (it) => {
   }
 }
 
+// ── 卡CD（2026-10-04）：步进器防连点 —— 本地目标数量 + 每行串行补发 ──
+// 旧实现连点 3 次「＋」都读到同一个旧 it.qty → 目标值相同 → 实际只 +1。
+// 现在：点击立刻更新本地目标值（界面即时 +1 不闪回）；同一行同时只放一个 PUT 在飞，
+// 在飞期间的点击只攒目标值；在飞返回并 load() 后若服务端 ≠ 目标值就补发（最多 3 次，
+// 全失败则回滚本地值到服务端真值，提示由 request 层统一 toast）。金额/合计仍只认服务端。
+const targetQty = reactive({}) // cartItemId -> 本地目标数量
+const rowBusy = {} // cartItemId -> true（该行 PUT 在飞）
+
 const changeQty = async (it, delta) => {
   finishQtyEdit()
-  const qty = Number(it.qty) + delta
-  if (qty <= 0) { await remove(it); return }
-  await buyerApi.updateCart(it.cartItemId, qty)
-  await load()
-  uni.$emit('cart-badge-refresh')
+  const id = it.cartItemId
+  const base = targetQty[id] != null ? Number(targetQty[id]) : Number(it.qty)
+  const next = base + delta
+  if (next <= 0) {
+    // 减到 0 仍走既有 remove 路径；若该行 PUT 在飞，先记下目标 0，飞完由 flushRow 收尾
+    if (rowBusy[id]) { targetQty[id] = 0; return }
+    delete targetQty[id]
+    await remove(it)
+    return
+  }
+  targetQty[id] = next
+  flushRow(id)
+}
+
+// 同一行串行补发：PUT → load() → 服务端值 ≠ 本地目标值就再来一轮（最多 3 次）
+const flushRow = async (id) => {
+  if (rowBusy[id]) return
+  rowBusy[id] = true
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const target = targetQty[id]
+      if (target == null) break // 目标已被清（行已删）
+      const row = cart.value.find((r) => r.cartItemId === id)
+      if (!row) break // 行已不在草稿里
+      if (target <= 0) {
+        delete targetQty[id]
+        await remove({ cartItemId: id })
+        break
+      }
+      if (Number(row.qty) === target) break // 服务端已追上目标
+      try {
+        // PUT /cart/:id 是覆盖语义，直接覆盖为本地目标值
+        await buyerApi.updateCart(id, target)
+      } catch (e) {
+        if (attempt === 2) delete targetQty[id] // 重试耗尽：回滚到服务端真值（it.qty 兜底显示）
+        continue
+      }
+      await load()
+      uni.$emit('cart-badge-refresh')
+    }
+  } finally {
+    delete rowBusy[id]
+  }
 }
 
 const remove = async (it) => {

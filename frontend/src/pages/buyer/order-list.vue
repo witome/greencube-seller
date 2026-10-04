@@ -24,7 +24,11 @@
       </view>
     </view>
 
-    <view v-if="!orders.length && !loading" class="empty">暂无订单</view>
+    <view v-if="loadError && !loading" class="empty">
+      订单加载失败，请检查网络
+      <view class="retry-btn" @tap="load">重试</view>
+    </view>
+    <view v-if="!orders.length && !loading && !loadError" class="empty">暂无订单</view>
 
     <BuyerTabBar active="/pages/buyer/order-list" />
     <AiOrderFab :offset="80" />
@@ -42,6 +46,9 @@ import AiOrderFab from '@/components/AiOrderFab.vue'
 const orders = ref([])
 const activeStatus = ref('')
 const loading = ref(false)
+const loadError = ref(false)
+// 卡CD（2026-10-04）：请求序号 —— 快速连点状态筛选时旧响应不得覆盖新结果
+let loadSeq = 0
 
 const statusTabs = [
   { label: '全部', value: '' },
@@ -57,13 +64,24 @@ const timeText = (w) => ({ 1: '早 05-08', 2: '中 10-13', 3: '晚 16-19' }[w] |
 const payClass = (code) => ({ paid_wechat: 'ok', paid_proof: 'ok', cod_pending: 'pending' }[code] || 'none')
 
 const load = async () => {
+  // 卡CD：加 try/catch/finally —— 原先接口一失败 loading 永远为 true，
+  // 空态/列表都不渲染，页面无任何反馈且不会自愈（CODEBUDDY.md 踩坑清单第 9 条同款）
+  const seq = ++loadSeq
   loading.value = true
-  // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成 "undefined"，导致后端误过滤
-  const params = { page: 1, pageSize: 20 }
-  if (activeStatus.value) params.status = activeStatus.value
-  const data = await buyerApi.getOrderList(params)
-  orders.value = data.list
-  loading.value = false
+  loadError.value = false
+  try {
+    // ⚠️ 只传有值的字段：小程序端会把 undefined 序列化成 "undefined"，导致后端误过滤
+    const params = { page: 1, pageSize: 20 }
+    if (activeStatus.value) params.status = activeStatus.value
+    const data = await buyerApi.getOrderList(params)
+    if (seq !== loadSeq) return // 已有更新的请求，旧响应丢弃
+    orders.value = data.list
+  } catch (e) {
+    if (seq !== loadSeq) return
+    loadError.value = true // 可见失败态 + 重试入口；提示由 request 层统一 toast
+  } finally {
+    if (seq === loadSeq) loading.value = false
+  }
 }
 
 const switchStatus = (v) => { activeStatus.value = v; load() }
@@ -95,4 +113,6 @@ onShow(async () => {
 .oc-pay-pending { color: #ff6b00; background: #fff3e6; }
 .oc-pay-none { color: $text-second; background: #f2f3f5; }
 .empty { text-align: center; color: $text-placeholder; padding: 60px 0; }
+/* 卡CD：失败态重试入口（样式按 goods.vue 既有 .retry-btn 同款） */
+.retry-btn { display: inline-block; margin-top: 12px; padding: 7px 22px; border-radius: 16px; border: 1.5px solid $color-primary; color: $color-primary; font-size: 13px; font-weight: 600; }
 </style>

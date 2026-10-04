@@ -70,7 +70,7 @@
       </view>
       <view class="cb-btns">
         <view class="cb-btn ghost" @tap="addAllToCart">加入草稿</view>
-        <view class="cb-btn primary" @tap="buyAll">立即下单</view>
+        <view :class="['cb-btn primary', { disabled: submitting }]" @tap="buyAll">立即下单</view>
       </view>
     </view>
 
@@ -232,25 +232,33 @@ const addAllToCart = async () => {
 }
 
 const buyAll = async () => {
-  // 卡AY：结算栏现在也会为「有未提交改动（如减到 0 待删除）」而显示，
-  //   此时「已选」可能为 0 —— 空 items 直接下单会被后端判参数错，先拦住。
-  if (!selectedCount.value) {
-    uni.showToast({ title: '请先选择商品', icon: 'none' })
-    return
+  // 卡CD（2026-10-04）：防重复下单 —— 复用同文件「加入草稿」既有的 submitting 锁，
+  // 连点「立即下单」只放行第一击（POST /order 非幂等，重复点会建多张订单）
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    // 卡AY：结算栏现在也会为「有未提交改动（如减到 0 待删除）」而显示，
+    //   此时「已选」可能为 0 —— 空 items 直接下单会被后端判参数错，先拦住。
+    if (!selectedCount.value) {
+      uni.showToast({ title: '请先选择商品', icon: 'none' })
+      return
+    }
+    // 配送日期：当天有可选时段用当天，否则顺延次日；自动选最早可用时段（不弹窗）
+    let deliveryDate = dateStr()
+    let winList = availableTimeWindows(deliveryDate)
+    if (!winList.length) {
+      deliveryDate = tomorrowStr()
+      winList = availableTimeWindows(deliveryDate)
+    }
+    const w = winList[0]
+    const items = Object.entries(cartMap).map(([productId, qty]) => ({ productId: Number(productId), qty }))
+    const order = await buyerApi.placeOrder({ deliveryDate, timeWindow: w.value, items })
+    uni.showToast({ title: '下单成功', icon: 'success' })
+    Object.keys(cartMap).forEach((k) => delete cartMap[k])
+    setTimeout(() => uni.navigateTo({ url: `/pages/buyer/order-detail?id=${order.orderId}` }), 600)
+  } finally {
+    submitting.value = false
   }
-  // 配送日期：当天有可选时段用当天，否则顺延次日；自动选最早可用时段（不弹窗）
-  let deliveryDate = dateStr()
-  let winList = availableTimeWindows(deliveryDate)
-  if (!winList.length) {
-    deliveryDate = tomorrowStr()
-    winList = availableTimeWindows(deliveryDate)
-  }
-  const w = winList[0]
-  const items = Object.entries(cartMap).map(([productId, qty]) => ({ productId: Number(productId), qty }))
-  const order = await buyerApi.placeOrder({ deliveryDate, timeWindow: w.value, items })
-  uni.showToast({ title: '下单成功', icon: 'success' })
-  Object.keys(cartMap).forEach((k) => delete cartMap[k])
-  setTimeout(() => uni.navigateTo({ url: `/pages/buyer/order-detail?id=${order.orderId}` }), 600)
 }
 
 // ── 商品加载 ──
@@ -375,4 +383,6 @@ onShow(async () => {
 .cb-btn { padding: 9px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; }
 .cb-btn.ghost { background: #fff; border: 1px solid $color-primary; color: $color-primary; }
 .cb-btn.primary { background: $color-primary; color: #fff; }
+/* 卡CD（2026-10-04）：进行中置灰 —— 本文件原先没有禁用类，按全项目通用 disabled 口径（cart.vue/order-detail.vue 同款 opacity）补一行 */
+.cb-btn.disabled { opacity: 0.5; }
 </style>

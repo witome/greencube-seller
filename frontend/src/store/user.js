@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { authApi } from '@/api/modules'
 import { rememberPreferredRole, forgetPreferredRole } from '@/utils/preferred-role'
 import { stopAllPollers } from '@/utils/poller-registry'
+import { clearBatch } from '@/utils/batch-session' // 卡CD（2026-10-04）：切身份清「本批」角标，防串到另一个档口
 
 /**
  * 用户与身份状态
@@ -66,8 +67,17 @@ export const useUserStore = defineStore('user', {
   },
 })
 
-/** 业务缓存清空清单（决策 4：切身份防串数据）。凭据类（token/currentRole/accountStatus）由切换流程覆写，不在此列 */
-const BUSINESS_CACHE_KEYS = ['aiDraft', 'registeredRole', 'account_status']
+/**
+ * 业务缓存清空清单（决策 4：切身份防串数据）。
+ * 卡CD（2026-10-04）两处收口：
+ * ① 原清单里的 'account_status' 是拼错的 key（全仓真实 key 是 'accountStatus'，见 api/request.js
+ *    与 utils/logout.js），从来没被清掉 —— 现改为正确 key，切身份后不再残留上一个身份的审核状态；
+ * ② clearBatch() 原先全仓无调用点 —— 现随 clearBusinessCache() 一并调用，
+ *    供应商切身份后「本批」角标不再串到另一个档口（batch-session 是内存集合，clear 即收口）。
+ * 凭据类（token/currentRole）由切换流程覆写，不在此列。
+ */
+const BUSINESS_CACHE_KEYS = ['aiDraft', 'registeredRole', 'accountStatus']
 function clearBusinessCache() {
   BUSINESS_CACHE_KEYS.forEach((k) => uni.removeStorageSync(k))
+  clearBatch()
 }

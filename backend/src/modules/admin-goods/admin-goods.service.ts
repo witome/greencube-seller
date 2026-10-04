@@ -43,11 +43,19 @@ export class AdminGoodsService {
       // 卡CA（2026-10-04）：审核看图 —— 封面取「当前生效」优先（供应商换封面是免审通道，只改
       // product.cover），申请快照兜底；images 必须归一为数组（Json 可能是 null，前端要 v-for）
       cover: (a.product as any)?.cover ?? (a.payload as any)?.cover ?? null,
-      images: Array.isArray((a.product as any)?.images)
-        ? (a.product as any).images
-        : Array.isArray((a.payload as any)?.images)
-          ? (a.payload as any).images
-          : [],
+      // 卡CD（2026-10-04）：资质图兜底合并 —— 连拍上架的历史口径把资质图放在 payload.qualification
+      // （单品链路走 images），而审核端只渲染 images，老申请的资质图会看不到。
+      // 这里把 product.images / payload.images / payload.qualification 三处并入同一个数组：
+      // 拼接 + 去重 + 滤空；cover 仍走 cover 字段不并入。契约只增不改（images 仍是 string[]）。
+      images: Array.from(
+        new Set<string>(
+          [
+            ...(Array.isArray((a.product as any)?.images) ? ((a.product as any).images as unknown[]) : []),
+            ...(Array.isArray((a.payload as any)?.images) ? ((a.payload as any).images as unknown[]) : []),
+            ...(Array.isArray((a.payload as any)?.qualification) ? ((a.payload as any).qualification as unknown[]) : []),
+          ].filter((x): x is string => typeof x === 'string' && x.trim() !== ''),
+        ),
+      ),
     }))
   }
 

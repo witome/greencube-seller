@@ -461,7 +461,8 @@ function qualOf(d) {
   return list.length ? list : undefined
 }
 
-// 提交体字段（卡BW-1 口径，一项不多）：name/categoryId/weighType/unit/supplyPrice/dailySupply/remark/cover/qualification
+// 提交体字段（卡CD 2026-10-04 收口：资质证明与单品链路同口径走 images 字段 ——
+// 原先发 qualification，运营审核端只渲染 images，连拍提交的资质图审核页看不到）
 function buildBody(d) {
   const remark = (d.form.remark || '').trim()
   return {
@@ -473,7 +474,7 @@ function buildBody(d) {
     dailySupply: Number(d.form.dailySupply),
     remark: remark || undefined,
     cover: d.cover || undefined,
-    qualification: qualOf(d),
+    images: qualOf(d),
   }
 }
 

@@ -20,7 +20,7 @@
     </view>
 
     <view class="row-btns">
-      <view class="pbtn primary" :class="{ disabled: !taskId }" @tap="confirm">确认交付</view>
+      <view class="pbtn primary" :class="{ disabled: !taskId || submitting }" @tap="confirm">确认交付</view>
     </view>
 
     <!-- 卡AH C1（2026-09-30）：有 COD 待收款单时，把原来的「交付完成，请收款」toast
@@ -54,6 +54,8 @@ const remark = ref('')
 const amount = ref('-')
 const showAmount = ref(false)
 const photos = ref([])
+// 卡CD（2026-10-04）：交付确认进行中标记 —— deliverConfirm 非幂等，连点会重复交付
+const submitting = ref(false)
 const t = (msg) => uni.showToast({ title: msg, icon: 'none' })
 
 // 拍照 → 本地压缩到 300KB 内 → base64 上传，拿到 url 加入列表
@@ -107,25 +109,33 @@ const sheetSub = ref('')
 let pendingCod = []
 
 const confirm = async () => {
+  if (submitting.value) return
   if (!taskId.value) { uni.showToast({ title: '暂无进行中任务', icon: 'none' }); return }
-  const res = await courierApi.deliverConfirm(Number(taskId.value), { photos: photos.value, remark: remark.value })
-  // 货到付款自动进收款页（2026-09-19 拍板卡）：后端返回本任务内已送达、payMethod=2
-  // 且尚无收款凭证(non-empty photos)的订单。多个 COD 单逐个收（队列存 storage，cod-pay 接力）；
-  // 微信支付订单照常回首页不受影响。
-  const codOrders = res?.codOrders || []
-  if (codOrders.length) {
-    // 队列 = 除首单外的剩余待收款单（空数组也写入：向 cod-pay 标记「来自交付流程」）
-    uni.setStorageSync('codQueue', codOrders.slice(1))
-    pendingCod = codOrders
-    const first = codOrders[0]
-    const amt = first.amount != null ? `本单 ¥${Number(first.amount).toFixed(2)}` : '本单'
-    const rest = codOrders.length - 1
-    sheetSub.value = `客户扫码付了吗？选完直接进下一步（${amt}${rest > 0 ? ` · 还有 ${rest} 单待收款` : ''}）`
-    codSheet.value = true
-  } else {
-    uni.removeStorageSync('codQueue')
-    uni.showToast({ title: '交付完成', icon: 'success' })
-    setTimeout(() => uni.reLaunch({ url: '/subpkg-courier/pages/home' }), 600)
+  // 卡CD：页面文案「📸 交付前拍照留痕」——不拍照不允许提交（接口零调用）
+  if (!photos.value.length) { uni.showToast({ title: '请先拍摄交付照片', icon: 'none' }); return }
+  submitting.value = true
+  try {
+    const res = await courierApi.deliverConfirm(Number(taskId.value), { photos: photos.value, remark: remark.value })
+    // 货到付款自动进收款页（2026-09-19 拍板卡）：后端返回本任务内已送达、payMethod=2
+    // 且尚无收款凭证(non-empty photos)的订单。多个 COD 单逐个收（队列存 storage，cod-pay 接力）；
+    // 微信支付订单照常回首页不受影响。
+    const codOrders = res?.codOrders || []
+    if (codOrders.length) {
+      // 队列 = 除首单外的剩余待收款单（空数组也写入：向 cod-pay 标记「来自交付流程」）
+      uni.setStorageSync('codQueue', codOrders.slice(1))
+      pendingCod = codOrders
+      const first = codOrders[0]
+      const amt = first.amount != null ? `本单 ¥${Number(first.amount).toFixed(2)}` : '本单'
+      const rest = codOrders.length - 1
+      sheetSub.value = `客户扫码付了吗？选完直接进下一步（${amt}${rest > 0 ? ` · 还有 ${rest} 单待收款` : ''}）`
+      codSheet.value = true
+    } else {
+      uni.removeStorageSync('codQueue')
+      uni.showToast({ title: '交付完成', icon: 'success' })
+      setTimeout(() => uni.reLaunch({ url: '/subpkg-courier/pages/home' }), 600)
+    }
+  } finally {
+    submitting.value = false
   }
 }
 

@@ -78,10 +78,18 @@ export function useNewOrderAlerter(fetchIds, opts = {}) {
     }
   }
 
+  // 卡CD（2026-10-04）：登记与「定时器活着」绑定 —— 原先只在 setup 时登记一次，
+  // 而 stop()（onHide）里注销了登记，此后 onShow 重启定时器但不再登记，
+  // stopAllPollers()（切身份/退出登录）就停不掉它：旧页轮询拿新 token 打旧角色接口。
+  // 现改为：start() 里（重新）登记（registerPoller 同 tag 覆盖），stop() 只停定时器不注销，
+  // 仅页面销毁（onUnload）时注销。不变量：定时器在跑 ⇒ 登记表里一定有它。
+  let unregister = null
+
   const start = () => {
     if (timer) return
     check() // onShow 立即查一次（首次=建基线）
     timer = setInterval(check, POLL_MS)
+    unregister = registerPoller(`alerter:${tag}`, stop)
     console.log(`[new-order-alerter:${tag}] 轮询已启动(${POLL_MS}ms)`)
   }
   const stop = () => {
@@ -90,16 +98,16 @@ export function useNewOrderAlerter(fetchIds, opts = {}) {
       timer = null
       console.log(`[new-order-alerter:${tag}] 轮询已停止`)
     }
-    unregister()
+    // 卡CD：这里不再注销 —— onHide 只是暂停，页面还活着，切身份时仍要能被 stopAllPollers 停掉
   }
 
-  // 全局登记：切换身份/退出登录时由 stopAllPollers() 强制停（reLaunch 不一定触发 onHide）
-  const unregister = registerPoller(`alerter:${tag}`, stop)
-
-  // onHide 停/onShow 启 + onUnload 兜底销毁（页面实例销毁时定时器必须清，防后台空转）
+  // onHide 停/onShow 启（启动时重新登记）+ onUnload 兜底销毁（页面实例销毁时定时器必须清 + 注销登记）
   onShow(start)
   onHide(stop)
-  onUnload(stop)
+  onUnload(() => {
+    stop()
+    if (unregister) { unregister(); unregister = null }
+  })
 
   return { start, stop }
 }
