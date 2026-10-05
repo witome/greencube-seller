@@ -446,6 +446,53 @@ export class AdminFinanceService {
     return this.getHomeContent()
   }
 
+  // ────────────────────────────────────────
+  // 卡CG（2026-10-05）：审核窗口期「注册即通过」开关（purchaser_auto_approve）
+  // 复用 platform_config KV 表（不建新表、不加字段、无迁移）。**默认关**：
+  // KV 缺失 / 为空 / 值不是 '1' 一律 autoApprove=false，线上行为与开关上线前完全一致。
+  // ────────────────────────────────────────
+  private static readonly REG_POLICY_KEY = 'purchaser_auto_approve'
+
+  async getRegistrationPolicy() {
+    const cfg = await this.prisma.platformConfig.findUnique({ where: { key: AdminFinanceService.REG_POLICY_KEY } })
+    return { autoApprove: cfg?.value === '1' }
+  }
+
+  async updateRegistrationPolicy(userId: bigint, autoApprove: boolean) {
+    const value = autoApprove ? '1' : '0'
+    // upsert 写 KV + 审计落**同一事务**：要么全成、要么全不成（口径对齐本文件 generate() 的收口写法）
+    await this.prisma.$transaction(async (tx) => {
+      const cur = await tx.platformConfig.findUnique({ where: { key: AdminFinanceService.REG_POLICY_KEY } })
+      await tx.platformConfig.upsert({
+        where: { key: AdminFinanceService.REG_POLICY_KEY },
+        update: { value },
+        create: { key: AdminFinanceService.REG_POLICY_KEY, value },
+      })
+      await this.audit.log(
+        {
+          operatorId: userId,
+          action: 'REG_POLICY_UPDATE',
+          entity: 'platform_config',
+          entityId: 0,
+          before: { autoApprove: cur?.value === '1' },
+          after: { autoApprove },
+        },
+        tx,
+      )
+    })
+    return { autoApprove }
+  }
+
+  /// 给注册链路读的安全入口：任何异常一律吞掉并返回 false —— 读配置失败绝不能把注册卡死。
+  async isRegistrationAutoApprove(): Promise<boolean> {
+    try {
+      const cfg = await this.prisma.platformConfig.findUnique({ where: { key: AdminFinanceService.REG_POLICY_KEY } })
+      return cfg?.value === '1'
+    } catch {
+      return false
+    }
+  }
+
   /// ─── 每日对账（只读，绝不写入）────────────────────────────────
   /// 口径（与拍板一致）：
   /// 1.「一天」按送达日 order.deliveryDate；只统计已送达(60)/已完成(70)

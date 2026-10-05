@@ -1,10 +1,18 @@
 import { Controller, Get, Post, Put, Body, Query } from '@nestjs/common'
+import { IsBoolean } from 'class-validator'
 import { AdminFinanceService } from './admin-finance.service'
 import { ServiceFeeConfigDto, GenerateSettlementDto } from './dto/finance.dto'
 import { DeliveryFeeConfigDto, PayQrDto } from './dto/delivery-fee.dto'
 import { HomeContentDto } from './dto/home-content.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles, Role } from '../../common/decorators/roles.decorator'
+
+/// 卡CG（2026-10-05）：注册策略 PUT 入参 —— autoApprove 必须是严格布尔。
+/// （DTO 定义在 controller 文件内，不新建 dto 文件；全局 ValidationPipe 拦非法值 → 400/1001）
+export class RegistrationPolicyDto {
+  @IsBoolean()
+  autoApprove!: boolean
+}
 
 /// 运营·资金与结算（契约《开发配套-API接口字段契约》第 9 节）
 @Controller('admin/finance')
@@ -86,6 +94,19 @@ export class AdminFinanceController {
   @Roles(Role.ADMIN)
   async updateHomeContent(@CurrentUser('userId') userId: bigint, @Body() dto: HomeContentDto) {
     return this.service.updateHomeContent(userId, dto)
+  }
+
+  /// 卡CG：注册与审核策略（审核窗口期「注册即通过」开关，默认关；仅 ADMIN 可读写）
+  @Get('registration-policy')
+  @Roles(Role.ADMIN)
+  async getRegistrationPolicy() {
+    return this.service.getRegistrationPolicy()
+  }
+
+  @Put('registration-policy')
+  @Roles(Role.ADMIN)
+  async updateRegistrationPolicy(@CurrentUser('userId') userId: bigint, @Body() dto: RegistrationPolicyDto) {
+    return this.service.updateRegistrationPolicy(userId, dto.autoApprove)
   }
 
   /// 每日对账（只读：按送达日汇总应收/实收/未收/应付供应商参考值/毛利粗算）

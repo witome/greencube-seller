@@ -73,6 +73,19 @@ export class BuyerService {
       if (phoneOwner) throw new BizException(ErrorCode.PHONE_ALREADY_USED, '该手机号已被其他账号使用')
     }
 
+    // 卡CG（2026-10-05）：审核窗口期「注册即通过」开关（platform_config KV：purchaser_auto_approve）。
+    // 默认关：缺失/为空/非 '1' 一律 false，行为与开关上线前完全一致。
+    // 读失败（DB 抖动等）也一律按关 —— 绝不让读配置把注册卡死。
+    // 实现路线：直读 platformConfig（不注入 AdminFinanceService），改动面最小、不动模块依赖；
+    // 同款安全读取口径见 admin-finance.service.ts 的 isRegistrationAutoApprove()。
+    let autoApprove = false
+    try {
+      const cfg = await this.prisma.platformConfig.findUnique({ where: { key: 'purchaser_auto_approve' } })
+      autoApprove = cfg?.value === '1'
+    } catch {
+      autoApprove = false
+    }
+
     // 事务：purchaser 主表 + user 手机号同步要么都成、要么整体回滚（杜绝主表已建、user 未更新的半成品）
     const purchaser = await this.prisma.$transaction(async (tx) => {
       const created = await tx.purchaser.create({
@@ -87,7 +100,8 @@ export class BuyerService {
           businessLicenseNo: dto.businessLicenseNo || null,
           businessLicenseImg: dto.licenseImg || null,
           foodPermitImg: dto.permitImg || null,
-          accountStatus: AccountStatus.PENDING,
+          // 卡CG：审核窗口期开关打开 → 直接 ACTIVE(2)；否则维持现状 PENDING(1)
+          accountStatus: autoApprove ? AccountStatus.ACTIVE : AccountStatus.PENDING,
         },
       })
 

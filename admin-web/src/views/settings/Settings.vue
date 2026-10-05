@@ -229,6 +229,24 @@
       </div>
     </el-card>
 
+    <!-- 卡CG（2026-10-05）：注册与审核策略（临时开关，审核窗口期专用；既有卡片一行未动） -->
+    <el-card shadow="never" class="admin-settings-card">
+      <template #header>🧪 注册与审核策略（临时）</template>
+      <div v-loading="regPolicyLoading">
+        <div class="admin-settings-row">
+          <span class="admin-settings-k">新注册采购方自动通过审核</span>
+          <el-switch v-model="regPolicyAutoApprove" />
+          <span class="admin-settings-unit">开 = 新注册直接变成可用账号（accountStatus=2）；关 = 维持人工审核</span>
+        </div>
+        <div class="reg-policy-warning">
+          ⚠️ 仅审核窗口期打开；审核通过后必须立刻关闭，否则所有新注册都会直接变成可用账号
+        </div>
+        <div style="margin-top:16px;">
+          <el-button type="primary" size="small" :loading="savingRegPolicy" @click="saveRegPolicy">保存</el-button>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 货到付款收款码 -->
     <el-card shadow="never" class="admin-settings-card">
       <template #header>💰 货到付款收款码（配送员端展示，客户扫码付款）</template>
@@ -800,6 +818,34 @@ async function doTestCall() {
   }
 }
 
+// ── 卡CG（2026-10-05）：注册与审核策略（临时开关，纯增量） ──
+// 进页即拉 GET 回填；失败时开关默认关、不弹红字（静默），不打扰其它卡片的加载
+const regPolicyLoading = ref(false)
+const savingRegPolicy = ref(false)
+const regPolicyAutoApprove = ref(false)
+
+async function loadRegPolicy() {
+  regPolicyLoading.value = true
+  try {
+    const cfg = await financeAdminApi.getRegistrationPolicy()
+    regPolicyAutoApprove.value = !!cfg?.autoApprove
+  } catch (e) { /* 静默：默认关 */ } finally {
+    regPolicyLoading.value = false
+  }
+}
+
+async function saveRegPolicy() {
+  savingRegPolicy.value = true
+  try {
+    await financeAdminApi.updateRegistrationPolicy({ autoApprove: regPolicyAutoApprove.value })
+    ElMessage.success('注册策略已保存')
+  } catch (e) { /* 已提示 */ } finally {
+    savingRegPolicy.value = false
+  }
+}
+
+onMounted(loadRegPolicy)
+
 // 与既有 onMounted 并列注册（Vue 3 支持多次注册），不改上面已有的挂载逻辑
 onMounted(loadNotify)
 </script>
@@ -929,5 +975,13 @@ onMounted(loadNotify)
 }
 .notify-launchat b {
   color: #c87000;
+}
+
+/* ── 卡CG：注册与审核策略 · 红字警示 ── */
+.reg-policy-warning {
+  margin-top: 8px;
+  color: #e23c3c;
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

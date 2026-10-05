@@ -100,6 +100,9 @@ export const financeAdminApi = {
   // 首页内容（横幅/公告/今日特价位，platform_config KV）
   getHomeContent: () => request.get('/admin/finance/home-content'),
   updateHomeContent: (data) => request.put('/admin/finance/home-content', data),
+  // 卡CG（2026-10-05）：注册与审核策略（审核窗口期「注册即通过」开关，默认关；仅 ADMIN）
+  getRegistrationPolicy: () => request.get('/admin/finance/registration-policy'),
+  updateRegistrationPolicy: (data) => request.put('/admin/finance/registration-policy', data),
   // 每日对账（只读，按送达日）
   getDailyReconciliation: (params) => request.get('/admin/finance/daily-reconciliation', { params }),
   uploadImage: (base64) => request.post('/upload/image', { base64 }),
