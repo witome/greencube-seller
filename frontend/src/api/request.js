@@ -26,6 +26,16 @@ export const fullUrl = (path) => (path ? (path.startsWith('http') ? path : BASE_
 let lastToastMsg = ''
 let lastToastAt = 0
 
+/** 同文案 3 秒去重 toast（复用上面两个去重变量；卡CF：401/2001 补登失败时用） */
+function toastOnce(msg) {
+  const now = Date.now()
+  if (msg !== lastToastMsg || now - lastToastAt > 3000) {
+    uni.showToast({ title: msg, icon: 'none' })
+  }
+  lastToastMsg = msg
+  lastToastAt = now
+}
+
 function request({ url, method = 'GET', data, header = {} }) {
   return new Promise((resolve, reject) => {
     const doRequest = () => {
@@ -41,12 +51,25 @@ function request({ url, method = 'GET', data, header = {} }) {
         success: (res) => {
           const body = res.data || {}
 
-          // 未登录 / token 失效：清除凭据，跳登录页
+          // 未登录 / token 失效：清除凭据。
+          // 卡CF（2026-10-05）浏览优先整改：不再 reLaunch 登录页，改为调一次
+          // App.globalData.relogin() 静默补登（微信静默登录，不弹授权框），仍按原样 reject；
+          // 补登不可用/失败时只走既有 3 秒去重的 toast
           if (res.statusCode === 401 || body.code === 2001) {
             uni.removeStorageSync('token')
             uni.removeStorageSync('currentRole')
             uni.removeStorageSync('accountStatus')
-            uni.reLaunch({ url: '/pages/login/index' })
+            let relogin = null
+            try {
+              relogin = getApp()?.globalData?.relogin
+            } catch (e) {}
+            if (typeof relogin === 'function') {
+              Promise.resolve()
+                .then(() => relogin())
+                .catch(() => toastOnce('登录已过期，请重新进入'))
+            } else {
+              toastOnce('登录已过期，请重新进入')
+            }
             reject(body)
             return
           }
@@ -90,12 +113,8 @@ function request({ url, method = 'GET', data, header = {} }) {
       })
     }
 
-    // 未登录时：登录接口本身直接发（无需 token），其它接口跳登录页
-    if (!uni.getStorageSync('token') && url !== '/auth/wx-login') {
-      uni.reLaunch({ url: '/pages/login/index' })
-      reject({ code: 2001, msg: '未登录' })
-      return
-    }
+    // 卡CF（2026-10-05）浏览优先整改：删除「未登录 → reLaunch 登录页」的拦截，
+    // 未登录也照常发请求（浏览类接口后端已放行；身份接口由后端返回 401/2001 走上面分支）
     doRequest()
   })
 }

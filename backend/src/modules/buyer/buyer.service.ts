@@ -374,7 +374,10 @@ export class BuyerService {
   //   accountStatus=2 才返回真实 salePrice（priceVisible=true），否则 salePrice=null。
   //   与 product.service 同一口径（各自 service 内小私有函数，口径文字对齐）。
   // ────────────────────────────────────────
-  private async priceVisibleFor(userId: bigint): Promise<boolean> {
+  private async priceVisibleFor(userId?: bigint): Promise<boolean> {
+    // 卡CF（2026-10-05）：匿名浏览（userId undefined）一律脱敏；
+    // 且 Prisma where 至少要一个参数，undefined 直接查会抛 —— 必须先拦
+    if (!userId) return false
     const p = await this.prisma.purchaser.findUnique({
       where: { userId },
       select: { accountStatus: true },
@@ -382,7 +385,7 @@ export class BuyerService {
     return !!p && p.accountStatus === AccountStatus.ACTIVE
   }
 
-  async getHomeContent(userId: bigint) {
+  async getHomeContent(userId?: bigint) {
     const [keys, priceVisible] = await Promise.all([
       this.prisma.platformConfig.findMany({
         where: { key: { in: ['home_delivery_note', 'home_notice', 'home_recommendations', 'home_banner_images', 'home_features', 'service_hotline'] } },

@@ -12,7 +12,10 @@ export class ProductService {
   // 未注册 / 待审核(1) / 驳回(3) / 终态驳回(4) / 运营停用(5) 一律 salePrice=null + priceVisible=false。
   // 脱敏在服务端抹除（不是前端遮挡）；priceVisible 是纯新增字段，其余字段一个不动。
   // ────────────────────────────────────────
-  private async priceVisibleFor(userId: bigint): Promise<boolean> {
+  private async priceVisibleFor(userId?: bigint): Promise<boolean> {
+    // 卡CF（2026-10-05）：匿名浏览（userId undefined）一律脱敏；
+    // 且 Prisma where 至少要一个参数，undefined 直接查会抛 —— 必须先拦
+    if (!userId) return false
     const p = await this.prisma.purchaser.findUnique({
       where: { userId },
       select: { accountStatus: true },
@@ -46,7 +49,7 @@ export class ProductService {
   // 商品列表（⚠️ 仅返回销售价，绝不返回供货价）
   // 契约《开发配套-API接口字段契约》第 3 节
   // ────────────────────────────────────────
-  async list(query: { categoryId?: string; keyword?: string; page?: string; pageSize?: string }, userId: bigint) {
+  async list(query: { categoryId?: string; keyword?: string; page?: string; pageSize?: string }, userId?: bigint) {
     const page = Math.max(1, parseInt(query.page || '1'))
     const pageSize = Math.min(50, Math.max(1, parseInt(query.pageSize || '20')))
     const categoryId = query.categoryId && query.categoryId !== 'undefined' ? parseInt(query.categoryId) : undefined
@@ -93,7 +96,7 @@ export class ProductService {
   // ────────────────────────────────────────
   // 商品详情（⚠️ supplyPrice 恒为 null）
   // ────────────────────────────────────────
-  async detail(id: number, userId: bigint) {
+  async detail(id: number, userId?: bigint) {
     const [p, priceVisible] = await Promise.all([
       this.prisma.product.findUnique({
         where: { id: BigInt(id) },

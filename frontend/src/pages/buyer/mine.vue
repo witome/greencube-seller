@@ -1,5 +1,16 @@
 <template>
   <view class="buyer-mine-page">
+    <!-- 卡CF（2026-10-05）浏览优先整改：未登录空态覆盖层
+         （沿用本页居中灰字空态视觉 + 主色按钮；让出 tab 底栏可切换；
+          未登录时不请求任何接口、不自动跳转，由用户主动点「去登录」） -->
+    <view v-if="authGate === 'guest'" class="auth-gate">
+      <view class="auth-gate-card">
+        <view class="auth-gate-ico">👤</view>
+        <view class="auth-gate-t1">登录后可查看</view>
+        <view class="auth-gate-btn" @tap="goLogin">去登录</view>
+      </view>
+    </view>
+
     <!-- 加载中 -->
     <view v-if="profileLoading" class="buyer-mine-empty">加载中…</view>
 
@@ -115,6 +126,10 @@ import BuyerTabBar from '@/components/BuyerTabBar.vue'
 const profile = ref(null)
 const profileLoading = ref(true)
 const profileError = ref(false)
+// 卡CF（2026-10-05）：身份门控 —— ok=已登录（走既有逻辑）/ guest=未登录空态
+const authGate = ref('ok')
+// 空态按钮跳转（用户主动点击才引导登录，不自动跳转）
+const goLogin = () => uni.navigateTo({ url: '/pages/login/index' })
 // 数据概览：未付账款 + 本月订单（来自月度对账单）；售后中暂无接口
 const stats = ref({ unpaid: null, monthOrders: null, aftersale: null })
 
@@ -256,6 +271,15 @@ const syncProfile = async () => {
 
 onShow(() => {
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡CF（2026-10-05）浏览优先整改：未登录 → 空态，不请求 profile/账单等任何接口、不自动跳转
+  if (!uni.getStorageSync('token')) {
+    authGate.value = 'guest'
+    // 卡CF复核修复3（2026-10-05）：返回前必须清掉加载态，否则空态覆盖层底下一直渲染「加载中…」
+    profileLoading.value = false
+    profileError.value = false
+    return
+  }
+  authGate.value = 'ok'
   syncProfile()
 })
 </script>
@@ -272,6 +296,17 @@ onShow(() => {
   text-align: center; color: $text-placeholder; font-size: 13px; padding: 60px 0;
 }
 .buyer-mine-retry { color: $info; }
+
+/* ── 卡CF：未登录空态覆盖层（居中灰字 + 主色按钮；让出底部 tab 栏）── */
+.auth-gate {
+  position: fixed; left: 0; right: 0; top: 0; bottom: calc(64px + env(safe-area-inset-bottom));
+  background: $bg-page; z-index: 900;
+  display: flex; align-items: center; justify-content: center;
+}
+.auth-gate-card { text-align: center; color: $text-placeholder; padding: 60px 0; }
+.auth-gate-ico { font-size: 36px; line-height: 1; }
+.auth-gate-t1 { margin-top: 10px; font-size: 13px; }
+.auth-gate-btn { display: inline-block; margin-top: 16px; padding: 9px 34px; border-radius: 18px; background: $brand; color: #fff; font-size: 13px; font-weight: 600; }
 
 /* ── ① 账号状态提示条（浅绿渐变） ── */
 .buyer-mine-status {

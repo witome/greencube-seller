@@ -54,13 +54,24 @@ const id = ref('')
 // 卡AA：价格不可见时点价格区 → 注册页
 const goRegister = () => uni.navigateTo({ url: '/pages/buyer/register' })
 
+// 卡CF（2026-10-05）浏览优先整改：详情页匿名可浏览（价格服务端脱敏）；
+// 未登录点「加入草稿/立即下单」→ 引导登录（用户主动点击才触发，不自动跳转）
+const requireLogin = () => {
+  if (uni.getStorageSync('token')) return true
+  uni.navigateTo({ url: '/pages/login/index' })
+  return false
+}
+
 const addCart = async () => {
+  if (!requireLogin()) return
   await buyerApi.addToCart({ productId: Number(id.value), qty: qty.value })
   uni.showToast({ title: '已加入草稿', icon: 'success' })
   uni.$emit('cart-badge-refresh')
 }
 
 const buyNow = async () => {
+  // 卡CF：未登录先引导登录
+  if (!requireLogin()) return
   // 配送日期：当天有可选时段用当天，否则顺延次日；自动选最早可用时段（不弹窗）
   let deliveryDate = dateStr()
   let winList = availableTimeWindows(deliveryDate)

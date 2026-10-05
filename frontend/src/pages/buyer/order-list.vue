@@ -1,5 +1,16 @@
 <template>
   <view class="page">
+    <!-- 卡CF（2026-10-05）浏览优先整改：未登录/未过审空态覆盖层
+         （沿用本页 .empty 居中灰字 + 主色按钮；让出 tab 底栏可切换；
+          未登录时不请求任何接口、不自动跳转，由用户主动点「去登录/去注册」） -->
+    <view v-if="authGate !== 'ok'" class="auth-gate">
+      <view class="auth-gate-card">
+        <view class="auth-gate-ico">📦</view>
+        <view class="auth-gate-t1">{{ authGate === 'guest' ? '登录后可查看订单' : '账号注册并审核通过后可用' }}</view>
+        <view class="auth-gate-btn" @tap="authGate === 'guest' ? goLogin() : goRegisterPage()">{{ authGate === 'guest' ? '去登录' : '去注册' }}</view>
+      </view>
+    </view>
+
     <!-- 状态筛选 -->
     <scroll-view scroll-x class="chips-row">
       <view v-for="s in statusTabs" :key="s.value" :class="['chip', { on: activeStatus === s.value }]" @tap="switchStatus(s.value)">{{ s.label }}</view>
@@ -47,6 +58,11 @@ const orders = ref([])
 const activeStatus = ref('')
 const loading = ref(false)
 const loadError = ref(false)
+// 卡CF（2026-10-05）：身份门控 —— ok=已注册可用 / guest=未登录 / pending=有 token 但未过审
+const authGate = ref('ok')
+// 空态按钮跳转（用户主动点击才引导登录/注册，不自动跳转）
+const goLogin = () => uni.navigateTo({ url: '/pages/login/index' })
+const goRegisterPage = () => uni.navigateTo({ url: '/pages/buyer/register' })
 // 卡CD（2026-10-04）：请求序号 —— 快速连点状态筛选时旧响应不得覆盖新结果
 let loadSeq = 0
 
@@ -90,8 +106,19 @@ const goDetail = (id) => uni.navigateTo({ url: `/pages/buyer/order-detail?id=${i
 // tabBar 页用 onShow 刷新（原 onMounted 未导入会导致订单不加载）
 onShow(async () => {
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡CF（2026-10-05）浏览优先整改：未登录 → 空态，不请求订单接口、不自动跳转
+  if (!uni.getStorageSync('token')) {
+    authGate.value = 'guest'
+    return
+  }
   // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
   if (await guardBuyerSuspended()) return
+  // 卡CF：有 token 但未注册/待审核 → 空态，不打 /order
+  if (uni.getStorageSync('accountStatus') !== 2) {
+    authGate.value = 'pending'
+    return
+  }
+  authGate.value = 'ok'
   load()
 })
 </script>
@@ -115,4 +142,14 @@ onShow(async () => {
 .empty { text-align: center; color: $text-placeholder; padding: 60px 0; }
 /* 卡CD：失败态重试入口（样式按 goods.vue 既有 .retry-btn 同款） */
 .retry-btn { display: inline-block; margin-top: 12px; padding: 7px 22px; border-radius: 16px; border: 1.5px solid $color-primary; color: $color-primary; font-size: 13px; font-weight: 600; }
+/* 卡CF：未登录/未过审空态覆盖层（沿用 .empty 居中灰字 + 主色按钮；让出底部 tab 栏） */
+.auth-gate {
+  position: fixed; left: 0; right: 0; top: 0; bottom: calc(64px + env(safe-area-inset-bottom));
+  background: $bg-page; z-index: 900;
+  display: flex; align-items: center; justify-content: center;
+}
+.auth-gate-card { text-align: center; color: $text-placeholder; padding: 60px 0; }
+.auth-gate-ico { font-size: 36px; line-height: 1; }
+.auth-gate-t1 { margin-top: 10px; font-size: 13px; }
+.auth-gate-btn { display: inline-block; margin-top: 16px; padding: 9px 34px; border-radius: 18px; background: $color-primary; color: #fff; font-size: 13px; font-weight: 600; }
 </style>

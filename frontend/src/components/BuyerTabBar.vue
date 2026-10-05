@@ -30,6 +30,14 @@ const tabs = [
 const cartCount = ref(0)
 
 const refreshCart = async () => {
+  // 卡CF（2026-10-05）浏览优先整改：未登录不发 GET /cart（这一枪曾把未登录访客打回登录页），角标置 0 不显示
+  // 卡CF复核修复4（2026-10-05）：有 token 但未注册/未过审（accountStatus !== 2）也不发——
+  // 否则后端回 3001，request.js 自动弹错误 toast，审核员打开首页就蹦提示。角标保持 0。
+  const accountStatus = uni.getStorageSync('accountStatus')
+  if (!uni.getStorageSync('token') || accountStatus !== 2) {
+    cartCount.value = 0
+    return
+  }
   try {
     const data = await buyerApi.getCart()
     cartCount.value = Array.isArray(data) ? data.length : data?.list?.length || 0

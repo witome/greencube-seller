@@ -30,6 +30,8 @@
         <text>{{ logging ? '登录中…' : '微信一键登录' }}</text>
       </view>
       <view class="reg-link" @tap="goRegister">还没有账号？<text class="reg-link-b">注册 ›</text></view>
+      <!-- 卡CF（2026-10-05）浏览优先整改：不登录也能先逛逛（审核要求：浏览后再自主选择登录） -->
+      <view class="browse-link" @tap="goBrowse">先逛逛，暂不登录 ›</view>
     </view>
 
     <!-- 底部协议 -->
@@ -84,6 +86,11 @@ const doLogin = async () => {
   } finally {
     logging.value = false
   }
+}
+
+// 卡CF（2026-10-05）：「先逛逛，暂不登录」→ 回首页浏览（不登录、不请求身份接口）
+const goBrowse = () => {
+  uni.reLaunch({ url: '/pages/buyer/home' })
 }
 
 const goRegister = async () => {
@@ -213,6 +220,13 @@ onShow(() => {
 .reg-link-b {
   color: $brand;
   font-weight: 600;
+}
+/* 卡CF：先逛逛入口（次要操作，弱化展示） */
+.browse-link {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13px;
+  color: $text-second;
 }
 .agreement {
   position: absolute;

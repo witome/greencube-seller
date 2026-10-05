@@ -349,9 +349,16 @@ async function main() {
     deliveryNote: { title: 'x' }, notice: { enabled: false }, recommendationIds: ['abc'],
   }, at)
   check('推荐位非法id被拒(1001)', hcBad.code === 1001)
-  // ⑤ 反向：供应商/配送员无权读采购方首页内容
-  check('供应商被拒·GET /buyer/home-content', (await call('GET', '/buyer/home-content', null, st)).code === 2002)
-  check('配送员被拒·GET /buyer/home-content', (await call('GET', '/buyer/home-content', null, ct)).code === 2002)
+  // ⑤ 反向：卡CF（2026-10-05）该接口已刻意公开化 → 供应商/配送员也能成功读取（code 0），
+  //    但公开后仍不得对非采购方泄漏真实价格：推荐位商品必须脱敏（salePrice:null + priceVisible:false）
+  const hcSup = await call('GET', '/buyer/home-content', null, st)
+  check('供应商可读·GET /buyer/home-content 且价格脱敏(salePrice:null+priceVisible:false)',
+    hcSup.code === 0 && hcSup.data.recommendations.length > 0
+    && hcSup.data.recommendations.every(p => p.salePrice === null && p.priceVisible === false))
+  const hcCour = await call('GET', '/buyer/home-content', null, ct)
+  check('配送员可读·GET /buyer/home-content 且价格脱敏(salePrice:null+priceVisible:false)',
+    hcCour.code === 0 && hcCour.data.recommendations.length > 0
+    && hcCour.data.recommendations.every(p => p.salePrice === null && p.priceVisible === false))
   // ⑥ 复位：公告停用 + 推荐位清空（空数组 → 前台空态），不给后续用例留脏数据
   await call('PUT', '/admin/finance/home-content', {
     deliveryNote: { title: '', subtitle: '' }, notice: { enabled: false, text: '' }, recommendationIds: [],

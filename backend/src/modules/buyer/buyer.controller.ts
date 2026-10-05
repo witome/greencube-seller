@@ -98,9 +98,9 @@ export class BuyerController {
 
   /// 首页内容一次取全（横幅/公告/今日特价位，2026-09-11 首页接口化卡）
   /// 卡AA（2026-09-30）：今日特价价格按审核状态脱敏（accountStatus=2 才可见）
+  /// 卡CF（2026-10-05）：浏览优先整改 —— 免登录可读（删 @Roles）；匿名时服务端一律脱敏
   @Get('home-content')
-  @Roles(Role.PURCHASER)
-  async homeContent(@CurrentUser('userId') userId: bigint) {
+  async homeContent(@CurrentUser('userId') userId?: bigint) {
     return this.service.getHomeContent(userId)
   }
 

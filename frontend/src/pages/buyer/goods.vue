@@ -189,6 +189,13 @@ const onQtyInput = (g, e) => {
 // ── 统一加购 / 立即下单 ──
 const submitting = ref(false)
 
+// 卡CF（2026-10-05）：未登录点「加入草稿/立即下单」→ 引导登录（用户主动点击才触发，不自动跳转）
+const requireLogin = () => {
+  if (uni.getStorageSync('token')) return true
+  uni.navigateTo({ url: '/pages/login/index' })
+  return false
+}
+
 /**
  * 「加入草稿」：按行分别提交（卡AY 的核心）。
  *
@@ -203,6 +210,8 @@ const submitting = ref(false)
  */
 const addAllToCart = async () => {
   if (submitting.value) return
+  // 卡CF：未登录先引导登录
+  if (!requireLogin()) return
   submitting.value = true
   let ok = true
   try {
@@ -235,6 +244,8 @@ const buyAll = async () => {
   // 卡CD（2026-10-04）：防重复下单 —— 复用同文件「加入草稿」既有的 submitting 锁，
   // 连点「立即下单」只放行第一击（POST /order 非幂等，重复点会建多张订单）
   if (submitting.value) return
+  // 卡CF：未登录先引导登录
+  if (!requireLogin()) return
   submitting.value = true
   try {
     // 卡AY：结算栏现在也会为「有未提交改动（如减到 0 待删除）」而显示，
@@ -321,6 +332,8 @@ const goRegister = () => go('/pages/buyer/register')
 const visible = ref(false)
 const onDraftSynced = async () => {
   if (!visible.value) return
+  // 卡CF：未登录不回拉服务端草稿（不打 /cart）
+  if (!uni.getStorageSync('token')) return
   await syncFromServer()
 }
 
@@ -336,6 +349,8 @@ onHide(() => { visible.value = false })
 onShow(async () => {
   visible.value = true
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡CF（2026-10-05）浏览优先整改：未登录浏览态 —— 不查停用、不拉服务端草稿（GET /cart），商品列表照常浏览
+  if (!uni.getStorageSync('token')) return
   // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
   if (await guardBuyerSuspended()) return
   // 上次加载失败（如后端不可达）时，回到本页自动补一次，避免一直卡在「加载中」

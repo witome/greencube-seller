@@ -264,6 +264,15 @@ onShow(async () => {
   uni.setNavigationBarTitle({ title: '辉崧鲜配 · 采购' })
   // H5 原生 tabBar 不支持 emoji，统一用自绘 BuyerTabBar 底栏，隐藏原生 tabBar
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡CF（2026-10-05）浏览优先整改：未登录浏览态 —— 跳过 profile / 订单拉取，
+  // 首页内容（横幅/公告/8宫格/今日特价，价格服务端脱敏）照常渲染
+  if (!uni.getStorageSync('token')) {
+    needRegister.value = false
+    loadHomeContent()
+    ordersLoading.value = false
+    activeOrders.value = []
+    return
+  }
   const blocked = await loadProfile()
   if (blocked) return // 卡AA：已跳停用提示页，不再加载本页数据
   loadHomeContent()

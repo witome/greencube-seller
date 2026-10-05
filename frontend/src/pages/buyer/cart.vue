@@ -1,5 +1,17 @@
 <template>
   <view class="page cart-page">
+    <!-- 卡CF（2026-10-05）浏览优先整改：未登录/未过审空态覆盖层
+         （沿用本页 .dempty 空态视觉；z-index 压过内容、让出 tab 底栏可切换；
+          未登录时不请求任何接口、不自动跳转，由用户主动点「去登录/去注册」） -->
+    <view v-if="authGate !== 'ok'" class="auth-gate">
+      <view class="dempty auth-gate-card">
+        <view class="de-ic">🔒</view>
+        <view class="de-t1">{{ authGate === 'guest' ? '登录后可查看' : '账号注册并审核通过后可用' }}</view>
+        <view class="de-t2">{{ authGate === 'guest' ? '登录后即可使用 AI 下单助手' : '注册审核通过后即可使用 AI 下单助手' }}</view>
+        <view class="de-go" @tap="authGate === 'guest' ? goLogin() : goRegisterPage()">{{ authGate === 'guest' ? '去登录' : '去注册' }}</view>
+      </view>
+    </view>
+
     <!-- 卡AQ：顶部标题条（原型 S1）—— 页内标题「订单草稿」+ 右上「清空」 -->
     <view class="pg-head">
       <text class="pg-title">订单草稿</text>
@@ -238,6 +250,12 @@ import AiOrderFab from '@/components/AiOrderFab.vue'
 import GoodsPicker from '@/components/GoodsPicker.vue'
 
 const cart = ref([])
+
+// 卡CF（2026-10-05）：身份门控 —— ok=已注册可用 / guest=未登录 / pending=有 token 但未过审
+const authGate = ref('ok')
+// 空态按钮跳转（用户主动点击才引导登录/注册，不自动跳转）
+const goLogin = () => uni.navigateTo({ url: '/pages/login/index' })
+const goRegisterPage = () => uni.navigateTo({ url: '/pages/buyer/register' })
 
 /** 金额一律渲染服务端给的数（salePrice / subtotal），前端不算价 */
 const money = (v) => (Number(v) || 0).toFixed(2)
@@ -519,6 +537,8 @@ const drainPendingDialog = () => {
 const visible = ref(false)
 const onDraftSynced = async () => {
   if (!visible.value) return
+  // 卡CF：未登录/未过审不回拉服务端草稿（不打 /cart）
+  if (authGate.value !== 'ok') return
   await load()
   // 人在本页用 FAB 说完时，事件回调当场补齐这一轮「用户 + AI」气泡
   drainPendingDialog()
@@ -582,8 +602,20 @@ const loadAddress = async () => {
 onShow(async () => {
   visible.value = true // 卡AU：本页回到前台 → 允许「AI 草稿同步」事件触发重拉
   try { uni.hideTabBar({ animation: false, fail: () => {} }) } catch (e) {}
+  // 卡CF（2026-10-05）浏览优先整改：三分支门控
+  if (!uni.getStorageSync('token')) {
+    // 未登录：渲染「登录后可查看」空态，不请求任何接口、不自动跳转
+    authGate.value = 'guest'
+    return
+  }
   // 卡AA：账号被运营停用（accountStatus=5）→ reLaunch 停用提示页，本页不再加载
   if (await guardBuyerSuspended()) return
+  if (uni.getStorageSync('accountStatus') !== 2) {
+    // 有 token 但未注册/待审核：渲染「账号注册并审核通过后可用」空态，不打 /cart 等身份接口
+    authGate.value = 'pending'
+    return
+  }
+  authGate.value = 'ok'
   ensureMeta()
   load()
   await loadAddress()
@@ -607,6 +639,8 @@ onUnload(() => {
 onLoad(async () => {
   // 卡AU：注册「FAB 说完话」的刷新监听（onUnload 里配对 $off，见上）
   uni.$on('ai-draft-synced', onDraftSynced)
+  // 卡CF：未登录不打订阅配置接口（浏览优先，空态时不发任何请求）
+  if (!uni.getStorageSync('token')) return
   try {
     const cfg = await demandApi.subscribeConfig()
     demandTmplId.value = cfg && cfg.configured ? cfg.templateId || '' : ''
@@ -865,6 +899,13 @@ onShareAppMessage(() => ({
 
 /* ── 空态引导卡（原型 S2）── */
 .dempty { margin: 18px 0 0; background: #fff; border-radius: 14px; padding: 26px 18px; text-align: center; }
+/* 卡CF：未登录/未过审空态覆盖层（复用 .dempty 视觉；让出底部 tab 栏） */
+.auth-gate {
+  position: fixed; left: 0; right: 0; top: 0; bottom: calc(64px + env(safe-area-inset-bottom));
+  background: $bg-page; z-index: 900;
+  display: flex; align-items: center; justify-content: center; padding: 0 24px; box-sizing: border-box;
+}
+.auth-gate-card { width: 100%; margin: 0; }
 .de-ic { font-size: 38px; line-height: 1; }
 .de-t1 { font-size: 15px; font-weight: 700; margin-top: 10px; }
 .de-t2 { font-size: 11.5px; color: $text-second; line-height: 1.7; margin-top: 8px; }

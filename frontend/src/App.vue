@@ -75,6 +75,16 @@ export default {
       app.globalData = app.globalData || {}
       app.globalData.relogin = () => this.autoLogin()
     } catch (e) {}
+    // 卡CF复核修复1（2026-10-05）：静默补登 + 按角色跳转只允许**冷启动跑一次**。
+    // 原来放在 onShow ⇒ 每次回前台都会跑：供应商在 goods-manage 等表单页切后台再回来，
+    // 会被 reLaunch 踢回供应商首页，草稿全丢。挪进 onLaunch 后回前台不再触发。
+    // 启动时静默补登一次（微信静默登录，不弹任何授权框）：
+    // 成功 → 若是 supplier/courier 身份则按既有 routeToRoleHome 跳各自首页；失败 → 完全静默。
+    this.autoLogin()
+      .then((role) => {
+        if (role) this.routeToRoleHome(role)
+      })
+      .catch(() => {})
   },
   onShow() {
     // #ifdef H5
@@ -86,16 +96,6 @@ export default {
       }
     }
     // #endif
-    // 登录页方案：token 被清除后，若不在登录页则跳登录页（不再自动补登）
-    if (!uni.getStorageSync('token')) {
-      const pages = getCurrentPages()
-      if (pages.length) {
-        const cur = pages[pages.length - 1]
-        if (!cur.route || cur.route.indexOf('pages/login') !== 0) {
-          uni.reLaunch({ url: '/pages/login/index' })
-        }
-      }
-    }
   },
   methods: {
     async autoLogin() {

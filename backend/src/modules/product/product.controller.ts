@@ -12,23 +12,23 @@ export class ProductController {
   constructor(private readonly service: ProductService) {}
 
   /// 分类树（采购方逛商品 + 供应商提交新品选分类，两者都需要）
+  /// 卡CF（2026-10-05）：浏览优先整改 —— 免登录可读（无 @Roles 即公开）
   @Get('categories')
-  @Roles(Role.PURCHASER, Role.SUPPLIER)
   async categories() {
     return this.service.categories()
   }
 
-  /// 商品列表（⚠️ 仅返回销售价；未激活账号价格脱敏）
+  /// 商品列表（⚠️ 仅返回销售价；未激活账号/匿名价格脱敏）
+  /// 卡CF（2026-10-05）：免登录可读；匿名（userId undefined）服务端一律脱敏
   @Get('list')
-  @Roles(Role.PURCHASER)
-  async list(@Query() query: any, @CurrentUser('userId') userId: bigint) {
+  async list(@Query() query: any, @CurrentUser('userId') userId?: bigint) {
     return this.service.list(query, userId)
   }
 
-  /// 商品详情（⚠️ supplyPrice 恒为 null；未激活账号价格脱敏）
+  /// 商品详情（⚠️ supplyPrice 恒为 null；未激活账号/匿名价格脱敏）
+  /// 卡CF（2026-10-05）：免登录可读；匿名（userId undefined）服务端一律脱敏
   @Get(':id')
-  @Roles(Role.PURCHASER)
-  async detail(@Param('id') id: string, @CurrentUser('userId') userId: bigint) {
+  async detail(@Param('id') id: string, @CurrentUser('userId') userId?: bigint) {
     return this.service.detail(Number(id), userId)
   }
 }

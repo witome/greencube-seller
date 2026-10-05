@@ -22,7 +22,24 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ])
     // 未标记 @Roles 的接口不拦截（如登录、健康检查）
-    if (!required || required.length === 0) return true
+    if (!required || required.length === 0) {
+      // 卡CF（2026-10-05）浏览优先整改：公开接口改为「可选鉴权」——
+      // 本项目没有独立 JWT 守卫，req.user 原本只在 @Roles 分支里赋值；
+      // 浏览类接口（product/list、product/:id、buyer/home-content）放开后
+      // 仍需 @CurrentUser('userId') 来区分「匿名=脱敏 / 激活采购方=真价」（卡AA 口径不变）。
+      // 故这里尽力解析 Bearer token（合法则挂 req.user，非法/缺失一律静默放行，绝不拦截）。
+      // ⚠️ @Roles 分支的鉴权与角色校验逻辑一行未动，写操作与个人数据接口安全性不变。
+      const req = context.switchToHttp().getRequest()
+      const auth = req.headers.authorization
+      if (auth?.startsWith('Bearer ')) {
+        try {
+          req.user = this.jwtService.verify(auth.slice(7))
+        } catch {
+          /* 无效 token：按匿名处理，不拦截 */
+        }
+      }
+      return true
+    }
 
     const req = context.switchToHttp().getRequest()
     const auth = req.headers.authorization
